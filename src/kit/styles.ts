@@ -37,12 +37,20 @@ function channels(value: RgbColor): [number, number, number] {
  */
 function colorParams(color: Color, layer: 'fg' | 'bg'): string {
   if (color === undefined) return layer === 'fg' ? '39' : '49'
-  if (color >= PALETTE_LIMIT) {
+  if (color >= 256) {
     const [r, g, b] = channels(color)
     // Always the explicit 24-bit form. The palette form would be shorter, but it
     // would also let the terminal's theme pick the colour, which is the one
     // thing a skin exists to decide.
     return `${layer === 'fg' ? 38 : 48};2;${r};${g};${b}`
+  }
+  if (color >= PALETTE_LIMIT) {
+    // A 256-palette index, which is what `resolveStyle` downgrades a 24-bit
+    // colour to on a terminal that cannot take truecolour. It must be emitted
+    // as `38;5;N`: the 24-bit form would reinterpret the index as an RGB value
+    // (index 37 became RGB(0,0,37), a near-black), and the 30-37/90-107 forms
+    // below only exist for the sixteen theme-remapped colours.
+    return `${layer === 'fg' ? 38 : 48};5;${color}`
   }
   const index = color as AnsiColor
   // 30-37/40-47 for the base eight, 90-97/100-107 for the bright eight.

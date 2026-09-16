@@ -160,12 +160,14 @@ describe('style encoding', () => {
     expect(styleToSgr({ fg: 9, bg: 12 })).toContain('104')
   })
 
-  it('encodes a value at or above the palette limit as 24-bit', () => {
-    // 200 is a truecolour whose channels are 0, 0, 200 — not palette entry 200.
+  it('encodes a 24-bit value as 38;2 and a 256-index as 38;5', () => {
     // Getting this boundary wrong is how the Borland cyan (0x00AAAA) came out
-    // purple: it was 43690, read as palette index 170.
-    expect(styleToSgr({ fg: 200 })).toContain('38;2;0;0;200')
+    // purple: it was 43690, read as palette index 170. And reading a palette
+    // index as 24-bit is the same bug one layer down: index 200 emitted as
+    // 38;2;0;0;200 is a near-black, not the cube entry the downgrade picked.
     expect(styleToSgr({ fg: 0x00AAAA })).toContain('38;2;0;170;170')
+    expect(styleToSgr({ fg: 200 })).toContain('38;5;200')
+    expect(styleToSgr({ bg: 200 })).toContain('48;5;200')
   })
 
   it('keeps a palette index a palette index', () => {
@@ -260,6 +262,18 @@ describe('ScreenRenderer', () => {
     buffer.set(1, 0, char, { fg: 1 })
     return buffer
   }
+
+  it('emits downgraded colours as 38;5, not as misread truecolour', () => {
+    // The renderer is where the downgrade meets the SGR encoder: a terminal
+    // without truecolour support must see the palette index it was promised,
+    // because an index reinterpreted as RGB is how every skin turns to mud.
+    const renderer = new ScreenRenderer(false)
+    const buffer = new CellBuffer(4, 2)
+    buffer.set(1, 0, 'a', { fg: 0x00AAAA })
+    const output = renderer.render(buffer, { x: 0, y: 0, visible: false })
+    expect(output).toContain('38;5;')
+    expect(output).not.toContain('38;2;')
+  })
 
   it('wraps a frame in synchronized-output markers', () => {
     const renderer = new ScreenRenderer(false)
