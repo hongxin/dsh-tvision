@@ -150,6 +150,15 @@ Read [docs/DESIGN.md](docs/DESIGN.md) for the full reasoning, the architecture, 
 
 ## Development
 
+Until the package is published, install the working tree into the profile as a
+linked directory (the profile then runs whatever `lib/` is currently built):
+
+```sh
+dsh plugin --profile tvision add "$(pwd)"
+python3 scripts/pty-profile.py --profile tvision   # non-interactive mount check
+```
+
+
 ```sh
 npm install
 npm run typecheck     # tsc --noEmit
