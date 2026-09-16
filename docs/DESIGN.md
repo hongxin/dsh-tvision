@@ -312,6 +312,8 @@ in the code:
 | `app-windows.spec.ts` | The windows the host fills in, including every failure path. |
 | `integration.spec.ts` | Streaming, resize mid-stream, and a burst of mixed input. |
 | `dialogs.spec.ts` | Approval and question dialogs — mostly their *exits*, since a promise that never settles wedges an agent turn. |
+| `small-terminal.spec.ts` | The size floor, the order the chrome yields rows in, and that no row is ever the wrong width. |
+| `sweep.spec.ts` | Invariants over a real-terminal sweep: no write past the edge, no scroll, chrome in place. |
 | `snapshot.spec.ts` | Checked-in frames of the whole interface, as ASCII. |
 
 There is also a suite the test runner cannot contain. `scripts/pty-drive.py`
@@ -370,6 +372,48 @@ bar, a frame, a shadow, and modal lock from the same code as everything else, so
 Tab, the arrows, a letter, and the mouse all work through one path. It also makes
 the prompt feel like part of the application rather than something painted over
 it.
+
+**Why the terminal modes have one owner.** Both the app and the terminal object
+wrote the `enter`/`leave` sequences, and both had a `stop()`, so every mode was
+enabled and disabled twice. No terminal cares about that — the second sequence is
+idempotent — but it is the signature of two writers taking turns on one alternate
+screen, which is exactly how a terminal ends up in a mode nobody turns off. The app
+owns them now, because the app's renderer is also what decides whether the hardware
+cursor should be visible; the terminal owns only raw mode and the byte stream.
+
+**Why there is a terminal size floor.** The first version had none, and at 24×8
+it drew a menu bar reading `File View Agent Too`, a window frame with no
+transcript in it, and a status line overlapping the frame. The arithmetic was not
+wrong so much as unguarded: the desktop height was clamped at one row, the
+composer asked for a share of the screen no matter how small it got, and every
+widget's minimum-size assumption was violated at once. A window manager in 20
+columns is not a smaller window manager; it is a screen of overlapping fragments.
+
+So the layout now has three regimes rather than one. Below the floor the manager
+paints a notice and nothing else. Between the floor and an ordinary terminal the
+chrome yields in a fixed order — the status line first, because it is a meter,
+then the composer's popup row — while the menu bar and the key strip always stay,
+because those are controls and a legend. Above that, the intended layout.
+
+The strictness is in the tests: `small-terminal.spec.ts` asserts that every row is
+*exactly* the screen width at sizes from 12×6 to 80×4. A row one cell short leaves
+stale characters behind it, and one cell long wraps and shifts the whole screen —
+which is the same failure the sweep's `write-past-right-edge` check looks for in a
+real terminal.
+
+**Why the sweep exists, and what it caught.** The unit suites drive the app through
+a fake terminal that never complains, and the compositor suite replays frames into
+an emulator that renders whatever it is told. Neither can tell you that the thing
+on a real screen is wrong. A pty can, so `scripts/pty-sweep.py` runs eighteen size
+and key-sequence scenarios and `tests/sweep.spec.ts` checks the invariants a
+terminal enforces silently: nothing written past the right edge, nothing written
+below the screen, no scrollback, and the chrome still in place.
+
+Two of the three real bugs above were found by it and by nothing else. It also cost
+an afternoon to a harness bug worth recording: a pty left in its default line
+discipline turns Ctrl+C into a SIGINT that kills the child before it takes raw
+mode, and swallows Ctrl+Q as XON — so the app looked like it hung on quit, and the
+`cancel` scenario captured nothing but the `^C` the terminal echoed back.
 
 **Why a colour had two meanings.** `Color` was `number | undefined`, where a
 number below `0x100` was a palette index and one at or above it a 24-bit value.

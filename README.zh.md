@@ -178,6 +178,15 @@ npm run verify:pty -- /tmp/capture.bin 104 30
 
 鼠标拖拽、菜单下拉、帮助窗口与真彩配色，就是这样在真实屏幕上（而非模拟器里）确认的。
 
+`scripts/pty-sweep.py` 会跑一个「尺寸 × 按键序列」的矩阵，检查终端会**静默执行**的那些不变量——没有写到屏幕右边界之外、没有哪一帧把屏幕滚动了、chrome 没有错位：
+
+```sh
+python3 scripts/pty-sweep.py --json .tools/sweep.json   # 需要 pty
+npx vitest run tests/sweep.spec.ts                      # 检查抓取结果
+```
+
+它读取 `.tools/sweep.json`，文件不存在时自动跳过，所以在无法分配 pty 的机器上测试依然是绿的。
+
 ### 目录结构
 
 ```

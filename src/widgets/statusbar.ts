@@ -103,11 +103,16 @@ export class StatusBar {
   }
 
   /**
-   * Draw the status line and the hint strip into a two-row band.
-   * @param painter - The band, expected to be two rows tall.
+   * Draw the status line and the hint strip into the band.
+   *
+   * The strip is always the band's last row. The status line takes the row above
+   * it when there is one and the caller asked for it — on a short terminal the
+   * transcript is worth more than a meter, so the band is the strip alone.
+   * @param painter - The band.
    * @param context - Palette and focus.
+   * @param options - Whether the status line is among the band's rows.
    */
-  draw(painter: Painter, context: WidgetContext): void {
+  draw(painter: Painter, context: WidgetContext, options: { statusLine?: boolean } = {}): void {
     const palette = context.palette
     const theme: StatusBarTheme = {
       bar: palette.statusBar,
@@ -122,9 +127,12 @@ export class StatusBar {
       separator: '│',
     }
     const stripRow = painter.height - 1
-    painter.fillRow(0, theme.statusLine)
+    const wantStatus = (options.statusLine ?? true) && painter.height >= 2
+    if (wantStatus) {
+      painter.fillRow(0, theme.statusLine)
+      this.drawStatusLine(painter, theme, 0)
+    }
     painter.fillRow(stripRow, theme.bar)
-    if (painter.height >= 2) this.drawStatusLine(painter, theme, painter.height >= 2 ? 0 : 0)
     this.drawHints(painter, theme, stripRow)
   }
 

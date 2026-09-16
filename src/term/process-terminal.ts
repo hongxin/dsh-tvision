@@ -1,10 +1,13 @@
 /**
- * The real terminal: raw mode, the byte stream, and the screen modes.
+ * The real terminal: raw mode, the byte stream, and the window size.
  *
- * Small on purpose. The application owns the frame loop and the renderer owns
- * the escape sequences; this module owns only the four things that genuinely
- * need `process`: putting stdin into raw mode, forwarding bytes, reporting the
- * window size, and putting all of it back on the way out.
+ * Small on purpose, and deliberately *not* the owner of the screen modes. The
+ * alternate screen, mouse reporting, and bracketed paste belong to the app,
+ * because the app's renderer is what decides whether the hardware cursor should
+ * be visible — and two writers taking turns on one alternate screen is how a
+ * terminal ends up in a mode nobody turns off. This module owns only what
+ * genuinely needs `process`: putting stdin into raw mode, forwarding bytes,
+ * reporting the window size, and putting those back on the way out.
  *
  * Two details are easy to get wrong and expensive to debug:
  *
@@ -16,8 +19,6 @@
  *   the parent shell broken.
  * @module @dsh-tvision/dsh-tvision/term/process-terminal
  */
-
-import { ScreenRenderer } from '../kit/screen.ts'
 
 /** Options for {@link ProcessTerminal}. */
 export interface ProcessTerminalOptions {
@@ -108,7 +109,6 @@ export class ProcessTerminal {
     this.output.on('resize', onWinch)
     this.winchHandler = onWinch
     process.on('exit', this.exitHandler)
-    this.write(ScreenRenderer.enter({ mouse: this.options.mouse ?? true }))
   }
 
   private dataHandler: ((chunk: string | Buffer) => void) | undefined
@@ -120,7 +120,6 @@ export class ProcessTerminal {
   stop(): void {
     if (!this.started) return
     this.started = false
-    this.write(ScreenRenderer.leave({ mouse: this.options.mouse ?? true }))
     if (this.dataHandler !== undefined) this.input.off('data', this.dataHandler)
     if (this.winchHandler !== undefined) this.output.off('resize', this.winchHandler)
     process.off('exit', this.exitHandler)

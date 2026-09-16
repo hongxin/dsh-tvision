@@ -181,6 +181,18 @@ npm run verify:pty -- /tmp/capture.bin 104 30
 It is how the mouse drag, the menu dropdown, the help window, and the truecolour
 palette were confirmed on a real screen rather than an emulated one.
 
+`scripts/pty-sweep.py` drives a matrix of sizes and key sequences and checks the
+invariants a terminal enforces silently — no row written past the edge, no frame
+that scrolls the screen, chrome that has not drifted:
+
+```sh
+python3 scripts/pty-sweep.py --json .tools/sweep.json   # needs a pty
+npx vitest run tests/sweep.spec.ts                      # check the captures
+```
+
+It reads `.tools/sweep.json` and skips itself when that file is absent, so the
+suite stays green on a machine that cannot allocate a pty.
+
 ### Layout
 
 ```

@@ -100,13 +100,24 @@ describe('size', () => {
 })
 
 describe('start', () => {
-  it('enters raw mode and enables the screen modes', () => {
-    const { terminal, input, output } = build()
+  it('enters raw mode', () => {
+    const { terminal, input } = build()
     terminal.start(() => {}, () => {})
     expect(input.isRaw).toBe(true)
     expect(input.encoding).toBe('utf8')
-    expect(output.output).toContain('\u001B[?1049h')
-    expect(output.output).toContain('\u001B[?1006h')
+  })
+
+  it('leaves the screen modes to the application', () => {
+    // The alternate screen, mouse reporting, and bracketed paste belong to the
+    // app, because its renderer is what decides whether the hardware cursor is
+    // visible. Two writers on one alternate screen is how a terminal ends up in
+    // a mode nobody turns off — which showed up as the leave sequence being
+    // emitted twice.
+    const { terminal, output } = build()
+    terminal.start(() => {}, () => {})
+    terminal.stop()
+    expect(output.output).not.toContain('\u001B[?1049')
+    expect(output.output).not.toContain('\u001B[?1006')
   })
 
   it('is idempotent', () => {
@@ -135,13 +146,11 @@ describe('start', () => {
 })
 
 describe('stop', () => {
-  it('restores the terminal', () => {
-    const { terminal, input, output } = build()
+  it('restores raw mode and pauses input', () => {
+    const { terminal, input } = build()
     terminal.start(() => {}, () => {})
     terminal.stop()
     expect(input.isRaw).toBe(false)
-    expect(output.output).toContain('\u001B[?1049l')
-    expect(output.output).toContain('\u001B[?1006l')
     expect(input.paused).toBe(true)
   })
 
@@ -165,15 +174,14 @@ describe('stop', () => {
   })
 
   it('is idempotent', () => {
-    const { terminal, output } = build()
+    const { terminal, input, output } = build()
     terminal.start(() => {}, () => {})
     const before = output.output.length
     terminal.stop()
     terminal.stop()
-    // The second stop must not emit a second leave sequence.
-    expect(output.output.length).toBeGreaterThan(before)
-    const leaves = output.output.split('\u001B[?1049l').length - 1
-    expect(leaves).toBe(1)
+    // The second stop must not write anything or touch the streams again.
+    expect(output.output.length).toBe(before)
+    expect(input.rawCalls).toEqual([true, false])
   })
 
   it('restores the terminal when the process exits', () => {
@@ -187,12 +195,11 @@ describe('stop', () => {
   })
 
   it('can be started again after stopping', () => {
-    const { terminal, input, output } = build()
+    const { terminal, input } = build()
     terminal.start(() => {}, () => {})
     terminal.stop()
     terminal.start(() => {}, () => {})
     expect(input.rawCalls).toEqual([true, false, true])
-    expect(output.output.split('\u001B[?1049h').length - 1).toBe(2)
     terminal.stop()
   })
 })

@@ -110,8 +110,18 @@ describe('layout planning', () => {
   })
 
   it('reserves a usable composer height', () => {
-    expect(planLayout(100, 30, rect(0, 1, 100, 27)).composerHeight).toBeGreaterThanOrEqual(3)
-    expect(planLayout(100, 10, rect(0, 1, 100, 7)).composerHeight).toBeLessThanOrEqual(8)
+    // A separator, the input line, and one row so a completion popup has
+    // somewhere to open without the pane resizing under the reader.
+    expect(planLayout(100, 30, rect(0, 1, 100, 27)).composerHeight).toBe(3)
+    expect(planLayout(100, 10, rect(0, 1, 100, 7)).composerHeight).toBeLessThanOrEqual(7)
+  })
+
+  it('gives the composer up before it starves the transcript', () => {
+    // On a desktop of five rows the transcript keeps its floor and the composer
+    // takes what is left, even though that is less than it would like.
+    const plan = planLayout(60, 8, rect(0, 1, 60, 5))
+    expect(plan.composerHeight).toBeLessThan(3)
+    expect(plan.composerHeight + 4).toBeLessThanOrEqual(5)
   })
 })
 
@@ -783,5 +793,61 @@ describe('list windows', () => {
     app.setListRows('nope', [{ label: 'x' }])
     app.frame()
     expect(terminal.plain).toContain('No list window named nope')
+  })
+})
+
+describe('screen modes', () => {
+  it('takes the alternate screen and mouse reporting on start', () => {
+    const { app, terminal } = build()
+    app.start()
+    expect(terminal.output).toContain('\u001B[?1049h')
+    expect(terminal.output).toContain('\u001B[?1000h')
+    expect(terminal.output).toContain('\u001B[?1002h')
+    expect(terminal.output).toContain('\u001B[?1006h')
+    expect(terminal.output).toContain('\u001B[?2004h')
+  })
+
+  it('gives every one of them back on stop, exactly once', () => {
+    const { app, terminal } = build()
+    app.start()
+    app.stop()
+    for (const sequence of ['\u001B[?1049l', '\u001B[?1000l', '\u001B[?1002l', '\u001B[?1006l', '\u001B[?2004l']) {
+      expect(terminal.output.split(sequence).length - 1, sequence).toBe(1)
+    }
+  })
+
+  it('leaves mouse reporting alone when it was disabled', () => {
+    const terminal = new FakeTerminal()
+    const app = new TvisionApp({
+      terminal,
+      host: { send: () => {}, quit: () => {} },
+      info: { name: 'tvision', version: '0.1.0', sessionId: 's', cwd: '/tmp' },
+      skin: TURBO_VISION,
+      mouse: false,
+    })
+    app.start()
+    expect(terminal.output).not.toContain('\u001B[?1006h')
+    app.stop()
+    expect(terminal.output).not.toContain('\u001B[?1006l')
+  })
+
+  it('shows the cursor again before handing the terminal back', () => {
+    // A terminal left with a hidden cursor looks broken until the user runs
+    // `reset`, and they will not know that is what happened.
+    const { app, terminal } = build()
+    app.start()
+    app.stop()
+    const leaveAt = terminal.output.lastIndexOf('\u001B[?1049l')
+    const showAt = terminal.output.lastIndexOf('\u001B[?25h')
+    expect(showAt).toBeGreaterThan(0)
+    expect(showAt).toBeLessThan(leaveAt)
+  })
+
+  it('is safe to stop twice', () => {
+    const { app, terminal } = build()
+    app.start()
+    app.stop()
+    app.stop()
+    expect(terminal.output.split('\u001B[?1049l').length - 1).toBe(1)
   })
 })

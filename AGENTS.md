@@ -32,14 +32,30 @@ For anything that touches the renderer, the palette, or input routing, also chec
 a real terminal — the emulator cannot tell you a colour came out wrong:
 
 ```sh
+python3 scripts/pty-sweep.py --json .tools/sweep.json   # 18 sizes and key sequences
+npx vitest run tests/sweep.spec.ts                      # invariants over the captures
 python3 scripts/pty-drive.py '{"argv":["node","lib/demo.js"],"columns":104,"rows":30,"timeout":8}' > /tmp/cap.bin
-npm run verify:pty -- /tmp/cap.bin 104 30
+npm run verify:pty -- /tmp/cap.bin 104 30               # read one capture back
 ```
 
-This is how the colour-space bug was found: the Borland cyan `0x00AAAA` is 43690,
-which a 256-boundary truecolour check read as palette entry 170, so every window
-frame rendered purple. No emulator test caught it, because the emulator rendered
-whatever it was told; only looking at a real screen did.
+Three real bugs came from this and nothing else:
+
+- The Borland cyan `0x00AAAA` is 43690, which a 256-boundary truecolour check read
+  as palette entry 170, so every window frame rendered purple. The emulator
+  replayed the escapes faithfully and showed exactly the purple the bytes
+  described; a renderer test can only prove the grid matches the buffer.
+- At 24x8 the desktop drew a menu bar reading `File View Agent Too`, a frame with
+  no transcript in it, and a status line over the frame. Layouts have regimes, and
+  a window manager in 20 columns is not a smaller window manager.
+- Every terminal mode was restored **twice**, because the app and the terminal
+  each wrote the teardown. Harmless to the terminal, but the signature of two
+  writers on one alternate screen.
+
+The pty harness itself has two traps, both of which cost an afternoon: put the pty
+in a mode the app expects (no `ISIG`, no `IXON`, no `ECHO`) *before* the first key,
+or Ctrl+C becomes a SIGINT that kills the app and Ctrl+Q is swallowed as XON; and
+size the pty before the child can read its dimensions, or it paints a frame for the
+wrong screen.
 
 The compositor round-trip suite (`tests/compositor.spec.ts`) replays frames into
 a real terminal emulator and compares the grid cell for cell. It is the only

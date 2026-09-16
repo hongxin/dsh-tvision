@@ -95,6 +95,8 @@ export interface AppOptions {
   readonly skin: Skin
   /** Global keys the host wants before the app's own handling. */
   readonly extraKeys?: (event: KeyEvent) => boolean
+  /** Whether to enable mouse reporting when the screen modes are taken (default true). */
+  readonly mouse?: boolean
 }
 
 /** How the desktop is divided on first run. */
@@ -116,16 +118,24 @@ export interface LayoutPlan {
  * @param desktop - The usable desktop rectangle.
  * @returns The planned rectangles.
  */
-export function planLayout(columns: number, rows: number, desktop: Rect): LayoutPlan {
+export function planLayout(columns: number, _rows: number, desktop: Rect): LayoutPlan {
   // The side column collapses on a narrow terminal rather than squeezing the
-  // transcript into an unreadable strip.
-  const wide = columns >= 96
-  const sideWidth = wide ? Math.max(28, Math.min(48, Math.floor(columns * 0.28))) : 0
+  // transcript into an unreadable strip. It takes a real width to be worth
+  // having: two 25-column windows are worse than one 50-column one.
+  const sideWidth = columns >= 96 ? Math.max(28, Math.min(48, Math.floor(columns * 0.28))) : 0
   const transcriptWidth = sideWidth === 0 ? desktop.width : desktop.width - sideWidth
-  // Three rows by default — a separator and the input line with a little air
-  // above it. It grows when the completion popup opens, so a taller default
-  // would only ever be empty space above the sigil.
-  const composerHeight = Math.max(2, Math.min(6, Math.floor(rows * 0.12)))
+  // The composer is a separator row and the input line, and it grows when the
+  // completion popup opens. Two rows is therefore the size it always uses and
+  // three the most it can without leaving a blank row above the sigil. It is also
+  // the part that gives way on a short terminal: an input line with no transcript
+  // is as useless as a transcript with no input line, so the transcript gets the
+  // floor and the composer takes what is left.
+  const available = Math.max(1, desktop.height)
+  const composerHeight = available <= MIN_TRANSCRIPT_HEIGHT + 1
+    ? 1
+    : Math.max(2, Math.min(COMPOSER_MAX_ROWS, available - MIN_TRANSCRIPT_HEIGHT))
+  // The pane always draws its separator, so a height of one would put the rule on
+  // the input line. Below that the transcript simply gets the whole desktop.
   return {
     transcript: { x: desktop.x, y: desktop.y, width: transcriptWidth, height: desktop.height },
     side: {
@@ -137,6 +147,64 @@ export function planLayout(columns: number, rows: number, desktop: Rect): Layout
     composerHeight,
     sideWidth,
   }
+}
+
+/** The fewest rows the transcript may be left with before the composer yields. */
+const MIN_TRANSCRIPT_HEIGHT = 4
+
+/**
+ * The input rows the composer pane would like.
+ *
+ * Two: the input line and one row above it for a completion popup to open into.
+ * The pane adds its own separator row on top, so the whole composer is three
+ * rows on an ordinary terminal and two when the transcript needs the row more.
+ */
+const COMPOSER_INPUT_ROWS = 2
+
+/** What {@link planLayout} reports for the composer pane: its input rows plus the separator. */
+const COMPOSER_MAX_ROWS = COMPOSER_INPUT_ROWS + 1
+
+/**
+ * The smallest terminal this desktop is worth drawing in.
+ *
+ * Chosen from what the chrome alone needs — a menu bar, a window frame, and a
+ * hint strip — plus enough transcript to read a line of prose. Below it the
+ * window manager paints a notice instead, because a desktop crammed into 30
+ * columns is a screen of overlapping fragments rather than a smaller desktop.
+ */
+export const MINIMUM_TERMINAL = Object.freeze({ columns: 40, rows: 10 })
+
+/** The fewest rows at which the status line earns its own row. */
+const STATUS_LINE_MIN_ROWS = 20
+
+/** How many rows each chrome band gets. */
+export interface ChromePlan {
+  /** Rows for the menu bar. */
+  readonly top: number
+  /** Rows for the status line and the hint strip. */
+  readonly bottom: number
+  /** Whether the status line is among them. */
+  readonly statusLine: boolean
+}
+
+/**
+ * Decide what the chrome gets for a given screen height.
+ *
+ * The hint strip survives down to the floor, because it is the legend for every
+ * key and the only place the function keys are named. The status line is a
+ * meter, so it is the first thing to go; below that the transcript and the
+ * composer share what is left, and the window manager takes over once even that
+ * is impossible.
+ * @param rows - The screen height.
+ * @returns The band sizes.
+ */
+export function planChrome(rows: number): ChromePlan {
+  // Menu bar plus the hint strip is the irreducible chrome.
+  if (rows < MINIMUM_TERMINAL.rows + 2) return { top: 1, bottom: 1, statusLine: false }
+  // The status line costs a row, and it is worth that row on any ordinary
+  // terminal; below twenty rows four rows of transcript matter more.
+  if (rows < STATUS_LINE_MIN_ROWS) return { top: 1, bottom: 1, statusLine: false }
+  return { top: 1, bottom: 2, statusLine: true }
 }
 
 /** Window ids this application creates. */
@@ -243,19 +311,16 @@ class TextWindow implements Widget {
 class TranscriptPane implements Widget {
   private readonly view: TranscriptView
   private readonly composer: Composer
-  private readonly composerHeight: () => number
   /** The inner rectangle of the composer region, recorded while drawing. */
   private composerRect: Rect = { x: 0, y: 0, width: 0, height: 0 }
 
   /**
    * @param view - The transcript view.
    * @param composer - The composer.
-   * @param composerHeight - How many rows the composer occupies.
    */
-  constructor(view: TranscriptView, composer: Composer, composerHeight: () => number) {
+  constructor(view: TranscriptView, composer: Composer) {
     this.view = view
     this.composer = composer
-    this.composerHeight = composerHeight
   }
 
   /** The transcript view, for the menu's view commands. */
@@ -283,10 +348,16 @@ class TranscriptPane implements Widget {
    */
   draw(painter: Painter, context: WidgetContext): void {
     const palette = context.palette
-    // The composer grows upwards when its completion popup is open, so the
-    // transcript gives up rows rather than the popup being clipped.
-    const wanted = this.composerHeight() + this.composer.completionRows
-    const inputHeight = Math.max(1, Math.min(wanted, Math.max(1, painter.height - 2)))
+    // The pane owns its own arithmetic, because it is the only thing that knows
+    // what it has to draw: a separator, the popup if one is open, and the input
+    // line. `composerHeight()` is the size it *wants*; what it *gets* is bounded
+    // by the room left after the transcript's floor, and a pane that keeps a
+    // popup row it has no room for shows a blank line above the sigil.
+    const wanted = COMPOSER_INPUT_ROWS + this.composer.completionRows
+    const inputHeight = Math.max(
+      1,
+      Math.min(wanted, Math.max(1, painter.height - MIN_TRANSCRIPT_HEIGHT - 1)),
+    )
     const transcriptHeight = Math.max(0, painter.height - inputHeight - 1)
     if (transcriptHeight > 0) {
       this.view.draw(painter.sub(0, 0, painter.width, transcriptHeight), context)
@@ -547,7 +618,8 @@ export class TvisionApp {
   private transient: { text: string; tone: 'info' | 'warning' | 'error'; until: number } | undefined
   private running = false
   private readonly history: string[] = []
-  private readonly composerHeight: number
+  /** How many rows each chrome band got, fixed at mount and on every resize. */
+  private chrome: ChromePlan
   /** Counter for dialog window ids, so two dialogs never collide. */
   private dialogSeq = 0
   /** The session rows last set, so a row's identity survives the list widget. */
@@ -564,15 +636,21 @@ export class TvisionApp {
     this.options = options
     this.skin = options.skin
     const desktopSize = { columns: options.terminal.columns, rows: options.terminal.rows }
+    // A short terminal keeps the hint strip — it is the legend for every key —
+    // and gives up the status line, which is a meter and not a control.
+    const chrome = planChrome(desktopSize.rows)
     this.windows = new WindowManager({
       columns: desktopSize.columns,
       rows: desktopSize.rows,
       skin: options.skin,
+      topInset: chrome.top,
+      bottomInset: chrome.bottom,
+      minimum: MINIMUM_TERMINAL,
     })
+    this.chrome = chrome
     this.renderer = new ScreenRenderer(detectTruecolor())
     this.windows.attachRenderer(this.renderer)
     const plan = planLayout(desktopSize.columns, desktopSize.rows, this.windows.desktop)
-    this.composerHeight = plan.composerHeight
     this.transcript = new TranscriptView(this.document, {
       gutterWidth: 2,
       collapsed: true,
@@ -592,7 +670,7 @@ export class TvisionApp {
       },
       this.composerTheme(),
     )
-    this.pane = new TranscriptPane(this.transcript, this.composer, () => this.composerHeight)
+    this.pane = new TranscriptPane(this.transcript, this.composer)
     this.menu = new MenuBarBase({
       menus: () => this.buildMenus(),
       describe: () => { this.windows.requestRender() },
@@ -659,7 +737,13 @@ export class TvisionApp {
     }
     this.windows.bottomChrome = {
       draw: (painter, _palette, manager) => {
-        this.status.draw(painter, { palette: manager.palette, focused: true, requestRender: () => manager.requestRender() })
+        // On a short terminal the band is the hint strip alone, so the status
+        // line is not drawn into a row it does not have.
+        this.status.draw(painter, {
+          palette: manager.palette,
+          focused: true,
+          requestRender: () => manager.requestRender(),
+        }, { statusLine: this.chrome.statusLine })
       },
       onKey: (event) => this.status.handleKey(event) === Consumed.Yes,
       onMouse: (event, manager) => {
@@ -869,23 +953,23 @@ export class TvisionApp {
     const tokens = this.document.tokens
     const window = this.options.host.contextWindow?.() ?? 0
     const pressure = window > 0 ? this.document.contextTokens / window : 0
-    const cells: { text: string; priority?: number; tone?: 'normal' | 'warning' | 'error' | 'success' }[] = [
-      { text: 'F10 menu', priority: 0 },
-      { text: `${this.windows.all().filter(entry => !entry.closed && entry.listed).length} win`, priority: 0 },
-    ]
+    // Priorities decide what survives a narrow terminal, and the ordering is the
+    // reverse of how interesting each thing is: the model route is the one fact
+    // that must never be lost, the context meter is the one that matters most
+    // while a turn runs, and the window count is trivia that goes first.
+    const cells: { text: string; priority?: number; tone?: 'normal' | 'warning' | 'error' | 'success' }[] = []
+    const model = this.options.host.modelLabel?.() ?? this.document.model
+    if (model !== undefined) cells.push({ text: model, priority: 4 })
     if (window > 0) {
       cells.push({
         text: `${pressureBar(pressure, 6)} ${Math.round(pressure * 100)}%`,
-        priority: 2,
+        priority: 3,
         tone: pressure > 0.9 ? 'error' : pressure > 0.7 ? 'warning' : 'normal',
       })
     }
-    cells.push({
-      text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`,
-      priority: 2,
-    })
-    const model = this.options.host.modelLabel?.() ?? this.document.model
-    if (model !== undefined) cells.push({ text: model, priority: 3 })
+    cells.push({ text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`, priority: 2 })
+    cells.push({ text: `${this.windows.all().filter(entry => !entry.closed && entry.listed).length} win`, priority: 1 })
+    cells.push({ text: 'F10 menu', priority: 0 })
     return cells
   }
 
@@ -990,6 +1074,9 @@ export class TvisionApp {
    * @param event - The event.
    */
   handle(event: InputEvent): void {
+    // A resize re-plans the chrome before the manager reflows, because the bands
+    // it will lay out against are the ones this decides.
+    if (event.type === 'resize') this.applyChrome(event.rows)
     if (event.type === 'paste') {
       this.composer.insert(event.text.replace(/\r\n?/gu, '\n'))
       this.windows.requestRender()
@@ -1441,7 +1528,7 @@ export class TvisionApp {
     if (this.running) return
     this.running = true
     this.installRenderHook()
-    this.options.terminal.write(ScreenRenderer.enter())
+    this.options.terminal.write(ScreenRenderer.enter({ mouse: this.options.mouse ?? true }))
     this.windows.requestRender()
     this.frame()
   }
@@ -1549,11 +1636,33 @@ export class TvisionApp {
     return this.windows.render()
   }
 
+  /**
+   * Re-plan the chrome for a new screen height.
+   *
+   * The manager's bands are fixed at construction, so a resize has to hand it the
+   * new sizes rather than let the desktop be squeezed toward nothing.
+   * @param rows - The new screen height.
+   */
+  applyChrome(rows: number): void {
+    const next = planChrome(rows)
+    if (next.top === this.chrome.top && next.bottom === this.chrome.bottom) return
+    this.chrome = next
+    this.windows.setChrome(next.top, next.bottom)
+  }
+
+  /**
+   * Whether the desktop is currently drawn at all.
+   * @returns True when the terminal is large enough to compose.
+   */
+  get usable(): boolean {
+    return this.windows.usable
+  }
+
   /** Leave the full-screen session and give the terminal back. */
   stop(): void {
     if (!this.running) return
     this.running = false
-    this.options.terminal.write(ScreenRenderer.leave())
+    this.options.terminal.write(ScreenRenderer.leave({ mouse: this.options.mouse ?? true }))
     this.options.host.dispose?.()
   }
 

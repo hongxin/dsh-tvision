@@ -248,6 +248,16 @@ export interface WindowManagerOptions {
   readonly topInset?: number
   /** How many rows the bottom chrome (status line + hint bar) occupies. */
   readonly bottomInset?: number
+  /**
+   * The smallest desktop that is still usable, in columns and rows.
+   *
+   * Below it the manager stops trying to lay out a desktop and paints a notice
+   * instead. A window manager crammed into 20 columns is not a smaller version
+   * of itself; it is a screen of overlapping fragments, and every widget's
+   * minimum-size assumption is wrong at once. Saying so is the only honest
+   * thing to draw.
+   */
+  readonly minimum?: { readonly columns: number; readonly rows: number }
   /** Whether box-drawing glyphs are available; false falls back to ASCII. */
   readonly unicode?: boolean
 }
@@ -325,8 +335,10 @@ export class WindowManager {
   private activeId: string | undefined
   private columns: number
   private rows: number
-  private readonly topInset: number
-  private readonly bottomInset: number
+  private topInsetValue: number
+  private bottomInsetValue: number
+  /** The usability floor; see {@link WindowManagerOptions.minimum}. */
+  readonly minimum: { readonly columns: number; readonly rows: number }
   private drag: DragState | undefined
   private lastClick: { x: number; y: number; at: number; id: string } | undefined
   private wantsRender = true
@@ -367,8 +379,9 @@ export class WindowManager {
     this.palette = resolvePalette(options.skin)
     this.columns = Math.max(1, options.columns)
     this.rows = Math.max(1, options.rows)
-    this.topInset = options.topInset ?? 1
-    this.bottomInset = options.bottomInset ?? 2
+    this.topInsetValue = options.topInset ?? 1
+    this.bottomInsetValue = options.bottomInset ?? 2
+    this.minimum = options.minimum ?? { columns: 40, rows: 10 }
     this.unicode = options.unicode ?? true
   }
 
@@ -376,9 +389,9 @@ export class WindowManager {
   get desktop(): Rect {
     return makeRect(
       0,
-      this.topInset,
+      this.topInsetValue,
       this.columns,
-      Math.max(1, this.rows - this.topInset - this.bottomInset),
+      Math.max(1, this.rows - this.topInsetValue - this.bottomInsetValue),
     )
   }
 
@@ -398,7 +411,7 @@ export class WindowManager {
    * @returns The band rectangle.
    */
   get bottomBand(): Rect {
-    return makeRect(0, this.rows - this.bottomInset, this.columns, this.bottomInset)
+    return makeRect(0, this.rows - this.bottomInsetValue, this.columns, this.bottomInsetValue)
   }
 
   /**
@@ -406,7 +419,7 @@ export class WindowManager {
    * @returns The band rectangle.
    */
   get topBand(): Rect {
-    return makeRect(0, 0, this.columns, this.topInset)
+    return makeRect(0, 0, this.columns, this.topInsetValue)
   }
 
   /** The id of the window that owns the keyboard, if any. */
@@ -447,6 +460,23 @@ export class WindowManager {
    */
   attachRenderer(renderer: ScreenRenderer): void {
     this.renderer = renderer
+  }
+
+  /**
+   * Replace the chrome band heights.
+   *
+   * The bands are fixed at construction, but the right sizes depend on the
+   * screen height, which changes. Re-planning them here keeps one authority for
+   * the arithmetic instead of scattering it between the manager and the app.
+   * @param top - Rows for the top band.
+   * @param bottom - Rows for the bottom band.
+   */
+  setChrome(top: number, bottom: number): void {
+    if (top === this.topInsetValue && bottom === this.bottomInsetValue) return
+    this.topInsetValue = Math.max(0, top)
+    this.bottomInsetValue = Math.max(0, bottom)
+    this.renderer?.invalidate()
+    this.requestRender()
   }
 
   /**
@@ -755,6 +785,13 @@ export class WindowManager {
     const desktopStyle: Style = this.palette.desktop
     buffer.clear(desktopStyle)
     const root = new Painter(buffer, makeRect(0, 0, this.columns, this.rows))
+    // Too small to compose: say so rather than draw a screen of fragments.
+    if (this.columns < this.minimum.columns || this.rows < this.minimum.rows) {
+      this.paintTooSmall(root)
+      this.frame = buffer
+      this.wantsRender = false
+      return buffer
+    }
     this.paintBackground(root)
     for (const window of this.orderedWindows()) {
       if (window.closed) continue
@@ -773,6 +810,38 @@ export class WindowManager {
     this.frame = buffer
     this.wantsRender = false
     return buffer
+  }
+
+  /**
+   * The notice shown when the terminal is below the usability floor.
+   *
+   * Kept to what fits, which at 20 columns is very little: the sizes and one
+   * instruction. Anything more is itself a wrapping problem.
+   * @param root - The root painter.
+   */
+  private paintTooSmall(root: Painter): void {
+    const lines = [
+      'terminal too small',
+      `${this.columns}x${this.rows}`,
+      `needs ${this.minimum.columns}x${this.minimum.rows}`,
+      '',
+      'resize to continue',
+    ]
+    const top = Math.max(0, Math.floor((this.rows - lines.length) / 2))
+    for (let index = 0; index < lines.length; index++) {
+      const row = top + index
+      if (row >= this.rows) break
+      const line = lines[index] ?? ''
+      root.text(0, row, line, this.columns, { fg: 11 }, { align: 'center', ellipsis: false })
+    }
+  }
+
+  /**
+   * Whether the screen is large enough to compose a desktop.
+   * @returns True when a desktop would be usable.
+   */
+  get usable(): boolean {
+    return this.columns >= this.minimum.columns && this.rows >= this.minimum.rows
   }
 
   /**
@@ -883,14 +952,14 @@ export class WindowManager {
    * @param root - The root painter.
    */
   private paintChrome(root: Painter): void {
-    if (this.topInset > 0 && this.topChrome !== undefined) {
-      const band = new Painter(root.target, makeRect(0, 0, this.columns, this.topInset))
+    if (this.topInsetValue > 0 && this.topChrome !== undefined) {
+      const band = new Painter(root.target, makeRect(0, 0, this.columns, this.topInsetValue))
       this.topChrome.draw(band, this.palette, this)
     }
-    if (this.bottomInset > 0 && this.bottomChrome !== undefined) {
+    if (this.bottomInsetValue > 0 && this.bottomChrome !== undefined) {
       const band = new Painter(
         root.target,
-        makeRect(0, this.rows - this.bottomInset, this.columns, this.bottomInset),
+        makeRect(0, this.rows - this.bottomInsetValue, this.columns, this.bottomInsetValue),
       )
       this.bottomChrome.draw(band, this.palette, this)
     }
@@ -1032,8 +1101,8 @@ export class WindowManager {
         this.requestRender()
         return true
       }
-    } else if (event.y < this.topInset || event.y >= this.rows - this.bottomInset) {
-      const chrome = event.y < this.topInset ? this.topChrome : this.bottomChrome
+    } else if (event.y < this.topInsetValue || event.y >= this.rows - this.bottomInsetValue) {
+      const chrome = event.y < this.topInsetValue ? this.topChrome : this.bottomChrome
       if (chrome?.onMouse?.(normalized, this) === true) {
         this.requestRender()
         return true

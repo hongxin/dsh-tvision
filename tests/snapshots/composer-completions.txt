@@ -19,12 +19,12 @@
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
+║                                                                      ║                           │
 ║──────────────────────────────────────────────────────────────────────║                           │
 ║▸ /model  Choose the model route                                      ║                           │
 ║  /compact  Compact the context                                       ║                           │
-║                                                                      ║                           │
 ║                                                                      ║  ────────────────────────⋮┘
 ║dsh> /                                                                ║
 ╚═════════════════════════════════════════════════════════════════════⋮╝  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
-                          │ F10 menu │ 3 win │ ░░░░░░ 0% │ ↑0 ↓0 │ deepseek-official/deepseek-flash
+                          │ F10 menu │ 3 win │ ↑0 ↓0 │ ░░░░░░ 0% │ deepseek-official/deepseek-flash
 F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next       F7 Project

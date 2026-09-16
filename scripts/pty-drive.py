@@ -47,6 +47,7 @@ def run(argv, script, columns, rows, timeout):
         os.execvp(argv[0], argv)
         os._exit(127)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, columns, 0, 0))
+    configure_pty(fd)
     out = bytearray()
     deadline = time.time() + timeout
     index = 0
