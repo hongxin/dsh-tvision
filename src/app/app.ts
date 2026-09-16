@@ -1168,7 +1168,9 @@ export class TvisionApp {
 
   /** Flip tool-card expansion. */
   private toggleTools(): void {
-    const collapsed = !(this.transcript as unknown as { expandedCount?: number }).expandedCount
+    // The view reports its own expansion state; the old duck-typed peek at a
+    // field that did not exist made this key able to expand but never collapse.
+    const collapsed = this.transcript.expandedCount === 0
     if (collapsed) this.transcript.expandAll()
     else this.transcript.collapseAll()
     this.notify(collapsed ? 'Tool cards expanded.' : 'Tool cards collapsed.', 'info', 2500)
@@ -1177,8 +1179,7 @@ export class TvisionApp {
 
   /** Flip reasoning visibility. */
   private toggleReasoning(): void {
-    const view = this.transcript as unknown as { theme?: { showReasoning: boolean } }
-    const current = view.theme?.showReasoning ?? true
+    const current = this.transcript.showReasoning
     this.transcript.setTheme({
       gutterWidth: 2,
       collapsed: true,

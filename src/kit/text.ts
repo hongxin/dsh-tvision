@@ -125,6 +125,43 @@ export function splitUnits(text: string): { text: string; width: number }[] {
 }
 
 /**
+ * The string index where the cluster immediately before `index` begins.
+ *
+ * The unit of editing is the cluster, not the code unit: a caret that steps by
+ * code units lands inside a surrogate pair or splits a base from its combining
+ * mark, and the next edit produces a lone surrogate that renders as U+FFFD and
+ * is submitted to the agent verbatim.
+ * @param text - The buffer.
+ * @param index - A caret position, in code units.
+ * @returns The largest cluster boundary at or below `index`.
+ */
+export function prevClusterStart(text: string, index: number): number {
+  let boundary = 0
+  let offset = 0
+  for (const unit of splitUnits(text)) {
+    if (offset >= index) break
+    boundary = offset
+    offset += unit.text.length
+  }
+  return boundary
+}
+
+/**
+ * The string index where the cluster at or after `index` ends.
+ * @param text - The buffer.
+ * @param index - A caret position, in code units.
+ * @returns The smallest cluster boundary greater than `index`, or the length.
+ */
+export function nextClusterEnd(text: string, index: number): number {
+  let offset = 0
+  for (const unit of splitUnits(text)) {
+    offset += unit.text.length
+    if (offset > index) return offset
+  }
+  return text.length
+}
+
+/**
  * The number of terminal columns a string occupies.
  * @param text - The string to measure.
  * @returns The column count.

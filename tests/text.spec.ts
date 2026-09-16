@@ -15,6 +15,8 @@ import {
   stripZeroWidth,
   takeColumns,
   takeColumnsEnd,
+  nextClusterEnd,
+  prevClusterStart,
   textWidth,
   truncate,
 } from '../src/kit/text.ts'
@@ -224,5 +226,23 @@ describe('symbol clusters', () => {
   it('measures an unpaired regional indicator as narrow', () => {
     expect(clusterWidth('\u{1F1E9}')).toBe(1)
     expect(clusterWidth('\u{1F1E9}\u{1F1EA}')).toBe(2)
+  })
+})
+
+describe('cluster boundaries', () => {
+  it('steps back to the start of the cluster before the caret', () => {
+    const text = 'a\u{1F600}b'
+    expect(prevClusterStart(text, 4)).toBe(3)
+    expect(prevClusterStart(text, 3)).toBe(1)
+    expect(prevClusterStart(text, 1)).toBe(0)
+    expect(prevClusterStart(text, 0)).toBe(0)
+  })
+
+  it('steps forward to the end of the cluster at the caret', () => {
+    const text = 'a\u{1F600}b'
+    expect(nextClusterEnd(text, 0)).toBe(1)
+    expect(nextClusterEnd(text, 1)).toBe(3)
+    expect(nextClusterEnd(text, 2)).toBe(3)
+    expect(nextClusterEnd(text, 3)).toBe(4)
   })
 })

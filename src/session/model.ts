@@ -341,6 +341,7 @@ export class SessionDocument {
     const text = content.filter(part => part.kind === 'text').map(part => part.text).join('')
     const reasoning = content.filter(part => part.kind === 'reasoning').map(part => part.text).join('')
     const index = this.entries.indexOf(target)
+    if (index < 0) return
     this.entries[index] = {
       ...target,
       pieces: content,
@@ -362,7 +363,7 @@ export class SessionDocument {
     const target = this.openAssistant
     if (target !== undefined && target.turn === position.turn && target.step === position.step) {
       const index = this.entries.indexOf(target)
-      this.entries[index] = { ...target, streaming: false, endedAt: time }
+      if (index >= 0) this.entries[index] = { ...target, streaming: false, endedAt: time }
       this.openAssistant = undefined
       this.touch()
       return

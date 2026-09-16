@@ -76,6 +76,8 @@ export class TranscriptView implements Widget {
   private theme: TranscriptTheme
   private rows: TranscriptRow[] = []
   private cacheKey = ''
+  /** The palette the cached rows were built for, compared by identity. */
+  private cachedPalette: ResolvedPalette | undefined
   private scrollTop = 0
   private stick = true
   private lastHeight = 0
@@ -103,6 +105,30 @@ export class TranscriptView implements Widget {
   setTheme(theme: TranscriptTheme): void {
     this.theme = theme
     this.cacheKey = ''
+  }
+
+  /**
+   * Whether reasoning text is being rendered.
+   *
+   * A real accessor rather than a cast on the private field: `Ctrl+R` flips
+   * this, and a caller peeking the field by name breaks silently on a rename.
+   * @returns True when reasoning rows are shown.
+   */
+  get showReasoning(): boolean {
+    return this.theme.showReasoning
+  }
+
+  /**
+   * How many entries are individually expanded beyond the theme default.
+   *
+   * The F4 toggle reads this to decide direction: zero means everything is at
+   * the default (collapsed) and the key expands; anything else means expanded
+   * and the key collapses. `toggleEntry` counts here too, which reads as "any
+   * expansion means expanded" — the honest answer for a two-state key.
+   * @returns The number of expanded entries.
+   */
+  get expandedCount(): number {
+    return this.expanded.size
   }
 
   /**
@@ -199,6 +225,10 @@ export class TranscriptView implements Widget {
    * @returns The rows.
    */
   rowsFor(width: number, palette: ResolvedPalette): TranscriptRow[] {
+    // The cache key carries the palette by identity, not as a string: skins
+    // resolve to a fresh object per activation, so the reference *is* the skin,
+    // and without it F9 left stale-coloured rows until the next document
+    // revision bumped them out.
     const key = [
       width,
       this.document.revision,
@@ -206,9 +236,10 @@ export class TranscriptView implements Widget {
       this.theme.showReasoning ? 'r' : 'n',
       [...this.expanded].sort((a, b) => a - b).join(','),
     ].join('|')
-    if (key === this.cacheKey) return this.rows
+    if (key === this.cacheKey && palette === this.cachedPalette) return this.rows
     this.rows = buildRows(this.document.all, width, palette, this.theme, this.expanded)
     this.cacheKey = key
+    this.cachedPalette = palette
     return this.rows
   }
 

@@ -81,6 +81,8 @@ export class Dialog implements Widget {
   private resolve: ((result: DialogResult) => void) | undefined
   private readonly promise: Promise<DialogResult>
   private abortListener: (() => void) | undefined
+  /** The lifetime signal, kept so {@link settle} can detach from it. */
+  private readonly signal: AbortSignal | undefined
   /** The button rectangles recorded while drawing, for the mouse. */
   private buttonBoxes: { index: number; start: number; end: number; row: number }[] = []
   /** The row the buttons are drawn on, in the window interior's coordinates. */
@@ -92,6 +94,7 @@ export class Dialog implements Widget {
    */
   constructor(spec: DialogSpec, signal?: AbortSignal) {
     this.spec = spec
+    this.signal = signal
     const fallback = spec.choices.findIndex(choice => choice.isDefault === true)
     this.selected = fallback >= 0 ? fallback : 0
     this.promise = new Promise<DialogResult>((resolve) => {
@@ -121,7 +124,12 @@ export class Dialog implements Widget {
   settle(result: DialogResult): void {
     if (this.settled) return
     this.settled = true
-    if (this.abortListener !== undefined) this.abortListener = undefined
+    // Detach from the lifetime signal: a dialog that answered normally must not
+    // stay subscribed until the (possibly hours-long) turn signal is collected.
+    if (this.signal !== undefined && this.abortListener !== undefined) {
+      this.signal.removeEventListener('abort', this.abortListener)
+    }
+    this.abortListener = undefined
     this.resolve?.(result)
     this.resolve = undefined
   }

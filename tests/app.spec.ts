@@ -880,3 +880,63 @@ describe('frame loop', () => {
     }
   })
 })
+
+describe('cluster-aware editing', () => {
+  it('backspace deletes a whole astral glyph, never half of one', () => {
+    const { app } = build()
+    app.composer.insert('\u{1F600}')
+    app.composer.insert('!')
+    app.feed('\u007F') // backspace
+    expect(app.composer.value).toBe('\u{1F600}')
+    app.feed('\u007F') // backspace deletes the glyph itself
+    expect(app.composer.value).toBe('')
+  })
+
+  it('the caret steps over a wide cluster as one unit', () => {
+    const { app } = build()
+    app.composer.insert('a\u{1F600}b')
+    app.composer.setValue('a\u{1F600}b')
+    // Walk left from the end: b, then the whole glyph, then a — never the
+    // surrogate pair's midpoint.
+    // 'a' + a two-unit surrogate pair + 'b' is four code units; the caret
+    // starts past 'b' and must step over the glyph whole.
+    app.composer.setValue('a\u{1F600}b', 4)
+    app.feed('\u001B[D') // over 'b'
+    expect(app.composer.caret).toBe(3)
+    app.feed('\u001B[D') // over the whole glyph, never its midpoint
+    expect(app.composer.caret).toBe(1)
+    app.feed('\u001B[D')
+    expect(app.composer.caret).toBe(0)
+  })
+})
+
+describe('F4 toggles both ways', () => {
+  it('expands, then collapses, then expands again', () => {
+    const { app } = build()
+    app.document.addToolCall({ callId: 'c1', name: 'bash', args: '', turn: 0, step: 0, time: 1 })
+    app.frame()
+    const showsExpanded = (): boolean =>
+      app.windows.lastFrame()?.lines().join('\n').includes('▾') === true
+    expect(showsExpanded()).toBe(false)
+    app.handle({ type: 'key', key: 'f4' })
+    app.frame()
+    expect(showsExpanded()).toBe(true)
+    app.handle({ type: 'key', key: 'f4' })
+    app.frame()
+    expect(showsExpanded()).toBe(false)
+  })
+})
+
+describe('usage without a reported total', () => {
+  it('keeps the pressure display numeric', async () => {
+    const { app, terminal } = build()
+    await app.applyEvent({ type: 'assistant/message', seq: 1, time: 1, data: {
+      message: { content: [{ type: 'text', text: 'hi' }] },
+      usage: { input: 10, output: 5 },
+      turn: 0, step: 0,
+    } })
+    app.frame()
+    expect(Number.isFinite(app.document.contextTokens)).toBe(true)
+    expect(terminal.lastFrame()).not.toContain('NaN')
+  })
+})

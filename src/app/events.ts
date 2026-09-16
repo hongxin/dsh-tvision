@@ -174,12 +174,16 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       )
       const usage = field(data, 'usage')
       if (usage !== undefined && usage !== null) {
+        // `total` is passed only when the provider actually reported one: a NaN
+        // sentinel here flowed into the context bar, whose `'█'.repeat(NaN)`
+        // renders an empty bar and whose percentage reads "NaN%".
+        const total = num(usage, 'total', Number.NaN)
         document.addUsage({
           input: num(usage, 'input', 0),
           output: num(usage, 'output', 0),
           cacheRead: num(usage, 'cacheRead', 0),
           cacheWrite: num(usage, 'cacheWrite', 0),
-          total: num(usage, 'total', Number.NaN),
+          ...(Number.isFinite(total) ? { total } : {}),
         })
       }
       if (field(data, 'interrupted') === true) {

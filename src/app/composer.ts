@@ -19,7 +19,7 @@ import type { Style } from '../kit/cell.ts'
 import type { Painter } from '../kit/painter.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
-import { charWidth, takeColumns, takeColumnsEnd, textWidth } from '../kit/text.ts'
+import { nextClusterEnd, prevClusterStart, splitUnits, takeColumns, takeColumnsEnd, textWidth } from '../kit/text.ts'
 
 /** A completion the composer can cycle through with Tab. */
 export interface Completion {
@@ -227,10 +227,12 @@ export class Composer implements Widget {
   private indexOfColumn(column: number): number {
     let used = 0
     let index = 0
-    for (const char of this.text) {
-      if (used >= column) return index
-      used += charWidth(char)
-      index += char.length
+    for (const unit of splitUnits(this.text)) {
+      // A column that lands inside a wide cluster snaps to the cluster's start,
+      // so the caret never address the trailer half of a glyph.
+      if (used >= column || used + unit.width > column) return index
+      used += unit.width
+      index += unit.text.length
     }
     return this.text.length
   }
@@ -318,22 +320,26 @@ export class Composer implements Widget {
     switch (plain) {
       case 'backspace':
         if (this.cursor > 0) {
-          this.text = this.text.slice(0, this.cursor - 1) + this.text.slice(this.cursor)
-          this.cursor--
+          // By cluster, not code unit: deleting half a surrogate pair leaves a
+          // lone surrogate that renders as U+FFFD and is submitted verbatim.
+          const start = prevClusterStart(this.text, this.cursor)
+          this.text = this.text.slice(0, start) + this.text.slice(this.cursor)
+          this.cursor = start
           this.options.changed?.(this.text)
         }
         return Consumed.Yes
       case 'delete':
         if (this.cursor < this.text.length) {
-          this.text = this.text.slice(0, this.cursor) + this.text.slice(this.cursor + 1)
+          const end = nextClusterEnd(this.text, this.cursor)
+          this.text = this.text.slice(0, this.cursor) + this.text.slice(end)
           this.options.changed?.(this.text)
         }
         return Consumed.Yes
       case 'left':
-        this.cursor = Math.max(0, this.cursor - 1)
+        this.cursor = prevClusterStart(this.text, this.cursor)
         return Consumed.Yes
       case 'right':
-        this.cursor = Math.min(this.text.length, this.cursor + 1)
+        this.cursor = nextClusterEnd(this.text, this.cursor)
         return Consumed.Yes
       case 'home':
         this.cursor = 0

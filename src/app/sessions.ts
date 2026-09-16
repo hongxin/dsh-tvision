@@ -13,6 +13,8 @@
  * @module @dsh-tvision/dsh-tvision/app/sessions
  */
 
+import { truncate } from '../kit/text.ts'
+
 /** One session as the list needs it. */
 export interface SessionSummary {
   /** The session id, which is also what `--resume` takes. */
@@ -118,7 +120,9 @@ export function sessionLabel(session: SessionSummary): string {
   if (title !== undefined && title !== '') return title
   const prompt = session.firstPrompt?.trim().replace(/\s+/gu, ' ')
   if (prompt !== undefined && prompt !== '') {
-    return prompt.length > 60 ? `${prompt.slice(0, 59)}…` : prompt
+    // By columns, not code units: a UTF-16 cut can split a surrogate pair and
+    // show U+FFFD in a column of otherwise-clean ids.
+    return truncate(prompt, 60)
   }
   return shortId(session.id)
 }

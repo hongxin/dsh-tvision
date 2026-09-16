@@ -307,7 +307,9 @@ export function formatDuration(milliseconds: number): string {
  * @returns The bar, with no colour applied.
  */
 export function pressureBar(ratio: number, width = 10): string {
-  const clamped = Math.max(0, Math.min(1, ratio))
+  // A non-finite ratio (a usage total that never arrived) clamps to empty
+  // rather than propagating NaN into repeat(), which renders nothing at all.
+  const clamped = Number.isFinite(ratio) ? Math.max(0, Math.min(1, ratio)) : 0
   const filled = Math.round(clamped * width)
   return `${'█'.repeat(filled)}${'░'.repeat(width - filled)}`
 }
