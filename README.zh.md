@@ -164,6 +164,20 @@ npm run demo          # 跑 demo
 Tvision_SNAPSHOT=refresh npx vitest run tests/snapshot.spec.ts
 ```
 
+### 在真实终端里验证
+
+模拟器能证明转义序列产生的网格与我们以为的一致，但它证明不了真实终端也同意——更够不到任何交互路径。为此有一套 pty 工具：
+
+```sh
+# 在真实 pty 下驱动 demo，向它敲键、拖拽。
+python3 scripts/pty-drive.py '{"argv":["node","lib/demo.js"],"columns":104,"rows":30,"timeout":8}' > /tmp/capture.bin
+
+# 读回真实终端屏幕上到底是什么。
+npm run verify:pty -- /tmp/capture.bin 104 30
+```
+
+鼠标拖拽、菜单下拉、帮助窗口与真彩配色，就是这样在真实屏幕上（而非模拟器里）确认的。
+
 ### 目录结构
 
 ```

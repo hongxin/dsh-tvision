@@ -8,11 +8,23 @@
  * @module @dsh-tvision/dsh-tvision/kit/cell
  */
 
-/** An ANSI palette index, `0`–`255`. */
+/** An ANSI palette index, `0`–`15`: the colours a terminal theme remaps. */
 export type AnsiColor = number
 
 /** A 24-bit colour, `0xRRGGBB`. */
 export type RgbColor = number
+
+/**
+ * The boundary between the two colour spaces.
+ *
+ * Below it a number is a palette index the terminal's own theme resolves; at or
+ * above it, a 24-bit value. Sixteen rather than 256 because the skins name only
+ * the sixteen remappable colours as indices and everything else as hex — and
+ * because `0x00AAAA`, the Borland cyan, is 43690, which a 256 boundary would
+ * silently read as palette entry 170. That exact confusion is why this constant
+ * exists.
+ */
+export const PALETTE_LIMIT = 16
 
 /**
  * One colour slot. `undefined` means "terminal default", which is not the same

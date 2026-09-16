@@ -10,10 +10,8 @@
  * @module @dsh-tvision/dsh-tvision/kit/styles
  */
 
+import { PALETTE_LIMIT } from './cell.ts'
 import type { AnsiColor, Color, RgbColor, Style, StyleInput } from './cell.ts'
-
-/** A 24-bit colour is at or above this value; ANSI indices are below it. */
-const TRUECOLOR_FLOOR = 0x100
 
 /**
  * Parameters that turn every attribute off and reset both colours to the
@@ -39,16 +37,18 @@ function channels(value: RgbColor): [number, number, number] {
  */
 function colorParams(color: Color, layer: 'fg' | 'bg'): string {
   if (color === undefined) return layer === 'fg' ? '39' : '49'
-  if (color >= TRUECOLOR_FLOOR) {
+  if (color >= PALETTE_LIMIT) {
     const [r, g, b] = channels(color)
+    // Always the explicit 24-bit form. The palette form would be shorter, but it
+    // would also let the terminal's theme pick the colour, which is the one
+    // thing a skin exists to decide.
     return `${layer === 'fg' ? 38 : 48};2;${r};${g};${b}`
   }
   const index = color as AnsiColor
-  // 30-37/40-47 for the base eight, 90-97/100-107 for the bright eight, and
-  // the 256-colour form beyond that.
-  if (index < 8) return String((layer === 'fg' ? 30 : 40) + index)
-  if (index < 16) return String((layer === 'fg' ? 90 : 100) + (index - 8))
-  return `${layer === 'fg' ? 38 : 48};5;${index}`
+  // 30-37/40-47 for the base eight, 90-97/100-107 for the bright eight.
+  return index < 8
+    ? String((layer === 'fg' ? 30 : 40) + index)
+    : String((layer === 'fg' ? 90 : 100) + (index - 8))
 }
 
 /**

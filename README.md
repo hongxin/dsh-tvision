@@ -164,6 +164,23 @@ The tests are worth a note. `tests/compositor.spec.ts` paints frames and replays
 Tvision_SNAPSHOT=refresh npx vitest run tests/snapshot.spec.ts
 ```
 
+### Verifying in a real terminal
+
+The emulator proves the escapes produce the grid we think they do. It cannot prove
+a real terminal agrees, and it cannot reach the interactive paths at all. So there
+is a pty harness for that:
+
+```sh
+# Drive the demo under a real pty, typing and dragging at it.
+python3 scripts/pty-drive.py '{"argv":["node","lib/demo.js"],"columns":104,"rows":30,"timeout":8}' > /tmp/capture.bin
+
+# Read back what the real terminal had on screen.
+npm run verify:pty -- /tmp/capture.bin 104 30
+```
+
+It is how the mouse drag, the menu dropdown, the help window, and the truecolour
+palette were confirmed on a real screen rather than an emulated one.
+
 ### Layout
 
 ```

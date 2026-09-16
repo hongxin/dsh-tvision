@@ -160,8 +160,19 @@ describe('style encoding', () => {
     expect(styleToSgr({ fg: 9, bg: 12 })).toContain('104')
   })
 
-  it('encodes an extended palette index with the 38;5 form', () => {
-    expect(styleToSgr({ fg: 200 })).toContain('38;5;200')
+  it('encodes a value at or above the palette limit as 24-bit', () => {
+    // 200 is a truecolour whose channels are 0, 0, 200 — not palette entry 200.
+    // Getting this boundary wrong is how the Borland cyan (0x00AAAA) came out
+    // purple: it was 43690, read as palette index 170.
+    expect(styleToSgr({ fg: 200 })).toContain('38;2;0;0;200')
+    expect(styleToSgr({ fg: 0x00AAAA })).toContain('38;2;0;170;170')
+  })
+
+  it('keeps a palette index a palette index', () => {
+    // Below the limit the terminal's own theme resolves the colour, which is the
+    // whole point of the ansi skin.
+    expect(styleToSgr({ fg: 4 })).toContain('34')
+    expect(styleToSgr({ fg: 14 })).toContain('96')
   })
 
   it('encodes a truecolour as 38;2', () => {

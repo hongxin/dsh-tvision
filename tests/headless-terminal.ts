@@ -10,7 +10,19 @@
  * @module @dsh-tvision/dsh-tvision/tests/headless-terminal
  */
 
-import { Terminal as XtermTerminal, type IBufferCell, type IBufferLine } from '@xterm/headless'
+import XtermHeadless from '@xterm/headless'
+import type { IBufferCell, IBufferLine, Terminal as XtermTerminalType } from '@xterm/headless'
+
+/**
+ * The emulator constructor.
+ *
+ * `@xterm/headless` is CommonJS with named-export typings, so the named binding a
+ * bundler resolves is not the one raw Node resolves. Taking the default and
+ * destructuring works under both, which is what lets the pty replay script reuse
+ * this harness outside the test runner.
+ */
+const XtermTerminal = (XtermHeadless as unknown as { Terminal: typeof XtermTerminalType }).Terminal
+type XtermTerminal = XtermTerminalType
 
 /** The escape sequence that ends a synchronized-output frame. */
 const FRAME_END = '\u001B[?2026l'

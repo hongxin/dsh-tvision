@@ -17,7 +17,7 @@
  * @module @dsh-tvision/dsh-tvision/kit/screen
  */
 
-import { CellBuffer, styleEquals, type Style } from './cell.ts'
+import { CellBuffer, PALETTE_LIMIT, styleEquals, type Style } from './cell.ts'
 import { isEmptyStyle, SGR_RESET, stylePatch } from './styles.ts'
 
 /** Where the hardware cursor should sit after a frame, in screen coordinates. */
@@ -61,7 +61,9 @@ export function cursorTo(x: number, y: number): string {
  * A skin may name 24-bit colours unconditionally, but a terminal that cannot
  * render them turns `38;2;r;g;b` into garbage. The renderer therefore
  * downgrades every truecolour to the nearest of the 256 palette indices when
- * the environment does not advertise support.
+ * the environment does not advertise support. The four skins that are *not*
+ * `ansi` are entirely 24-bit, so this is the difference between the Borland
+ * blue and whatever a terminal does with an escape it does not understand.
  * @param env - Environment to inspect (defaults to `process.env`).
  * @returns True when 24-bit colour should be emitted.
  */
@@ -129,8 +131,10 @@ export function rgbToAnsi256(rgb: number): number {
  */
 export function resolveStyle(style: Style, truecolor: boolean): Style {
   if (truecolor) return style
-  const fg = style.fg !== undefined && style.fg >= 0x100 ? rgbToAnsi256(style.fg) : style.fg
-  const bg = style.bg !== undefined && style.bg >= 0x100 ? rgbToAnsi256(style.bg) : style.bg
+  // Only the 24-bit half of the colour space needs downgrading; a palette index
+  // is already something a 256-colour terminal can render.
+  const fg = style.fg !== undefined && style.fg >= PALETTE_LIMIT ? rgbToAnsi256(style.fg) : style.fg
+  const bg = style.bg !== undefined && style.bg >= PALETTE_LIMIT ? rgbToAnsi256(style.bg) : style.bg
   if (fg === style.fg && bg === style.bg) return style
   return { ...style, fg, bg }
 }

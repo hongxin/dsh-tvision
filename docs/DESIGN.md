@@ -311,7 +311,15 @@ in the code:
 | `app.spec.ts` | The whole desktop: feed bytes in, assert on the frame. |
 | `app-windows.spec.ts` | The windows the host fills in, including every failure path. |
 | `integration.spec.ts` | Streaming, resize mid-stream, and a burst of mixed input. |
+| `dialogs.spec.ts` | Approval and question dialogs — mostly their *exits*, since a promise that never settles wedges an agent turn. |
 | `snapshot.spec.ts` | Checked-in frames of the whole interface, as ASCII. |
+
+There is also a suite the test runner cannot contain. `scripts/pty-drive.py`
+drives the demo under a real pty with real keystrokes and a real mouse report, and
+`scripts/replay-capture.ts` reads the resulting screen back. That is what verifies
+the parts an emulator cannot: that a real terminal agrees about the palette, that
+a drag moves the window by the pointer's delta, and that the alternate screen and
+the mouse modes are restored on the way out.
 
 The round-trip suite is the one that justifies owning a compositor. Asserting on
 escape strings only proves the escapes are what we expected to write; replaying
@@ -362,6 +370,26 @@ bar, a frame, a shadow, and modal lock from the same code as everything else, so
 Tab, the arrows, a letter, and the mouse all work through one path. It also makes
 the prompt feel like part of the application rather than something painted over
 it.
+
+**Why a colour had two meanings.** `Color` was `number | undefined`, where a
+number below `0x100` was a palette index and one at or above it a 24-bit value.
+Every skin but `ansi` names its colours as hex, and the Borland cyan is
+`0x00AAAA` — 43690, comfortably below `0x100`… except `0x100` is 256, and 43690 is
+not. The check was `>= 0x100`, so 43690 was read as palette entry 170 and every
+window frame rendered purple. The fix is a boundary at 16 rather than 256,
+because the skins only ever use indices `0`–`15`: those are the sixteen a
+terminal's own theme remaps, which is the entire point of the `ansi` skin, and
+everything above is an explicit 24-bit colour.
+
+The lesson is about the test, not the constant. The emulator suite passed
+throughout: it replayed the escapes faithfully and read back exactly the purple
+the bytes described. A renderer test can only prove self-consistency — that the
+grid matches the buffer — and it cannot tell you the buffer picked the wrong
+colour. What found this was running the thing in a real terminal and *looking at
+it*, which is also what confirmed the mouse drag, the dropdown, and the
+alternating-screen teardown. Hence `scripts/pty-drive.py`: a real pty, real
+keystrokes, a real mouse report, and the screen read back by replay so the result
+can be diffed rather than squinted at.
 
 **Why the loader rejected the first patch.** The initial `cordis.patch.yml`
 re-inserted `storage`, `session-reference`, and `tool-ask-user` — all of which

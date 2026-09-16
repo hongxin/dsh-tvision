@@ -28,6 +28,19 @@ npm test
 Tvision_SNAPSHOT=refresh npx vitest run tests/snapshot.spec.ts   # after a visual change
 ```
 
+For anything that touches the renderer, the palette, or input routing, also check
+a real terminal — the emulator cannot tell you a colour came out wrong:
+
+```sh
+python3 scripts/pty-drive.py '{"argv":["node","lib/demo.js"],"columns":104,"rows":30,"timeout":8}' > /tmp/cap.bin
+npm run verify:pty -- /tmp/cap.bin 104 30
+```
+
+This is how the colour-space bug was found: the Borland cyan `0x00AAAA` is 43690,
+which a 256-boundary truecolour check read as palette entry 170, so every window
+frame rendered purple. No emulator test caught it, because the emulator rendered
+whatever it was told; only looking at a real screen did.
+
 The compositor round-trip suite (`tests/compositor.spec.ts`) replays frames into
 a real terminal emulator and compares the grid cell for cell. It is the only
 suite that catches a bug which is invisible in the escape strings, so do not
