@@ -125,6 +125,25 @@ export function splitUnits(text: string): { text: string; width: number }[] {
 }
 
 /**
+ * Insert a hair of space between CJK and Latin/digit runs (盘古之白).
+ *
+ * Mixed Chinese-English text set solid — "第一个token延迟" — is genuinely
+ * harder to read than the same text with a one-space seam, which is why every
+ * Chinese-aware typesetting tool inserts one. A display-layer concern only:
+ * callers apply it to prose they are about to paint, never to code, diffs, or
+ * anything where the characters are data. Existing spaces are respected, so
+ * "第一个 token" is left alone, and fullwidth punctuation already carries its
+ * own spacing so it never gains another.
+ * @param text - The text to spread.
+ * @returns The text with seams inserted.
+ */
+export function spreadCjkLatin(text: string): string {
+  return text
+    .replace(/([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])([A-Za-z0-9])/gu, '$1 $2')
+    .replace(/([A-Za-z0-9])([\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af])/gu, '$1 $2')
+}
+
+/**
  * The string index where the cluster immediately before `index` begins.
  *
  * The unit of editing is the cluster, not the code unit: a caret that steps by

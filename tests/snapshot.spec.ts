@@ -248,7 +248,7 @@ describe('desktop snapshots', () => {
     view.app.document.beginAssistant({ turn: 0, step: 0 }, 10)
     view.app.document.streamChunk(
       { turn: 0, step: 0 },
-      { kind: 'text', text: '解析器在发出任何内容之前会先缓冲整个文档，所以第一个 token 必须等到文件读完。正确的做法是边读边切词，把不完整的词留在缓冲区里等待下一个数据块补全，这样首 token 的延迟就只取决于第一个完整词何时出现，禁则处理保证标点不会落到行首。' },
+      { kind: 'text', text: '解析器在发出任何内容之前会先缓冲整个文档，所以第一个 token 必须等到文件读完。正确的做法是边读边切词，把不完整的词留在缓冲区里等待下一个数据块补全，这样首token的延迟就只取决于第一个完整词何时出现，禁则处理保证标点不会落到行首，中英之间的间隙由显示层补上。' },
       20,
     )
     view.app.document.addToolCall({

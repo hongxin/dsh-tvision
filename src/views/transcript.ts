@@ -34,7 +34,7 @@ import type { Painter } from '../kit/painter.ts'
 import type { MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
-import { takeColumns, textWidth } from '../kit/text.ts'
+import { spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
 import { formatDuration } from '../widgets/statusbar.ts'
 import type { ContentPiece, Entry, SessionDocument } from '../session/model.ts'
 
@@ -481,7 +481,7 @@ function messageRows(
     entryId: entry.id,
     startsEntry: true,
   })
-  for (const line of wrapText(entry.text ?? '', proseWidth(width - 2))) {
+  for (const line of wrapText(spreadCjkLatin(entry.text ?? ''), proseWidth(width - 2))) {
     rows.push({ text: `  ${line}`, gutterStyle, style: bodyStyle, entryId: entry.id })
   }
   void palette
@@ -521,7 +521,7 @@ function assistantRows(
     if (piece.kind === 'reasoning') {
       if (!theme.showReasoning) continue
       const inner = width - 4
-      for (const line of wrapText(piece.text, proseWidth(inner))) {
+      for (const line of wrapText(spreadCjkLatin(piece.text), proseWidth(inner))) {
         rows.push({ text: `  · ${line}`, gutterStyle: palette.reasoning, style: palette.reasoning, entryId: entry.id })
       }
       continue
@@ -548,7 +548,7 @@ function assistantRows(
       })
       continue
     }
-    for (const line of wrapText(piece.text, proseWidth(width - 2))) {
+    for (const line of wrapText(spreadCjkLatin(piece.text), proseWidth(width - 2))) {
       rows.push({ text: `  ${line}`, gutterStyle: palette.assistantLabel, style: palette.bodyText, entryId: entry.id })
     }
   }

@@ -17,6 +17,7 @@ import {
   takeColumnsEnd,
   nextClusterEnd,
   prevClusterStart,
+  spreadCjkLatin,
   textWidth,
   truncate,
 } from '../src/kit/text.ts'
@@ -244,5 +245,20 @@ describe('cluster boundaries', () => {
     expect(nextClusterEnd(text, 1)).toBe(3)
     expect(nextClusterEnd(text, 2)).toBe(3)
     expect(nextClusterEnd(text, 3)).toBe(4)
+  })
+})
+
+describe('cjk/latin seams (盘古之白)', () => {
+  it('inserts one space at each cjk-to-latin boundary, both directions', () => {
+    expect(spreadCjkLatin('解析器在发出任何内容之前会先缓冲整个文档，所以第一个token必须等到文件读完')).toBe(
+      '解析器在发出任何内容之前会先缓冲整个文档，所以第一个 token 必须等到文件读完',
+    )
+    expect(spreadCjkLatin('在src/kit里改了3处')).toBe('在 src/kit 里改了 3 处')
+  })
+
+  it('never doubles an existing space or touches fullwidth punctuation', () => {
+    expect(spreadCjkLatin('第一个 token 延迟')).toBe('第一个 token 延迟')
+    expect(spreadCjkLatin('纯中文，没有英文。')).toBe('纯中文，没有英文。')
+    expect(spreadCjkLatin('pure English prose')).toBe('pure English prose')
   })
 })
