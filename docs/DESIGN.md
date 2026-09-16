@@ -377,12 +377,14 @@ Honest scope, so the gaps are not mistaken for decisions.
   and by `dsh --profile tvision --dump-config`, which composes the tree
   correctly. A real model turn has not been run from this machine because the
   sandbox cannot allocate a pty.
-- **Sessions and Jobs windows are shells.** They open, scroll, and focus; their
-  row sources are not yet wired to the session query and job services.
+- **Sessions and Jobs windows are shells.** They open, scroll, and focus, and
+  their rows can be supplied through `setListRows`; nothing yet reads the session
+  query or job services into them.
 - **No resume-from-the-UI.** `--resume <id>` works; choosing a session from the
   Sessions window does not yet hand the process over.
 - **The Project window does not index files yet.** The `@file` completion in the
-  composer does, because it shares the workspace search.
+  composer does, because it shares the workspace search; the window takes rows
+  through `setListRows`, which is the seam a file index would use.
 - **No plugin-facing overlay API.** The upstream TUI exposes one; this does not
   yet, so a third-party plugin cannot open a window.
 - **Skin persistence.** `--skin` and `F9` work; the choice is not written back to

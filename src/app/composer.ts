@@ -31,8 +31,14 @@ export interface Completion {
   readonly detail?: string
 }
 
-/** Supplies completions for the token under the cursor. */
-export type CompletionSource = (input: string, cursor: number) => readonly Completion[]
+/**
+ * Supplies completions for the token under the cursor.
+ *
+ * The cursor is passed because a source may want it — an `@` reference in the
+ * middle of a sentence needs to know where the token ends — even though the
+ * command and file sources here do not.
+ */
+export type CompletionSource = (token: string, cursor: number) => readonly Completion[]
 
 /** Everything the composer needs from its host. */
 export interface ComposerOptions {
@@ -210,7 +216,6 @@ export class Composer implements Widget {
         painter.text(textWidth(label), index, takeColumns(detail, room), room, style)
       }
     }
-    void painter
   }
 
   /**

@@ -163,10 +163,9 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       return `${options.provider}/${options.model}`
     },
     contextWindow: () => {
-      const meter = ctx.get('tokenMeter')
-      if (meter === undefined) return 0
       // The route's advertised window rides `request/context`, which is absent
-      // until the first request — which reads correctly as "not yet known".
+      // until the first request — which reads correctly as "not yet known" and
+      // hides the pressure bar rather than showing a fabricated one.
       const events = agent.session.snapshotEvents()
       for (let index = events.length - 1; index >= 0; index--) {
         const event = events[index]
@@ -174,7 +173,6 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         const contextWindow = (event.data as { contextWindow?: number }).contextWindow
         if (typeof contextWindow === 'number') return contextWindow
       }
-      void meter
       return 0
     },
     quit(): void {

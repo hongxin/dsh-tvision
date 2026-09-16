@@ -122,7 +122,7 @@ class ScriptedHost implements AppHost {
   }
 
   /** Play the script into the document. */
-  private async play(prompt: string): Promise<void> {
+  private async play(): Promise<void> {
     const document = this.appOf().document
     const now = (): number => Date.now()
     document.setPhase('running', now())
@@ -188,14 +188,14 @@ class ScriptedHost implements AppHost {
     document.endStep({ turn: 0, step }, now())
     document.setPhase('idle', now())
     this.appOf().windows.requestRender()
-    void prompt
   }
 
-  send(text: string): void {
+  send(_text: string): void {
+    // The script is fixed, so the prompt is ignored; a real agent would read it.
     if (this.running) return
     this.running = true
     this.cancelled = false
-    void this.play(text).finally(() => {
+    void this.play().finally(() => {
       this.running = false
     })
   }

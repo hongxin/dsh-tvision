@@ -329,7 +329,7 @@ class TranscriptPane implements Widget {
 class ListWindow implements Widget {
   private offset = 0
   private selected = 0
-  private readonly items: () => readonly { label: string; detail?: string; marker?: string }[]
+  private items: () => readonly { label: string; detail?: string; marker?: string }[]
   private readonly choose: (index: number) => void
   private readonly empty: string
 
@@ -346,6 +346,16 @@ class ListWindow implements Widget {
     this.items = items
     this.choose = choose
     this.empty = empty
+  }
+
+  /**
+   * Swap the row source, for contents that are replaced rather than derived.
+   * @param items - The new source.
+   */
+  setSource(items: () => readonly { label: string; detail?: string; marker?: string }[]): void {
+    this.items = items
+    this.selected = 0
+    this.offset = 0
   }
 
   /**
@@ -455,8 +465,8 @@ export class TvisionApp {
   private readonly decoder = new InputDecoder()
   private readonly renderer: ScreenRenderer
   private readonly lists = new Map<string, ListWindow>()
+  private readonly listRows = new Map<string, readonly { label: string; detail?: string; marker?: string }[]>()
   private skin: Skin
-  private listItems: Record<string, () => readonly { label: string; detail?: string; marker?: string }[]> = {}
   private transient: { text: string; tone: 'info' | 'warning' | 'error'; until: number } | undefined
   private running = false
   private readonly history: string[] = []
@@ -489,7 +499,7 @@ export class TvisionApp {
       {
         submit: (text) => { void this.submit(text) },
         history: () => this.history,
-        complete: (token, cursor) => this.complete(token, cursor),
+        complete: token => this.complete(token),
         prompt: () => this.sigil(),
         placeholder: 'Type a message · / for commands · F1 help · F10 menu',
         changed: () => {
@@ -662,19 +672,28 @@ export class TvisionApp {
     items: () => readonly { label: string; detail?: string; marker?: string }[],
     empty: string,
   ): ListWindow {
-    this.listItems[id] = items
     const widget = new ListWindow(items, index => this.activateListRow(id, index), empty)
     this.lists.set(id, widget)
     return widget
   }
 
   /**
-   * Replace one list window's row source, e.g. when the file index refreshes.
+   * Replace a list window's rows, for a source that changes wholesale — a file
+   * index that finished, a session list that was re-read. The Projects, Sessions
+   * and Jobs windows take their contents this way; Tasks and Conversation read
+   * the session document directly.
    * @param id - The window id.
-   * @param items - The new row source.
+   * @param rows - The new rows.
    */
-  setListItems(id: string, items: () => readonly { label: string; detail?: string; marker?: string }[]): void {
-    this.listItems[id] = items
+  setListRows(id: string, rows: readonly { label: string; detail?: string; marker?: string }[]): void {
+    const widget = this.lists.get(id)
+    if (widget === undefined) {
+      this.notify(`No list window named ${id}.`, 'warning')
+      return
+    }
+    this.listRows.set(id, rows)
+    widget.setSource(() => this.listRows.get(id) ?? [])
+    this.windows.requestRender()
   }
 
   /**
@@ -1028,11 +1047,9 @@ export class TvisionApp {
   /**
    * The composer's completion source: commands after `/`, files after `@`.
    * @param token - The token under the caret.
-   * @param cursor - The caret position.
-   * @returns Completions.
+   * @returns Completions for it.
    */
-  private complete(token: string, cursor: number): readonly Completion[] {
-    void cursor
+  private complete(token: string): readonly Completion[] {
     if (token.startsWith('/')) {
       const prefix = token.slice(1).toLowerCase()
       return (this.options.host.commands?.() ?? [])

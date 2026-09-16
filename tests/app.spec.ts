@@ -737,3 +737,51 @@ describe('host integration points', () => {
     expect(terminal.plain).toContain('No window named nope')
   })
 })
+
+describe('list windows', () => {
+  it('shows rows supplied by the host', () => {
+    const { app } = build()
+    app.start()
+    app.setListRows(WINDOW_IDS.project, [
+      { label: 'src/parser.ts' },
+      { label: 'src/stream.ts', detail: 'modified' },
+    ])
+    app.windows.requestRender()
+    const text = app.windows.paint().lines().join('\n')
+    expect(text).toContain('src/parser.ts')
+    expect(text).toContain('src/stream.ts')
+  })
+
+  it('resets the selection when the rows are replaced', () => {
+    const { app } = build()
+    app.start()
+    app.setListRows(WINDOW_IDS.project, [{ label: 'alpha' }, { label: 'beta' }, { label: 'gamma' }])
+    app.windows.focus(WINDOW_IDS.project)
+    app.feed('\u001B[B')
+    app.feed('\u001B[B')
+    app.setListRows(WINDOW_IDS.project, [{ label: 'only' }])
+    // The old index would be out of range; the widget must not point past the
+    // end, and the old rows must be gone. Assert on the window's own interior
+    // rather than the whole frame, which contains those letters as prose.
+    app.windows.requestRender()
+    const window = app.windows.get(WINDOW_IDS.project)
+    /* c8 ignore next -- the window exists on a wide terminal. */
+    if (window === undefined) throw new Error('no project window')
+    const frame = app.windows.paint()
+    const interior = window.interior
+    let rows = ''
+    for (let row = interior.y; row < interior.y + interior.height; row++) {
+      rows += `${frame.row(row).slice(interior.x, interior.x + interior.width)}\n`
+    }
+    expect(rows).toContain('only')
+    expect(rows).not.toContain('alpha')
+  })
+
+  it('warns about rows for a window that does not exist', () => {
+    const { app, terminal } = build()
+    app.start()
+    app.setListRows('nope', [{ label: 'x' }])
+    app.frame()
+    expect(terminal.plain).toContain('No list window named nope')
+  })
+})
