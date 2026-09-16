@@ -121,10 +121,14 @@ export function frameHitTest(
   const right = rect.width - 1
   const bottom = rect.height - 1
   if (localY === 0) {
-    if (options.closable) {
-      // The boxes are the two rightmost title-bar cells.
-      if (localX === right) return 'zoom'
-      if (localX === right - 2) return 'system'
+    // The boxes are painted as three-cell groups — ` ≡ ` ending at right-3 and
+    // ` ▲ ` ending at the corner — and a hit test that disagrees with the
+    // painter is worse than no hit test: clicking the drawn glyph must be the
+    // action the glyph announces, not the one two cells over. Below ten columns
+    // the painter drops the boxes, so the hit test must too.
+    if (options.closable && rect.width >= 10) {
+      if (localX >= right - 2) return 'zoom'
+      if (localX >= right - 5) return 'system'
     }
     return 'title'
   }

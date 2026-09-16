@@ -74,6 +74,14 @@ export interface WindowSpec {
    * every time a normal window is focused.
    */
   readonly floating?: boolean
+  /**
+   * Called once when the window is closed, after its state is updated.
+   *
+   * This is how a modal dialog learns it was dismissed by its system box or the
+   * Window menu: without a callback here, the window can close while the
+   * promise behind it stays pending forever, which is a wedged agent turn.
+   */
+  readonly onClose?: () => void
 }
 
 /**
@@ -99,6 +107,8 @@ export class Window {
   readonly scrollable: boolean
   /** Whether the window floats above normal windows. */
   readonly floating: boolean
+  /** Called once when this window closes; see {@link WindowSpec.onClose}. */
+  readonly onClose: (() => void) | undefined
   /** True after the user closed it; the manager skips it until re-opened. */
   closed = false
   /**
@@ -129,6 +139,7 @@ export class Window {
     this.resizable = spec.resizable ?? true
     this.scrollable = spec.scrollable ?? false
     this.floating = spec.floating ?? false
+    this.onClose = spec.onClose
   }
 
   /** Whether the window is currently zoomed to fill the desktop. */
@@ -568,11 +579,16 @@ export class WindowManager {
     const window = this.windows.find(candidate => candidate.id === id)
     if (window === undefined || window.closed) return false
     window.closed = true
+    // Closing the modal window ends the modal lock. Without this the dangling
+    // id swallowed every later click on every window and re-pinned focus to a
+    // window that no longer exists — a desktop wedged by its own close box.
+    if (this.modalId === id) this.modalId = undefined
     if (this.activeId === id) {
       // Hand focus to the topmost remaining window, the way a real desktop does.
       const next = this.orderedWindows().filter(candidate => !candidate.closed && candidate.id !== id).pop()
       this.activeId = next?.id
     }
+    window.onClose?.()
     this.requestRender()
     return true
   }
@@ -639,8 +655,10 @@ export class WindowManager {
     }
     // A modal dialog holds the keyboard until it is dismissed; clicking another
     // window must not steal it, or an approval prompt could be answered by
-    // accident.
-    if (this.modalId !== undefined && this.modalId !== id) {
+    // accident. A modal id whose window is gone is not a lock, it is a leak —
+    // treat it as no modal at all.
+    const modal = this.modalId === undefined ? undefined : this.get(this.modalId)
+    if (modal !== undefined && !modal.closed && this.modalId !== id) {
       this.activeId = this.modalId
       return
     }

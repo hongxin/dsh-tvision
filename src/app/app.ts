@@ -1418,7 +1418,9 @@ export class TvisionApp {
       height,
     }
     // A second dialog replaces the first as modal, and the first is settled by
-    // its own dismissal path rather than left holding the keyboard.
+    // its own dismissal path rather than left holding the keyboard. Closing the
+    // window itself — the system box, the Window menu — must settle the promise
+    // too, or the agent turn that asked waits forever on an answered dialog.
     this.windows.open({
       id,
       title: spec.title,
@@ -1427,6 +1429,7 @@ export class TvisionApp {
       closable: true,
       resizable: true,
       floating: true,
+      onClose: () => dialog.settle({ dismissed: true }),
     })
     this.windows.setModal(id)
     this.windows.requestRender()

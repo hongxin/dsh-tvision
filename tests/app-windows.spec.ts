@@ -274,3 +274,29 @@ describe('the Project window', () => {
     expect(view.app.windows.get(WINDOW_IDS.project)?.title).toBe('Project — 40 files')
   })
 })
+
+describe('closing a dialog window by its system box', () => {
+  it('settles the ask promise and leaves the desktop alive', async () => {
+    const { app } = build()
+    app.start()
+    const asked = app.ask({
+      title: 'Approval required',
+      question: 'Allow bash to run?',
+      choices: [
+        { value: 'allow', label: 'Allow once' },
+        { value: 'deny', label: 'Deny' },
+      ],
+    })
+    app.frame()
+    // The dialog window is floating and centered; close it the way a user does,
+    // through the painted system box.
+    const dialog = app.windows.all().find(window => window.title === 'Approval required')
+    if (dialog === undefined) throw new Error('the dialog window never opened')
+    app.feed(`\u001B[<0;${dialog.rect.x + dialog.rect.width - 4};${dialog.rect.y + 1}M`)
+    await expect(asked).resolves.toBeUndefined()
+    // And the desktop it leaves behind still takes input.
+    app.windows.focus(WINDOW_IDS.transcript)
+    app.feed('hi')
+    expect(app.composer.value).toBe('hi')
+  })
+})

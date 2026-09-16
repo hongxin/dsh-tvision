@@ -270,8 +270,8 @@ describe('system and zoom boxes', () => {
   it('closes the window from the system box', () => {
     const manager = makeManager()
     openWindow(manager, 'a', new SpyWidget(), rect(5, 3, 30, 10))
-    // The system box is three cells in from the right of the title bar.
-    manager.handle(press(5 + 30 - 3, 3))
+    // The painted ≡ glyph sits at right-4, inside the box's three cells.
+    manager.handle(press(5 + 30 - 5, 3))
     expect(manager.isOpen('a')).toBe(false)
   })
 
@@ -450,7 +450,7 @@ describe('frame hit testing', () => {
   it('classifies the title bar, boxes, borders, grip, and interior', () => {
     expect(frameHitTest(options, 10, 2)).toBe('title')
     expect(frameHitTest(options, 2 + 20 - 1, 2)).toBe('zoom')
-    expect(frameHitTest(options, 2 + 20 - 3, 2)).toBe('system')
+    expect(frameHitTest(options, 2 + 20 - 5, 2)).toBe('system')
     expect(frameHitTest(options, 2, 5)).toBe('border')
     expect(frameHitTest(options, 2 + 19, 5)).toBe('border')
     expect(frameHitTest(options, 2 + 19 - 1, 2 + 7)).toBe('grip')
@@ -608,5 +608,66 @@ describe('skins', () => {
       if (style.fg !== undefined) expect(style.fg).toBeLessThan(16)
       if (style.bg !== undefined) expect(style.bg).toBeLessThan(16)
     }
+  })
+})
+
+describe('chrome hit zones agree with the paint', () => {
+  it('hits the drawn glyphs, derived from the painted frame itself', () => {
+    // The coordinates elsewhere in this file are written by hand; this test
+    // derives them from what drawFrame actually painted, so a future change to
+    // the box geometry fails here rather than stranding the glyphs outside
+    // their hit zones — the exact two-cell drift this replaces.
+    const manager = makeManager()
+    manager.open({
+      id: 'a', title: 'A', rect: rect(5, 3, 30, 10), widget: new SpyWidget(),
+      closable: true, floating: true,
+    })
+    const frame = manager.paint()
+    const titleRow = frame.row(3)
+    const glyphs = { system: -1, zoom: -1 }
+    for (let column = 5; column < 35; column++) {
+      const char = titleRow[column]
+      if (char === '\u2261') glyphs.system = column
+      if (char === '\u25b2') glyphs.zoom = column
+    }
+    expect(glyphs.system).toBeGreaterThanOrEqual(0)
+    expect(glyphs.zoom).toBeGreaterThanOrEqual(0)
+    const options = { rect: rect(5, 3, 30, 10), closable: true, resizable: true, scrollbar: undefined }
+    expect(frameHitTest(options, glyphs.system, 3)).toBe('system')
+    expect(frameHitTest(options, glyphs.zoom, 3)).toBe('zoom')
+  })
+})
+
+describe('closing a modal window', () => {
+  it('releases the modal lock, the mouse, and the keyboard', () => {
+    const manager = makeManager()
+    openWindow(manager, 'base', new SpyWidget(), rect(2, 2, 40, 12))
+    manager.open({
+      id: 'dialog', title: 'D', rect: rect(10, 5, 20, 6), widget: new SpyWidget(),
+      closable: true, floating: true,
+    })
+    manager.setModal('dialog')
+    // The system box click that used to wedge the desktop.
+    manager.handle(press(10 + 20 - 5, 5))
+    expect(manager.isOpen('dialog')).toBe(false)
+    expect(manager.modalWindowId).toBeUndefined()
+    // The mouse reaches another window again…
+    manager.handle(press(6, 2))
+    expect(manager.activeWindowId).toBe('base')
+    // …and so does the window cycle.
+    manager.cycle(1)
+    expect(manager.activeWindowId).not.toBe('dialog')
+  })
+
+  it('notifies onClose exactly once', () => {
+    const manager = makeManager()
+    let closed = 0
+    manager.open({
+      id: 'a', title: 'A', rect: rect(2, 2, 20, 6), widget: new SpyWidget(),
+      onClose: () => { closed++ },
+    })
+    manager.close('a')
+    manager.close('a')
+    expect(closed).toBe(1)
   })
 })
