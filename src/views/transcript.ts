@@ -703,6 +703,58 @@ export function prettyJson(args: string): string {
 }
 
 /**
+ * Punctuation that must not begin a line (kinsoku shori, 禁则处理).
+ *
+ * Chinese typesetting treats these as bound to the text before them; a line
+ * starting with a comma or a full stop reads as broken to anyone who reads
+ * Chinese fluently, and CJK prose is most of what a DeepSeek transcript holds.
+ */
+const NO_LINE_START = new Set([...'，。、！？；：）］」』》〉·…—～％』'])
+
+/** Brackets that must not be stranded at the end of a line. */
+const NO_LINE_END = new Set([...'（［「『《〈‘“'])
+
+/**
+ * Cut `rest` to `width` columns without violating the kinsoku rules.
+ *
+ * A cut that would leave closing punctuation at the start of the next line, or
+ * an opening bracket at the end of this one, is pulled back by whole glyphs —
+ * the punctuation travels with its neighbour and the line simply ends a column
+ * or two early. Width is never exceeded, so the frame cannot overflow.
+ * @param rest - The text to cut.
+ * @param width - The column budget.
+ * @returns The longest prefix that may end a line.
+ */
+function cutRespectingKinsoku(rest: string, width: number): string {
+  let head = takeColumns(rest, width)
+  // Bounded by the head's glyph count: each pull shortens it by at least one
+  // glyph, and at `''` there is nothing left to move.
+  for (;;) {
+    const nextStart = [...rest.slice(head.length)][0]
+    if (nextStart !== undefined && NO_LINE_START.has(nextStart)) {
+      head = dropLastGlyph(head)
+      if (head === '') return takeColumns(rest, width)
+      continue
+    }
+    const last = head.at(-1)
+    if (last !== undefined && NO_LINE_END.has(last)) {
+      head = dropLastGlyph(head)
+      if (head === '') return takeColumns(rest, width)
+      continue
+    }
+    return head
+  }
+}
+
+/** The string minus its final glyph, by columns. */
+function dropLastGlyph(text: string): string {
+  if (text === '') return text
+  const width = textWidth(text)
+  const last = textWidth(text.at(-1) ?? '')
+  return takeColumns(text, Math.max(0, width - Math.max(1, last)))
+}
+
+/**
  * Wrap text to a column budget, honouring explicit newlines and never splitting
  * a wide glyph.
  * @param text - The text.
@@ -729,13 +781,15 @@ export function wrapText(text: string, width: number): string[] {
         if (/^\s+$/u.test(word)) continue
       }
       // A single word longer than the line has to be cut, or it would overflow
-      // the window and corrupt the frame.
+      // the window and corrupt the frame. This is also the path Chinese prose
+      // takes: a run of CJK has no spaces, so a paragraph arrives as one word
+      // and is cut at fixed columns — which, unchecked, leaves closing
+      // punctuation at the start of the next line.
       if (wordWidth > width && line === '') {
         let rest = word
         while (textWidth(rest) > width) {
-          const head = takeColumns(rest, width)
-          out.push(head)
-          rest = rest.slice(head.length)
+          out.push(cutRespectingKinsoku(rest, width))
+          rest = rest.slice(out[out.length - 1]?.length ?? 0)
         }
         line = rest
         continue

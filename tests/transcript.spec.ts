@@ -13,6 +13,7 @@ import { CellBuffer, rect } from '../src/kit/cell.ts'
 import { Painter } from '../src/kit/painter.ts'
 import { TURBO_VISION, resolvePalette } from '../src/kit/skin.ts'
 import { Consumed } from '../src/kit/widget.ts'
+import { textWidth } from '../src/kit/text.ts'
 import { SessionDocument, readContentBlocks, splitFencedCode } from '../src/session/model.ts'
 import { foldEvent } from '../src/app/events.ts'
 import {
@@ -630,5 +631,26 @@ describe('echoed user messages', () => {
     const users = document.all.filter(entry => entry.kind === 'user')
     expect(users).toHaveLength(2)
     expect(users.map(entry => entry.text)).toEqual(['hello', 'a different message'])
+  })
+})
+
+describe('kinsoku (禁則) wrapping', () => {
+  /** No line may start with closing punctuation or end with an opener. */
+  const clean = (lines: string[]): boolean =>
+    lines.every(line => !/^[，。、！？；：）」』…]/u.test(line) && !/[（「『]$/u.test(line))
+
+  it('never leaves closing punctuation at the start of a line, at any width', () => {
+    const paragraph = '这个解析器把整个文档读入内存之后才开始输出第一个token，所以首token的延迟不会低于整个文件的读取时间。正确的做法是边读边切词，把不完整的词留在缓冲区里等待下一个chunk补全。另外，缓冲区还需要处理词边界跨越chunk的情况。'
+    for (let width = 20; width <= 78; width++) {
+      const lines = wrapText(paragraph, width)
+      expect(lines.every(line => line !== ''), `width ${width}`).toBe(true)
+      expect(clean(lines), `width ${width}: ${lines.filter(l => /^[，。、]/u.test(l)).join('/')}`).toBe(true)
+      for (const line of lines) expect(textWidth(line) <= width, `width ${width}`).toBe(true)
+    }
+  })
+
+  it('keeps an opening bracket with the text that follows it', () => {
+    const lines = wrapText('这里有一个很长的前置说明文字用来撑满行宽然后出现括号（括号里有内容）后续文字继续撑宽度继续撑宽度继续撑', 20)
+    expect(clean(lines)).toBe(true)
   })
 })
