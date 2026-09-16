@@ -1,0 +1,72 @@
+# @dsh-tvision/dsh-tvision — a character-cell window manager for DeepSeek
+# Harness agents, as a bundle patch layer over @deepseek-ai/dsh-base.
+#
+# A patch replaces the targeted row's whole `config`, so each overridden row below
+# restates every key it owns. Later layers (the profile's own cordis.patch.yml,
+# $DSH_HOME/cordis.patch.yml, and any --patch overlay) re-patch these rows, which
+# is where a deployment repoints the model route or the DeepSeek endpoint.
+
+# ── base rows this surface overrides ────────────────────────────────────────
+
+# `main` is the agent the desktop drives. Its session identity (a fresh UUID or
+# the `--resume` id) is fixed by the tvision-startup row through the
+# configuredAgentIdentities slot; `inject` makes this row wait for it.
+- id: agent-loop
+  inject: [tvisionStartup]
+  config:
+    agents:
+      - id: main
+        provider: deepseek-official
+        model: deepseek-flash
+        cwd: !!js process.cwd()
+
+# Keep the persona to identity and behaviour; the tool plugins own tool
+# guidance. The loop resolves {{model}} from this agent's configuration.
+- id: system-prompt
+  config:
+    persona: |
+      You are a coding agent powered by the {{model}} model.
+
+      Verify your work by running the code or tests. Keep answers brief and
+      factual.
+
+# Full thinking at max effort on every request. The key and endpoint stay
+# unconfigured here: both resolve per request from the `llm-deepseek:` settings
+# section, the credential store, and $DEEPSEEK_BASE_URL.
+- id: llm-deepseek
+  config:
+    thinking: enabled
+    reasoningEffort: max
+
+# ── tvision-only rows ───────────────────────────────────────────────────────
+#
+# Only rows `@deepseek-ai/dsh-base` does not already provide appear here. That is
+# not a style preference: the loader rejects a duplicate id outright, so
+# re-inserting `storage`, `session-reference`, or `tool-ask-user` — all of which
+# base already mounts — makes the whole profile fail to boot. The patch was
+# checked against `dsh --profile tvision --dump-default-config`.
+
+- insert:
+    # Command-line intake and session identity for the rows above.
+    - id: tvision-startup
+      name: '@dsh-tvision/dsh-tvision/startup'
+
+    # Named display fragments the prompt and status line interpolate.
+    - id: tvision-prompt
+      name: '@dsh-tvision/dsh-tvision/prompt'
+
+    # The desktop itself. It renders exactly the agent the agent-loop row bound,
+    # so it reads the startup-owned identity rather than restating one.
+    #
+    # Every name a `!!js` expression reads from `ctx` must be listed in `inject`:
+    # the loader evaluates the expression with only the injected services
+    # resolved, and reading anything else throws
+    # "cannot get property ... without inject" at boot.
+    - id: tvision
+      name: '@dsh-tvision/dsh-tvision'
+      inject: [tvisionStartup, tvisionGoodbyeMessage]
+      config:
+        sessionId: !!js ctx.tvisionStartup.sessionId
+        skin: !!js ctx.tvisionStartup.skin
+        mouse: !!js ctx.tvisionStartup.mouse
+        goodbye: !!js ctx.tvisionGoodbyeMessage

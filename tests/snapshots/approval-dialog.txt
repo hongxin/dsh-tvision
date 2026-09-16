@@ -1,0 +1,26 @@
+  File  View  Agent  Tools  Window  Help                                           dsh tvision
+┌┤                         Conversation                         ─├─┐┌┤       Project        ─├─┐
+│                                                                  │                           │
+│        ╔╡                         Approval required                          ═╞ ≡  ▲         │
+│        ║bash: writes outside the workspace                                          ║        │
+│        ║                                                                            ║        │
+│        ║────────────────────────────────────────────────────────────────────────────║        │
+│        ║ The agent asked to run a tool that needs your decision.                    ║        │
+│        ║                                                                            ║        │
+│        ║ tool: bash                                                                 ║        │
+│        ║                                                                            ║        │
+│        ║ reason: writes outside the workspace                                       ║     ─├─┐
+│        ║                                                                            ║        │
+│        ║ Y allows this call only. The grant is one-shot by design: the harness      ║        │
+│        ║ records the decision in the session log and asks again next time.          ║        │
+│        ║─ ↓ more ───────────────────────────────────────────────────────────────────║        │
+│        ║                                                                            ║        │
+│        ║                                                                            ║        │
+│        ║                            Allow once      Deny                            ║        │
+│        ║Run this one call; ask again next time.                                     ║        │
+│        ╚═══════════════════════════════════════════════════════════════════════════⋮╝        │
+│                                                                                        ─────⋮┘
+│                                                                  │
+└─────────────────────────────────────────────────────────────────⋮┘  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+                      │ F10 menu │ 4 win │ ░░░░░░ 0% │ ↑0 ↓0 │ deepseek-official/deepseek-flash
+F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next      F7 Project

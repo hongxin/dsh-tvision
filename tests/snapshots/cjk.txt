@@ -1,0 +1,24 @@
+  File  View  Agent  Tools  Window  Help                                               dsh tvision
+╔╡                           Conversation                           ═╞═╗┌┤       Project        ─├─┐
+║> You                                                                 ║  o project files indexed …│
+║  为什么第一个 token 这么慢？                                         ║                           │
+║                                                                      ║                           │
+║| Agent …                                                             ║                           │
+║  解析器在发出任何内容之前会先缓冲整个文档，所以第一个 token          ║                           │
+║  必须等到文件读完。                                                  ║                           │
+║                                                                      ║                           │
+║~ bash  npm test -- parser                                            ║                           │
+║  ok ▸                                                                ║          Tasks         ─├─┐
+║                                                                      ║  o tasks yet.             │
+║                                                                      ║                           │
+║                                                                      ║                           │
+║                                                                      ║                           │
+║                                                                      ║                           │
+║                                                                      ║                           │
+║                                                                      ║                           │
+║──────────────────────────────────────────────────────────────────────║                           │
+║                                                                      ║  ────────────────────────⋮┘
+║dsh> Type a message · / for commands · F1 help · F10 menu             ║
+╚═════════════════════════════════════════════════════════════════════⋮╝  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+                          │ F10 menu │ 3 win │ ░░░░░░ 0% │ ↑0 ↓0 │ deepseek-official/deepseek-flash
+F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next       F7 Project
