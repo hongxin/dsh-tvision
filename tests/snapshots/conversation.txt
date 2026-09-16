@@ -4,11 +4,11 @@
 ║  why is the first token so slow?                                     ║                           │
 ║                                                                      ║                           │
 ║| Agent · 1.4s                                                        ║                           │
-║  The parser buffers the whole document before it emits anything.     ║                           │
+║  The parser buffers the whole document before it emits               ║                           │
+║  anything.                                                           ║                           │
 ║                                                                      ║                           │
 ║~ bash  npm test -- parser                                            ║                           │
 ║  ok ▸                                                                ║                           │
-║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║          Tasks         ─├─┐

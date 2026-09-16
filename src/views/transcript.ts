@@ -439,6 +439,22 @@ function entryRows(
 }
 
 /**
+ * The widest column prose is wrapped to, however wide the window is.
+ *
+ * A reading measure, not a frame limit: a full-width transcript on a wide
+ * terminal runs to fifty characters of Chinese per line, which is a wall of
+ * text rather than a paragraph. Tool cards, code blocks, and diffs keep the
+ * whole interior — their content is shape-bearing and the frames exist to be
+ * filled. Sixty columns is the classic comfortable measure, ~30 CJK glyphs.
+ */
+const PROSE_MAX_COLUMNS = 60
+
+/** Wrap prose at the measure or the available width, whichever is smaller. */
+function proseWidth(available: number): number {
+  return Math.min(available, PROSE_MAX_COLUMNS)
+}
+
+/**
  * A simple gutter-plus-prose entry.
  * @param entry - The entry.
  * @param width - Body width.
@@ -465,7 +481,7 @@ function messageRows(
     entryId: entry.id,
     startsEntry: true,
   })
-  for (const line of wrapText(entry.text ?? '', width - 2)) {
+  for (const line of wrapText(entry.text ?? '', proseWidth(width - 2))) {
     rows.push({ text: `  ${line}`, gutterStyle, style: bodyStyle, entryId: entry.id })
   }
   void palette
@@ -505,7 +521,7 @@ function assistantRows(
     if (piece.kind === 'reasoning') {
       if (!theme.showReasoning) continue
       const inner = width - 4
-      for (const line of wrapText(piece.text, inner)) {
+      for (const line of wrapText(piece.text, proseWidth(inner))) {
         rows.push({ text: `  · ${line}`, gutterStyle: palette.reasoning, style: palette.reasoning, entryId: entry.id })
       }
       continue
@@ -532,7 +548,7 @@ function assistantRows(
       })
       continue
     }
-    for (const line of wrapText(piece.text, width - 2)) {
+    for (const line of wrapText(piece.text, proseWidth(width - 2))) {
       rows.push({ text: `  ${line}`, gutterStyle: palette.assistantLabel, style: palette.bodyText, entryId: entry.id })
     }
   }
