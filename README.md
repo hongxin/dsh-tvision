@@ -193,6 +193,19 @@ npx vitest run tests/sweep.spec.ts                      # check the captures
 It reads `.tools/sweep.json` and skips itself when that file is absent, so the
 suite stays green on a machine that cannot allocate a pty.
 
+### Found a bug?
+
+Run the report tool, use tvision as you normally would, then quit with `Ctrl+Q`:
+
+```sh
+python3 scripts/tv-report.py
+```
+
+It writes `.tools/report-<timestamp>.txt` holding your terminal's size, the
+environment the app read, the final screen replayed as text, and the raw byte
+stream — which is enough to see the bug without a description of it. `Ctrl+C`
+exits the tool early.
+
 ### Layout
 
 ```

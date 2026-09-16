@@ -58,7 +58,9 @@
     "test": "vitest run",
     "prepare": "tsdown",
     "demo": "node lib/demo.js",
-    "verify:pty": "node --experimental-strip-types scripts/replay-capture.ts"
+    "verify:pty": "node --experimental-strip-types scripts/replay-capture.ts",
+    "sweep:pty": "python3 scripts/pty-sweep.py",
+    "report": "python3 scripts/tv-report.py"
   },
   "engines": {
     "node": "^22.19 || >=24"
