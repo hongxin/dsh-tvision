@@ -231,6 +231,11 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         summary: project.summary(),
       }
     },
+    // The `@file` completion reads the same index the Project window shows, so
+    // the two can never disagree about what exists. Without this the Tab
+    // completion is silently dead in production — the demo supplies its own
+    // list, which is why the gap did not show there.
+    files: (prefix: string): readonly string[] => project.complete(prefix),
     quit(): void {
       if (quitting) return
       quitting = true
