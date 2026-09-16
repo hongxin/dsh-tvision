@@ -18,6 +18,7 @@ import {
   resolveStyle,
 } from '../src/kit/screen.ts'
 import { isEmptyStyle, normalizeStyle, stylePatch, styleToSgr } from '../src/kit/styles.ts'
+import { Painter } from '../src/kit/painter.ts'
 
 describe('CellBuffer', () => {
   it('starts blank at the requested size', () => {
@@ -342,5 +343,47 @@ describe('ScreenRenderer', () => {
   it('omits mouse modes when mouse support is disabled', () => {
     expect(ScreenRenderer.enter({ mouse: false })).not.toContain('1006')
     expect(ScreenRenderer.leave({ mouse: false })).not.toContain('1006')
+  })
+})
+
+describe('painting multi-codepoint clusters', () => {
+  /** A painter rooted at column 4, so a local/absolute mix-up shows. */
+  const offsetPainter = (width: number): { painter: Painter; buffer: CellBuffer } => {
+    const buffer = new CellBuffer(width + 4, 1)
+    const painter = new Painter(buffer, rect(4, 0, width, 1))
+    return { painter, buffer }
+  }
+
+  it('paints a skin-tone emoji as one glyph in two columns', () => {
+    // Measured as 4 columns for the pair below; painting per code point drew
+    // four columns instead, dropping whatever followed.
+    const { painter, buffer } = offsetPainter(6)
+    painter.text(0, 0, '\u{1F44D}\u{1F3FD} hi', 6, {})
+    // The row includes the four columns before the painter's region; the
+    // painted part must reproduce the original text exactly, which is the
+    // join-the-row-back invariant the wide/trailer pair exists to keep.
+    const row = buffer.row(0).slice(4)
+    expect(row.startsWith('\u{1F44D}\u{1F3FD} hi')).toBe(true)
+    expect(buffer.at(4, 0)?.wide).toBe(true)
+    expect(buffer.at(5, 0)?.char).toBe('')
+  })
+
+  it('paints a ZWJ family as one glyph, not three', () => {
+    const { painter, buffer } = offsetPainter(4)
+    painter.text(0, 0, '\u{1F468}\u200D\u{1F469}\u200D\u{1F466}', 4, {})
+    const row = buffer.row(0).slice(4)
+    expect(row.startsWith('\u{1F468}\u200D\u{1F469}\u200D\u{1F466}')).toBe(true)
+    expect(buffer.at(4, 0)?.wide).toBe(true)
+    expect(buffer.at(5, 0)?.char).toBe('')
+  })
+
+  it('attaches a combining mark to the cell inside the region, in buffer coordinates', () => {
+    // The bug appended the accent to absolute column 0 — thirty columns away in
+    // a real desktop — because the local column was used as a buffer x.
+    const { painter, buffer } = offsetPainter(4)
+    buffer.set(0, 0, 'X', {})
+    painter.text(0, 0, 'e\u0301', 4, {})
+    expect(buffer.at(0, 0)?.char).toBe('X')
+    expect(buffer.at(4, 0)?.char).toBe('e\u0301')
   })
 })

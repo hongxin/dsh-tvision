@@ -205,3 +205,24 @@ describe('expandTabs', () => {
     expect(expandTabs('字\tx')).toBe('字      x')
   })
 })
+
+describe('symbol clusters', () => {
+  it('measures a bare ambiguous symbol as one column', () => {
+    // The old rule forced two columns on any cluster containing a symbol from
+    // the emoji blocks, while charWidth and the painter both said one — every
+    // such glyph shifted its row. A bare check mark is text presentation.
+    expect(textWidth('\u2713 done')).toBe(6)
+    expect(clusterWidth('\u2713')).toBe(1)
+    expect(clusterWidth('\u2605')).toBe(1)
+  })
+
+  it('measures an explicit emoji-presentation request as two columns', () => {
+    expect(clusterWidth('\u2713\uFE0F')).toBe(2)
+    expect(clusterWidth('1\uFE0F\u20E3')).toBe(2)
+  })
+
+  it('measures an unpaired regional indicator as narrow', () => {
+    expect(clusterWidth('\u{1F1E9}')).toBe(1)
+    expect(clusterWidth('\u{1F1E9}\u{1F1EA}')).toBe(2)
+  })
+})

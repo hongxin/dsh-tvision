@@ -34,8 +34,8 @@ const SEGMENTER: Intl.Segmenter | undefined = typeof Intl.Segmenter === 'functio
   ? new Intl.Segmenter(undefined, { granularity: 'grapheme' })
   : undefined
 
-/** Whether a cluster is an emoji presentation sequence, which is always two columns. */
-const EMOJI_CLUSTER = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{20E3}]/u
+/** Whether a cluster requests emoji presentation (a variation selector-16), which is always two columns. */
+const EMOJI_PRESENTATION = /\uFE0F/u
 
 /** Whether a cluster is a regional-indicator pair (a flag), which is two columns. */
 const FLAG_CLUSTER = /^[\u{1F1E6}-\u{1F1FF}]{2}$/u
@@ -78,10 +78,14 @@ export function charWidth(char: string): number {
  */
 export function clusterWidth(cluster: string): number {
   if (cluster === '') return 0
-  if (FLAG_CLUSTER.test(cluster)) return 2
-  if (EMOJI_CLUSTER.test(cluster)) return 2
-  // A cluster with a doubled base (a ZWJ sequence, a base plus a wide
-  // combining mark) is still one glyph; take the widest single code point.
+  // Two columns come from exactly two things: an explicit emoji-presentation
+  // request (VS16 turns `✓` into `✓️` and `1` into `1️⃣`), or a flag pair.
+  // Everything else defers to the East Asian width of its code points — the
+  // same table charWidth reads, so the two authorities cannot disagree. The old
+  // blanket rule (any cluster merely *containing* a symbol from the emoji
+  // blocks is wide) measured bare `✓` and `★` at two columns while the painter
+  // drew them in one, shifting every later cell on the row.
+  if (FLAG_CLUSTER.test(cluster) || EMOJI_PRESENTATION.test(cluster)) return 2
   let widest = 0
   for (const char of cluster) widest = Math.max(widest, charWidth(char))
   // Every code point zero-width means the whole cluster is invisible.

@@ -11,7 +11,7 @@
  */
 
 import { CellBuffer, type Rect, type Style } from './cell.ts'
-import { charWidth, takeColumns, textWidth } from './text.ts'
+import { charWidth, clusterWidth, splitUnits, takeColumns, textWidth } from './text.ts'
 
 /** How to place text that does not fill its cell in {@link Painter.text}. */
 export type Align = 'left' | 'center' | 'right'
@@ -214,7 +214,6 @@ export class Painter {
     for (let column = 0; column < width; column++) {
       this.set(localX + column, localY, ' ', padStyle)
     }
-    if (width <= 0) return
     let cellText = text
     if (!fits) {
       const useEllipsis = options.ellipsis ?? true
@@ -226,17 +225,24 @@ export class Painter {
     else if (align === 'right') offset = Math.max(0, width - cellWidth)
     let column = localX + offset
     const limit = localX + width
-    for (const char of cellText) {
-      const charCols = charWidth(char)
-      if (charCols === 0) {
-        // A combining mark attaches to the previous cell; append it in place.
-        const previous = this.target.at(column - 1, this.y + localY)
-        if (previous !== undefined) previous.char += char
+    // Paint one *cluster* per advance, the same unit textWidth measured — a
+    // loop over code points paints 👍🏽 as two glyphs in four columns while the
+    // measurement budgeted two, and everything after it on the row shifts.
+    for (const unit of splitUnits(cellText)) {
+      if (unit.width === 0) {
+        // A zero-width mark attaches to the previous cell — in *buffer*
+        // coordinates, or it lands in another window's cell entirely. A mark
+        // with nothing to attach to (the very first column) is dropped:
+        // appending through the clip boundary would corrupt a neighbour, and a
+        // baseless mark cannot render anyway.
+        if (column <= localX) continue
+        const previous = this.target.at(this.x + column - 1, this.y + localY)
+        if (previous !== undefined) previous.char += unit.text
         continue
       }
-      if (column + charCols > limit) break
-      this.set(column, localY, char, style)
-      column += charCols
+      if (column + unit.width > limit) break
+      this.set(column, localY, unit.text, style)
+      column += unit.width
     }
   }
 
@@ -254,7 +260,11 @@ export class Painter {
    */
   set(localX: number, localY: number, char: string, style: Style): void {
     if (!this.contains(localX, localY)) return
-    const wide = charWidth(char) === 2
+    // clusterWidth, not charWidth: a cluster like `1️⃣` has a narrow base code
+    // point but occupies two columns, and measuring it by its base would store
+    // an unflagged lead while the caller advanced two — one width authority,
+    // not two that can disagree.
+    const wide = clusterWidth(char) === 2
     this.target.set(this.x + localX, this.y + localY, char, style, wide)
     if (wide && this.contains(localX + 1, localY)) {
       this.target.set(this.x + localX + 1, this.y + localY, '', style)

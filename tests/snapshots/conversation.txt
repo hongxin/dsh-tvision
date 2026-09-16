@@ -12,7 +12,7 @@
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║          Tasks         ─├─┐
-║                                                                      ║  … Find why the first tok…│
+║                                                                      ║  ✓ Find why the first tok…│
 ║                                                                      ║  ▸ Make the parser emit p…│
 ║                                                                      ║  · Update the streaming t…│
 ║                                                                      ║                           │
