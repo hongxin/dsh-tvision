@@ -56,7 +56,7 @@ dsh --profile tvision --skin amber --no-mouse            # start options
 
 Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch directory or `$DSH_HOME`. A local or self-hosted endpoint needs no code change — point `DEEPSEEK_BASE_URL` at it, or set `llm-deepseek.baseURL` in `$DSH_HOME/settings.yaml`.
 
-> **Status.** The desktop mounts, draws, takes input, streams a transcript, asks for approvals, indexes the workspace, lists and resumes sessions. A live model turn has not been run end to end on the author's machine; see [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished) for exactly what is and is not wired.
+> **Status.** Verified: the desktop mounts against a real `dsh --profile tvision` agent and draws in a real terminal (`python3 scripts/pty-profile.py`), and the standalone demo passes an 18-scenario sweep across sizes and key sequences with zero invariant defects. Not yet verified: a live model turn, and the event fold against recorded real payloads. See [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished).
 
 ---
 

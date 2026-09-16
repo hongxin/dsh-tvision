@@ -187,16 +187,6 @@ export interface Skin {
 }
 
 /**
- * Turn one role into a cell style.
- * @param pair - The role's colour pair.
- * @param attrs - Extra attributes to merge (bold headers, dim hints).
- * @returns A style ready to write into a buffer.
- */
-export function pairStyle(pair: Pair, attrs: Omit<Style, 'fg' | 'bg'> = {}): Style {
-  return { fg: pair.fg, bg: pair.bg, ...attrs }
-}
-
-/**
  * The resolved palette a widget layer paints through: the same role names, but
  * each one pre-folded into a {@link Style} so the hot path does no object
  * building.
@@ -600,11 +590,3 @@ export function skinOrDefault(id: string | undefined): Skin {
   return findSkin(id) ?? TURBO_VISION
 }
 
-/**
- * A one-line text form of a skin, used by `--list-skins` and the boot log.
- * @param skin - The skin.
- * @returns `id — name (description)`.
- */
-export function describeSkin(skin: Skin): string {
-  return `${skin.id} — ${skin.name} (${skin.description})`
-}

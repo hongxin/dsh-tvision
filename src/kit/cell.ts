@@ -338,17 +338,3 @@ export class CellBuffer {
   }
 }
 
-/**
- * Render the buffer as a box-drawing string with no ANSI, for tests and docs.
- * A `+`/`-`/`|` grid outline is drawn around the content.
- * @param buffer - The buffer to describe.
- * @param options - `border` adds a frame (default true).
- * @returns The description as lines of text.
- */
-export function bufferToAscii(buffer: CellBuffer, options: { border?: boolean } = {}): string[] {
-  const border = options.border ?? true
-  const body = buffer.lines({ trimEnd: false }).map(line => `|${line}|`)
-  if (!border) return body
-  const rule = `+${'-'.repeat(buffer.width)}+`
-  return [rule, ...body, rule]
-}

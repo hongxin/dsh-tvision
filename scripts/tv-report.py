@@ -14,7 +14,8 @@ replay of everything it drew — the final screen as text, plus the raw byte str
 so a frame-by-frame replay is possible.
 
 It needs a pty and therefore your own shell. If it cannot allocate one it says so
-and exits without claiming success.
+and exits without claiming success. The pty mode-setting is shared with the other
+capture scripts through `pty_common.py`.
 """
 import base64
 import fcntl
@@ -28,24 +29,14 @@ import sys
 import termios
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pty_common import configure_pty
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 POLL_SECONDS = 0.05
 DEFAULT_SECONDS = 600.0
 COLUMNS = 100
 ROWS = 30
-
-
-def configure_pty(fd):
-    """Put the pty in the mode a full-screen app expects.
-
-    Without this the line discipline turns Ctrl+C into a SIGINT that kills the app
-    before it takes raw mode, and swallows Ctrl+Q as XON — so the app looks like it
-    hangs on quit and the capture holds nothing but the ``^C`` the tty echoed.
-    """
-    attrs = termios.tcgetattr(fd)
-    attrs[0] &= ~termios.IXON
-    attrs[3] &= ~(termios.ISIG | termios.ECHO)
-    termios.tcsetattr(fd, termios.TCSANOW, attrs)
 
 
 def effective_term():

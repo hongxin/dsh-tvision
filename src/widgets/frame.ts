@@ -19,7 +19,7 @@ import type { Rect, Style } from '../kit/cell.ts'
 import { containsPoint } from '../kit/cell.ts'
 import type { Palette } from '../kit/skin.ts'
 import { Painter, SINGLE_BOX, DOUBLE_BOX } from '../kit/painter.ts'
-import { padCenter, takeColumns, textWidth } from '../kit/text.ts'
+import { padCenter, takeColumns } from '../kit/text.ts'
 
 /** Which part of a frame the pointer is over, for hit-testing. */
 export type FramePart =
@@ -310,23 +310,3 @@ export function interiorRect(rect: Rect, reserveScrollbar = false): Rect {
   }
 }
 
-/**
- * The title-bar label for a window: the title, plus a marker when the content
- * has scrolled away from its start.
- * @param title - The base title.
- * @param scrolled - Whether the content is scrolled.
- * @returns The decorated title.
- */
-export function windowLabel(title: string, scrolled: boolean): string {
-  return scrolled ? `${title} ↑` : title
-}
-
-/**
- * Whether a title fits a window's title bar without being elided.
- * @param title - The title.
- * @param width - The window's outer width.
- * @returns True when it fits.
- */
-export function titleFits(title: string, width: number): boolean {
-  return textWidth(title) <= Math.max(0, width - 8)
-}

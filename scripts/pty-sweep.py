@@ -14,26 +14,23 @@ pretending the sweep passed.
 The pty is put in a mode a full-screen app expects — no ISIG, no echo — before
 the first key is sent, because the keys often arrive while the child is still
 starting up and a line discipline that turns Ctrl+C into a SIGINT would kill it
-before it ever drew a frame.
+before it ever drew a frame. That setup, and the drive loop itself, live in
+`pty_common.py` so the three capture scripts cannot drift apart.
 
 Usage:
     python3 scripts/pty-sweep.py [--json out.json]
 """
 import argparse
 import base64
-import fcntl
 import json
 import os
 import pty
-import select
-import signal
-import struct
-import subprocess
 import sys
-import termios
 import time
 
-POLL_SECONDS = 0.05
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pty_common import run
+
 SCRIPT_GAP_SECONDS = 0.55
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # The desktop's first frame alone is several kilobytes; anything far below that
@@ -129,68 +126,6 @@ TEARDOWN_SEQUENCES = [
 ]
 
 
-def configure_pty(fd):
-    """Make the slave behave like the terminal a full-screen app expects.
-
-    Two settings matter and both are the parent's job, because the child is still
-    starting when the first keys arrive:
-
-    - **ISIG off.** Otherwise the line discipline turns Ctrl+C into a SIGINT and
-      kills the child before it has taken raw mode — which shows up as a capture
-      containing nothing but the `^C` the terminal echoed. A real terminal user
-      pressing Ctrl+C in a full-screen app expects the app to receive the byte.
-    - **ECHO off**, so the app's own drawing is the only thing on the screen and a
-      capture is not polluted by the tty echoing keystrokes back.
-    - **IXON off**, so Ctrl+Q reaches the app instead of being swallowed as XON by
-      the terminal's flow control. An app that quits on Ctrl+Q appears to hang
-      without this.
-    """
-    attrs = termios.tcgetattr(fd)
-    attrs[0] &= ~termios.IXON
-    attrs[3] &= ~(termios.ISIG | termios.ECHO)
-    termios.tcsetattr(fd, termios.TCSANOW, attrs)
-
-
-def drive(argv, script, columns, rows, timeout):
-    """Run argv under a pty of the given size, sending script, returning bytes."""
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.environ['TERM'] = 'xterm-256color'
-        os.environ['COLORTERM'] = 'truecolor'
-        os.execvp(argv[0], argv)
-        os._exit(127)
-    # Size before the child can read it, or it paints a frame for the wrong screen.
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, columns, 0, 0))
-    configure_pty(fd)
-    out = bytearray()
-    deadline = time.time() + timeout
-    index = 0
-    next_at = time.time()
-    while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], POLL_SECONDS)
-        if ready:
-            try:
-                chunk = os.read(fd, 65536)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-        if index < len(script) and time.time() >= next_at:
-            os.write(fd, script[index][1])
-            index += 1
-            next_at = time.time() + SCRIPT_GAP_SECONDS
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        os.waitpid(pid, 0)
-    except ChildProcessError:
-        pass
-    return bytes(out)
-
-
 def pty_available():
     """Whether this environment allows allocating a pty at all."""
     try:
@@ -222,7 +157,7 @@ def main():
         # A scripted scenario waits for the demo to go quiet before its first key,
         # so it needs the script's own duration plus room for the keys.
         seconds = args.seconds if args.seconds is not None else (3.5 if not script else 9.0)
-        data = drive(['node', os.path.join(REPO, 'lib', 'demo.js')], script, columns, rows, seconds)
+        data = run(['node', os.path.join(REPO, 'lib', 'demo.js')], script, columns, rows, seconds, SCRIPT_GAP_SECONDS)
         # A pty run can come back nearly empty when the system is short of
         # terminal devices — seventeen sequential forks is enough to do it. That
         # is the harness failing, not the app, so give it a moment and retry once
@@ -232,10 +167,13 @@ def main():
                 break
             time.sleep(1.5)
             print(f'{name}: only {len(data)} bytes; retrying ({attempt + 1}/2)')
-            data = drive(['node', os.path.join(REPO, 'lib', 'demo.js')], script, columns, rows, seconds)
+            data = run(['node', os.path.join(REPO, 'lib', 'demo.js')], script, columns, rows, seconds, SCRIPT_GAP_SECONDS)
         capture = {'columns': columns, 'rows': rows, 'base64': base64.b64encode(data).decode()}
         if name == 'quit-cleanly':
-            capture['teardown'] = {seq: data.decode('utf8', 'replace').count(seq) for seq in TEARDOWN_SEQUENCES}
+            # Decode once: the capture is easily hundreds of kilobytes and six
+            # separate decodes of it is a slow way to run six counts.
+            text = data.decode('utf8', 'replace')
+            capture['teardown'] = {seq: text.count(seq) for seq in TEARDOWN_SEQUENCES}
         captures[name] = capture
         print(f'{name}: {len(data)} bytes at {columns}x{rows}')
 

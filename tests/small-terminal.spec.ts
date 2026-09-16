@@ -16,7 +16,7 @@ import { HeadlessTerminal } from './headless-terminal.ts'
 import { textWidth } from '../src/kit/text.ts'
 
 /** The smallest terminal the desktop is expected to work in. */
-const FLOOR = { columns: 40, rows: 10 }
+const FLOOR = MINIMUM_TERMINAL
 
 /** An app on a screen of the given size. */
 function at(columns: number, rows: number) {
@@ -51,18 +51,18 @@ function at(columns: number, rows: number) {
 
 describe('planChrome', () => {
   it('gives an ordinary terminal the status line and the key strip', () => {
-    expect(planChrome(24)).toEqual({ top: 1, bottom: 2, statusLine: true })
-    expect(planChrome(40)).toEqual({ top: 1, bottom: 2, statusLine: true })
+    expect(planChrome(24)).toEqual({ top: 1, bottom: 2 })
+    expect(planChrome(40)).toEqual({ top: 1, bottom: 2 })
   })
 
   it('gives up the status line before the key strip', () => {
     // The strip names every function key; the status line is a meter. On a short
     // terminal the legend is worth more.
-    expect(planChrome(18)).toEqual({ top: 1, bottom: 1, statusLine: false })
+    expect(planChrome(18)).toEqual({ top: 1, bottom: 1 })
   })
 
   it('keeps a menu bar and a key strip even at the floor', () => {
-    expect(planChrome(FLOOR.rows)).toEqual({ top: 1, bottom: 1, statusLine: false })
+    expect(planChrome(FLOOR.rows)).toEqual({ top: 1, bottom: 1 })
   })
 
   it('never returns zero rows for a band', () => {

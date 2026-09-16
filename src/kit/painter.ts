@@ -423,11 +423,6 @@ export const DOUBLE_BOX: BoxChars = Object.freeze({
   topLeft: '╔', topRight: '╗', bottomLeft: '╚', bottomRight: '╝', horizontal: '═', vertical: '║',
 })
 
-/** Heavy-line box drawing, reserved for the menu bar's dropdown. */
-export const HEAVY_BOX: BoxChars = Object.freeze({
-  topLeft: '┏', topRight: '┓', bottomLeft: '┗', bottomRight: '┛', horizontal: '━', vertical: '┃',
-})
-
 /** ASCII fallback for terminals whose font has no box-drawing glyphs. */
 export const ASCII_BOX: BoxChars = Object.freeze({
   topLeft: '+', topRight: '+', bottomLeft: '+', bottomRight: '+', horizontal: '-', vertical: '|',

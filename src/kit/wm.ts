@@ -34,6 +34,19 @@ export const MIN_WINDOW_WIDTH = 12
 /** Minimum window height the manager will allow a drag to produce. */
 export const MIN_WINDOW_HEIGHT = 4
 
+/**
+ * The default floor below which the manager paints its "terminal too small"
+ * notice instead of a desktop. Exported so the application's own
+ * `MINIMUM_TERMINMINAL` constant is this value rather than a second copy that
+ * can drift; a manager whose host knows better passes its own `minimum`.
+ */
+export const DEFAULT_MINIMUM_TERMINMINAL = Object.freeze({ columns: 40, rows: 10 })
+
+/** The too-small notice's constant lines; the two size lines are inserted between. */
+const TOO_SMALL_TITLE = 'terminal too small'
+/** See {@link TOO_SMALL_TITLE}; spread after the size lines. */
+const TOO_SMALL_TAIL: readonly string[] = ['', 'resize to continue']
+
 /** How a window is created. */
 export interface WindowSpec {
   /** Stable identity, used by `focusWindow`, `closeWindow` and the View menu. */
@@ -381,7 +394,7 @@ export class WindowManager {
     this.rows = Math.max(1, options.rows)
     this.topInsetValue = options.topInset ?? 1
     this.bottomInsetValue = options.bottomInset ?? 2
-    this.minimum = options.minimum ?? { columns: 40, rows: 10 }
+    this.minimum = options.minimum ?? DEFAULT_MINIMUM_TERMINMINAL
     this.unicode = options.unicode ?? true
   }
 
@@ -820,19 +833,22 @@ export class WindowManager {
    * @param root - The root painter.
    */
   private paintTooSmall(root: Painter): void {
+    // The constant lines are hoisted: a resize drag repaints dozens of times a
+    // second, and only the two size lines differ between paints.
     const lines = [
-      'terminal too small',
+      TOO_SMALL_TITLE,
       `${this.columns}x${this.rows}`,
       `needs ${this.minimum.columns}x${this.minimum.rows}`,
-      '',
-      'resize to continue',
+      ...TOO_SMALL_TAIL,
     ]
     const top = Math.max(0, Math.floor((this.rows - lines.length) / 2))
     for (let index = 0; index < lines.length; index++) {
       const row = top + index
       if (row >= this.rows) break
       const line = lines[index] ?? ''
-      root.text(0, row, line, this.columns, { fg: 11 }, { align: 'center', ellipsis: false })
+      // The warning role's hue on the terminal's own background: a bare palette
+      // index here would ignore the skin, and the ansi skin exists to remap it.
+      root.text(0, row, line, this.columns, { fg: this.palette.warning.fg }, { align: 'center', ellipsis: false })
     }
   }
 

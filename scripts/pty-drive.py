@@ -22,70 +22,33 @@ where the spec is:
 
 Each script entry is written to the pty 0.6 s after the previous one. Capture the
 output, then replay it with `scripts/replay-capture.ts` to read the screen back.
+
+The fork/size/mode/capture loop lives in `pty_common.py`, shared with the other
+capture scripts, so a trap fixed here is fixed everywhere at once.
 """
 import base64
-import fcntl
 import json
 import os
-import pty
-import select
-import signal
-import struct
 import sys
-import termios
-import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from pty_common import run
 
 SCRIPT_GAP_SECONDS = 0.6
-POLL_SECONDS = 0.05
-
-
-def run(argv, script, columns, rows, timeout):
-    pid, fd = pty.fork()
-    if pid == 0:
-        os.environ['TERM'] = 'xterm-256color'
-        os.environ['COLORTERM'] = 'truecolor'
-        os.execvp(argv[0], argv)
-        os._exit(127)
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, columns, 0, 0))
-    configure_pty(fd)
-    out = bytearray()
-    deadline = time.time() + timeout
-    index = 0
-    next_at = time.time()
-    while time.time() < deadline:
-        ready, _, _ = select.select([fd], [], [], POLL_SECONDS)
-        if ready:
-            try:
-                chunk = os.read(fd, 65536)
-            except OSError:
-                break
-            if not chunk:
-                break
-            out += chunk
-        if index < len(script) and time.time() >= next_at:
-            _, payload = script[index]
-            os.write(fd, base64.b64decode(payload))
-            index += 1
-            next_at = time.time() + SCRIPT_GAP_SECONDS
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        os.waitpid(pid, 0)
-    except ChildProcessError:
-        pass
-    return bytes(out)
 
 
 def main():
     spec = json.loads(sys.argv[1])
+    # The spec carries base64 so a JSON file can hold arbitrary bytes; the shared
+    # driver wants the bytes themselves.
+    script = [[label, base64.b64decode(payload)] for label, payload in spec.get('script', [])]
     data = run(
         spec['argv'],
-        spec.get('script', []),
+        script,
         spec.get('columns', 104),
         spec.get('rows', 30),
         spec.get('timeout', 8),
+        SCRIPT_GAP_SECONDS,
     )
     sys.stdout.write(base64.b64encode(data).decode())
 

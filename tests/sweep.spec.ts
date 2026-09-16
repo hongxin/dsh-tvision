@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { checkCapture, type CaptureReport } from './capture-invariants.ts'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -65,17 +65,29 @@ describe.skipIf(names.length === 0)('terminal sweep invariants', () => {
 
   const reports = new Map<string, CaptureReport>()
 
-  it('produces a complete frame for every scenario', async () => {
-    for (const name of names) {
+  // The replays are independent, so they run concurrently and land in the map
+  // before any assertion reads it; writing the screens out afterwards keeps the
+  // files in scenario order rather than completion order.
+  beforeAll(async () => {
+    const entries = await Promise.all(names.map(async (name) => {
       const capture = sweep[name]
       /* c8 ignore next -- the key came from the capture's own keys. */
-      if (capture === undefined) continue
+      if (capture === undefined) return undefined
       const raw = Buffer.from(capture.base64, 'base64').toString('utf8')
-      const report = await checkCapture(raw, capture.columns, capture.rows)
+      return [name, await checkCapture(raw, capture.columns, capture.rows)] as const
+    }))
+    mkdirSync(REPORT_DIR, { recursive: true })
+    for (const entry of entries) {
+      if (entry === undefined) continue
+      const [name, report] = entry
       reports.set(name, report)
       // Keep the final screen of each scenario for eyeballing and for diffs.
-      mkdirSync(REPORT_DIR, { recursive: true })
       writeFileSync(join(REPORT_DIR, `${name}.txt`), `${report.screen}\n`)
+    }
+  })
+
+  it('produces a complete frame for every scenario', () => {
+    for (const [name, report] of reports) {
       // Every scenario must have drawn *something*: an app that produced no
       // bytes never started.
       expect(report.bytes, `${name}: the app produced no output at all`).toBeGreaterThan(0)
@@ -85,38 +97,27 @@ describe.skipIf(names.length === 0)('terminal sweep invariants', () => {
     }
   })
 
-  it('never writes past the screen edge or below it', () => {
+  /** The scenarios and details that failed any of the named checks. */
+  const offendersOf = (checks: readonly string[]): string[] => {
     const offenders: string[] = []
     for (const [name, report] of reports) {
       for (const defect of report.defects) {
-        if (defect.check === 'write-past-right-edge' || defect.check === 'write-below-screen') {
-          offenders.push(`${name}: ${defect.check} — ${defect.detail}`)
-        }
+        if (checks.includes(defect.check)) offenders.push(`${name}: ${defect.check} — ${defect.detail}`)
       }
     }
-    expect(offenders).toEqual([])
+    return offenders
+  }
+
+  it('never writes past the screen edge or below it', () => {
+    expect(offendersOf(['write-past-right-edge', 'write-below-screen'])).toEqual([])
   })
 
   it('never scrolls the screen', () => {
-    const offenders: string[] = []
-    for (const [name, report] of reports) {
-      for (const defect of report.defects) {
-        if (defect.check === 'screen-scrolled') offenders.push(`${name}: ${defect.detail}`)
-      }
-    }
-    expect(offenders).toEqual([])
+    expect(offendersOf(['screen-scrolled'])).toEqual([])
   })
 
   it('keeps the menu bar on the first row and the key strip on the last', () => {
-    const offenders: string[] = []
-    for (const [name, report] of reports) {
-      for (const defect of report.defects) {
-        if (defect.check === 'menu-bar-missing' || defect.check === 'key-strip-missing') {
-          offenders.push(`${name}: ${defect.check} — ${defect.detail}`)
-        }
-      }
-    }
-    expect(offenders).toEqual([])
+    expect(offendersOf(['menu-bar-missing', 'key-strip-missing'])).toEqual([])
   })
 })
 

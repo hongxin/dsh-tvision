@@ -22,7 +22,7 @@ import type { Skin } from '../kit/skin.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
 import type { Painter } from '../kit/painter.ts'
-import { WindowManager } from '../kit/wm.ts'
+import { WindowManager, DEFAULT_MINIMUM_TERMINMINAL } from '../kit/wm.ts'
 import { InputDecoder } from '../kit/input.ts'
 import type { InputEvent } from '../kit/input.ts'
 import { ScreenRenderer, detectTruecolor } from '../kit/screen.ts'
@@ -172,7 +172,7 @@ const COMPOSER_MAX_ROWS = COMPOSER_INPUT_ROWS + 1
  * window manager paints a notice instead, because a desktop crammed into 30
  * columns is a screen of overlapping fragments rather than a smaller desktop.
  */
-export const MINIMUM_TERMINAL = Object.freeze({ columns: 40, rows: 10 })
+export const MINIMUM_TERMINAL = DEFAULT_MINIMUM_TERMINMINAL
 
 /** The fewest rows at which the status line earns its own row. */
 const STATUS_LINE_MIN_ROWS = 20
@@ -183,8 +183,6 @@ export interface ChromePlan {
   readonly top: number
   /** Rows for the status line and the hint strip. */
   readonly bottom: number
-  /** Whether the status line is among them. */
-  readonly statusLine: boolean
 }
 
 /**
@@ -199,12 +197,10 @@ export interface ChromePlan {
  * @returns The band sizes.
  */
 export function planChrome(rows: number): ChromePlan {
-  // Menu bar plus the hint strip is the irreducible chrome.
-  if (rows < MINIMUM_TERMINAL.rows + 2) return { top: 1, bottom: 1, statusLine: false }
   // The status line costs a row, and it is worth that row on any ordinary
   // terminal; below twenty rows four rows of transcript matter more.
-  if (rows < STATUS_LINE_MIN_ROWS) return { top: 1, bottom: 1, statusLine: false }
-  return { top: 1, bottom: 2, statusLine: true }
+  if (rows < STATUS_LINE_MIN_ROWS) return { top: 1, bottom: 1 }
+  return { top: 1, bottom: 2 }
 }
 
 /** Window ids this application creates. */
@@ -737,13 +733,13 @@ export class TvisionApp {
     }
     this.windows.bottomChrome = {
       draw: (painter, _palette, manager) => {
-        // On a short terminal the band is the hint strip alone, so the status
-        // line is not drawn into a row it does not have.
+        // On a short terminal the band is the hint strip alone; the bar itself
+        // decides from its own height whether the status line has a row.
         this.status.draw(painter, {
           palette: manager.palette,
           focused: true,
           requestRender: () => manager.requestRender(),
-        }, { statusLine: this.chrome.statusLine })
+        })
       },
       onKey: (event) => this.status.handleKey(event) === Consumed.Yes,
       onMouse: (event, manager) => {
@@ -1644,10 +1640,10 @@ export class TvisionApp {
    * @param rows - The new screen height.
    */
   applyChrome(rows: number): void {
-    const next = planChrome(rows)
-    if (next.top === this.chrome.top && next.bottom === this.chrome.bottom) return
-    this.chrome = next
-    this.windows.setChrome(next.top, next.bottom)
+    // `setChrome` itself skips the work when the bands did not change, so this
+    // does not need its own copy of that guard.
+    this.chrome = planChrome(rows)
+    this.windows.setChrome(this.chrome.top, this.chrome.bottom)
   }
 
   /**

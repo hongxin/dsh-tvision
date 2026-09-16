@@ -11,7 +11,6 @@
 
 import type { Palette } from './skin.ts'
 import type { Painter } from './painter.ts'
-import type { Style } from './cell.ts'
 
 /**
  * A decoded key press.
@@ -143,20 +142,3 @@ export interface Widget {
   measure?(): SizeHint
 }
 
-/** Whether an event is a wheel tick rather than a button event. */
-export function isWheelEvent(event: MouseEvent): boolean {
-  return event.kind === 'wheel'
-}
-
-/**
- * A style helper for the very common "alternate row shading" pattern, kept
- * here so every list fades the same way.
- * @param base - The row's normal style.
- * @param alternate - Whether this row is an odd one.
- * @param shade - The shade to blend in, usually a slightly darker background.
- * @returns The row style.
- */
-export function zebra(base: Style, alternate: boolean, shade: Style): Style {
-  if (!alternate || shade.bg === undefined) return base
-  return { ...base, bg: shade.bg }
-}
