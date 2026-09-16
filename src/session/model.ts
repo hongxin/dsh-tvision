@@ -74,6 +74,14 @@ export interface Entry {
   readonly diff?: readonly string[]
   /** Whether the entry is still being written to. */
   readonly streaming?: boolean
+  /**
+   * Whether this user entry was added optimistically by the composer rather
+   * than folded from the log. The harness echoes every live send back as a
+   * `user/message` event; the fold matches the echo against the newest local
+   * entry instead of appending a second copy. Cleared once the echo lands, so a
+   * replayed log folds to the same document a live session showed.
+   */
+  readonly local?: boolean
   /** Epoch milliseconds the step finished, for the timing footer. */
   readonly endedAt?: number
   /** Extra lines the view should show verbatim (command output, file previews). */
@@ -230,12 +238,17 @@ export class SessionDocument {
    * @param options - `synthetic` marks injected context rather than a human.
    * @returns The stored entry.
    */
-  addUser(text: string, time: number, options: { synthetic?: boolean; label?: string } = {}): Entry {
+  addUser(
+    text: string,
+    time: number,
+    options: { synthetic?: boolean; label?: string; local?: boolean } = {},
+  ): Entry {
     return this.push({
       kind: options.synthetic === true ? 'context' : 'user',
       time,
       title: options.label ?? (options.synthetic === true ? 'Context' : 'You'),
       text,
+      ...(options.local === true ? { local: true } : {}),
     })
   }
 

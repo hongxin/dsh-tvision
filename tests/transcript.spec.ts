@@ -14,6 +14,7 @@ import { Painter } from '../src/kit/painter.ts'
 import { TURBO_VISION, resolvePalette } from '../src/kit/skin.ts'
 import { Consumed } from '../src/kit/widget.ts'
 import { SessionDocument, readContentBlocks, splitFencedCode } from '../src/session/model.ts'
+import { foldEvent } from '../src/app/events.ts'
 import {
   TranscriptView,
   buildRows,
@@ -591,5 +592,43 @@ describe('TranscriptView scrolling', () => {
     document.clear()
     paint(view, 40, 10)
     expect(view.offset).toBe(0)
+  })
+})
+
+describe('echoed user messages', () => {
+  /** A user/message event shaped the way the harness appends it. */
+  const echo = (text: string, seq = 1): Parameters<typeof foldEvent>[1] => ({
+    type: 'user/message',
+    seq,
+    time: seq * 1000,
+    data: { content: [{ type: 'text', text }], source: { kind: 'user' } },
+  })
+
+  it('a live send is not appended twice', () => {
+    // The composer adds the row locally so the user sees it instantly; the
+    // harness echoes the same send as user/message. The fold must claim the
+    // echo rather than append a second copy.
+    const document = new SessionDocument()
+    document.addUser('hello', 1, { local: true })
+    const outcome = foldEvent(document, echo('hello'))
+    expect(outcome.changed).toBe(true)
+    expect(document.all.filter(entry => entry.kind === 'user')).toHaveLength(1)
+    expect(document.all[0]?.local).toBeFalsy()
+  })
+
+  it('a replayed log has no local entries, so every message folds once', () => {
+    const document = new SessionDocument()
+    foldEvent(document, echo('one', 1))
+    foldEvent(document, echo('two', 2))
+    expect(document.all.filter(entry => entry.kind === 'user')).toHaveLength(2)
+  })
+
+  it('an echo of different text is its own entry, not a claim', () => {
+    const document = new SessionDocument()
+    document.addUser('hello', 1, { local: true })
+    foldEvent(document, echo('a different message', 2))
+    const users = document.all.filter(entry => entry.kind === 'user')
+    expect(users).toHaveLength(2)
+    expect(users.map(entry => entry.text)).toEqual(['hello', 'a different message'])
   })
 })

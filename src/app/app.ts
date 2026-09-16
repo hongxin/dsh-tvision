@@ -1251,7 +1251,7 @@ export class TvisionApp {
     const trimmed = text.trim()
     this.history.push(trimmed)
     if (trimmed.startsWith('/') && this.options.host.runCommand !== undefined) {
-      this.document.addUser(trimmed, Date.now())
+      this.document.addUser(trimmed, Date.now(), { local: true })
       this.windows.requestRender()
       try {
         const result = await this.options.host.runCommand(trimmed)
@@ -1267,7 +1267,7 @@ export class TvisionApp {
     }
     // Record the turn locally first, so the composer's contents appear in the
     // transcript immediately rather than when the host echoes the event back.
-    this.document.addUser(trimmed, Date.now())
+    this.document.addUser(trimmed, Date.now(), { local: true })
     this.windows.requestRender()
     this.options.host.send(trimmed)
   }

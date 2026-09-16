@@ -131,6 +131,16 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       const text = typeof content === 'string' ? content : textOfBlocks(content)
       if (text.trim() === '') return UNCHANGED
       const source = str(data, 'source')
+      // A live send is echoed: the composer already added this text locally so
+      // the transcript would show it twice — once instantly, once from the log.
+      // The echo text is byte-identical to what the composer stored (the host
+      // builds the message from the same trimmed string), so matching the
+      // newest local entry is sound. Replay logs carry no local entries, so
+      // they fold unchanged; injected context never matches, being synthetic.
+      if (source === undefined || source === 'user') {
+        const echoed = claimLocalEcho(document, text, event.time)
+        if (echoed) return echoed
+      }
       document.addUser(text, event.time, {
         synthetic: source !== undefined && source !== 'user',
         ...(source === undefined || source === 'user' ? {} : { label: contextLabel(source) }),
@@ -245,6 +255,33 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
     default:
       return UNCHANGED
   }
+}
+
+/**
+ * Match an echoed `user/message` against the newest optimistically-added entry.
+ *
+ * @param document - The document the composer wrote to.
+ * @param text - The echoed text.
+ * @param time - The echo's timestamp.
+ * @returns An outcome claiming the echo when it matched, or undefined when the
+ * text was not a live send (a replayed log, or a different message) and should
+ * be appended as its own entry.
+ */
+function claimLocalEcho(document: SessionDocument, text: string, time: number): FoldOutcome | undefined {
+  for (let index = document.all.length - 1; index >= 0; index--) {
+    const entry = document.all[index]
+    if (entry === undefined) continue
+    // Only the newest local entry can be the echo; anything older is a local
+    // send whose echo never arrived (a cancelled turn) and must not absorb a
+    // message it did not send.
+    if (entry.local !== true) return undefined
+    if (entry.kind !== 'user' || entry.text !== text) return undefined
+    // Clearing the flag bumps the revision so the row repaints, and keeps a
+    // replayed log from folding the entry twice.
+    document.update(entry.id, { local: false, time })
+    return { changed: true }
+  }
+  return undefined
 }
 
 /**

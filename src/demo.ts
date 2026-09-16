@@ -341,7 +341,7 @@ export async function runDemo(argv: readonly string[] = process.argv.slice(2)): 
 
   // Open with the same script a user would get by pressing Enter, so the first
   // thing on screen is the desktop doing its job rather than an empty window.
-  app.document.addUser('why is the first token so slow?', Date.now())
+  app.document.addUser('why is the first token so slow?', Date.now(), { local: true })
   host.send('why is the first token so slow?')
 
   try {
