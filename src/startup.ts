@@ -45,6 +45,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Context key a host reads to learn the line to print on exit. */
+export const GOODBYE_KEY = 'tvisionGoodbyeMessage'
+
 /** Plugin name. */
 export const name = 'tvision-startup'
 
@@ -77,13 +80,76 @@ export function apply(ctx: Context): void {
     // The identity is published before the agent exists, because the agent-loop
     // row injects this key rather than being patched afterwards.
     ctx.provide(CONFIGURED_AGENT_IDENTITIES_KEY, { [MAIN_AGENT_ID]: identity })
-    ctx.provide('tvisionGoodbyeMessage', goodbye)
+    ctx.provide(GOODBYE_KEY, goodbye)
     ctx.provide(TVISION_STARTUP_SERVICE, {
       sessionId: identity.id,
       resume: identity.resume,
       skin: options.skin ?? 'tvision',
       mouse: options.mouse !== false,
     } satisfies TvisionStartup)
+    installResumeHost(ctx)
   })
   parseCmdline(ctx, program)
+}
+
+/**
+ * Provide the in-place `/resume` handoff when the platform supports it.
+ *
+ * A session belongs to a workspace, and the tools resolve paths against the
+ * process's working directory — so a handoff has to *enter* the target's
+ * directory. That happens before teardown commits, so an unreachable directory
+ * rejects while the caller can still restore the terminal.
+ * @param ctx - Plugin context whose root fiber owns the whole app tree.
+ */
+function installResumeHost(ctx: Context): void {
+  const entry = process.argv[1]
+  const execve = process.execve?.bind(process)
+  if (entry === undefined || execve === undefined) return
+  // The launcher arguments minus every `--resume`, so the replacement keeps the
+  // invoking profile and overlays while swapping only the session.
+  const baseArgs: string[] = []
+  const argv = process.argv.slice(2)
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]
+    if (arg === undefined || arg.startsWith('--resume=')) continue
+    if (arg === '--resume') {
+      index++
+      continue
+    }
+    baseArgs.push(arg)
+  }
+  ctx.provide('tvisionResumeHost', {
+    async handoff(sessionId: string, cwd: string | undefined): Promise<never> {
+      if (cwd !== undefined && cwd !== '') {
+        try {
+          process.chdir(cwd)
+        } catch (error) {
+          throw new Error(`tvision: cannot resume in "${cwd}": ${String(error)}`)
+        }
+      }
+      try {
+        // Release the terminal first: the replacement draws its own first frame,
+        // and two writers on one alternate screen is a corrupt screen.
+        await ctx.root.fiber.dispose()
+        execve(
+          process.execPath,
+          [process.execPath, ...process.execArgv, entry, ...baseArgs, `--resume=${sessionId}`],
+          process.env,
+        )
+        throw new Error('process replacement returned unexpectedly')
+      } catch (error) {
+        process.stderr.write(`tvision: resume handoff failed after terminal release: ${String(error)}\n`)
+        process.exit(1)
+      }
+    },
+  })
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host that can replace this process with a resumed session. */
+    tvisionResumeHost?: {
+      handoff(sessionId: string, cwd?: string): Promise<never>
+    }
+  }
 }

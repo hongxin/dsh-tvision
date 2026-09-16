@@ -56,7 +56,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 
 在环境变量（或启动目录 / `$DSH_HOME` 下的 `.env`）里设置 `DEEPSEEK_API_KEY`。本地或自建端点无需改代码——把 `DEEPSEEK_BASE_URL` 指过去，或在 `$DSH_HOME/settings.yaml` 里设置 `llm-deepseek.baseURL`。
 
-> **状态。** 桌面能挂载、能绘制、能接收输入、能流式渲染对话、能弹出审批对话框。一次真实的模型回合尚未在本机端到端跑通；具体哪些接通了、哪些没有，见[设计文档的范围一节](docs/DESIGN.md#6-what-is-not-finished)。
+> **状态。** 桌面能挂载、绘制、接收输入、流式渲染对话、弹出审批对话框、索引工作区、列出并恢复会话。一次真实的模型回合尚未在本机端到端跑通；具体哪些接通了、哪些没有，见[设计文档的范围一节](docs/DESIGN.md#6-what-is-not-finished)。
 
 ---
 
@@ -72,7 +72,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 | `F4` | 展开 / 折叠全部工具卡片 |
 | `F5` | 聚焦输入行 |
 | `F6` | 下一个窗口 |
-| `F7` | 项目窗口 |
+| `F7` | 项目窗口——选中文件会在输入行插入引用 |
 | `F8` | 任务窗口 |
 | `F9` | 切换皮肤 |
 | `F10` | 菜单栏 |
@@ -153,7 +153,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 ```sh
 npm install
 npm run typecheck     # tsc --noEmit
-npm test              # 411 个测试
+npm test              # 505 个测试
 npm run build         # 打包到 lib/
 npm run demo          # 跑 demo
 ```
@@ -171,7 +171,7 @@ src/kit/        cell · text · styles · screen · painter · widget · wm · i
 src/session/    保留式文档模型
 src/views/      transcript · dialogs
 src/widgets/    frame · menubar · statusbar
-src/app/        app · composer · questions · events
+src/app/        app · composer · questions · events · project · sessions
 src/term/       真实终端
 ```
 

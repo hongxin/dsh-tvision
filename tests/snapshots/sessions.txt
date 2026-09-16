@@ -1,0 +1,28 @@
+  File  View  Agent  Tools  Window  Help                                                   dsh tvision
+┌┤                            Conversation                             ─├─┐┌┤   Project — 3 files   ─├─┐
+│  nothing here yet — type a message below, or press F1 for help          │    parser.ts               │
+│                        ╔╡              Sessions — 5              ═╞═╗   │    stream.ts               │
+│                        ║ ● Make the parser stream    ~/project · 4m ║   │    parser.spec.ts          │
+│                        ║ · Fix the fence tokenizer   ~/project · 3h ║   │                            │
+│                        ║ · why is the first token so…~/other · 1d   ║   │                            │
+│                        ║ · 4ae77b30                  5d             ║   │                            │
+│                        ║ × 0d5c1e88 (not resumable)  6d             ║   │                            │
+│                        ║                                            ║   │                            │
+│                        ║                                            ║   │                            │
+│                        ║                                            ║   │                            │
+│                        ║                                            ║   │           Tasks         ─├─┐
+│                        ║                                            ║   │  o tasks yet.              │
+│                        ╚═══════════════════════════════════════════⋮╝   │                            │
+│                                                                         │                            │
+│                                                                         │                            │
+│                                                                         │                            │
+│                                                                         │                            │
+│                                                                         │                            │
+│                                                                         │                            │
+│─────────────────────────────────────────────────────────────────────────│                            │
+│                                                                         │                            │
+│                                                                         │  ─────────────────────────⋮┘
+│dsh>                                                                     │
+└────────────────────────────────────────────────────────────────────────⋮┘   ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+                              │ F10 menu │ 4 win │ ░░░░░░ 0% │ ↑0 ↓0 │ deepseek-official/deepseek-flash
+F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7 Project   F8 Tasks

@@ -25,13 +25,15 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-query'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
-import { TvisionApp, type AppHost } from './app/app.ts'
+import { TvisionApp, WINDOW_IDS, type AppHost } from './app/app.ts'
+import { ProjectIndex } from './app/project.ts'
 import { DEFAULT_SKIN_ID, findSkin, SKINS, type Skin } from './kit/skin.ts'
 import { ProcessTerminal } from './term/process-terminal.ts'
 
@@ -65,6 +67,43 @@ export interface Config {
   readonly mouse?: boolean
   /** A line to print once the terminal is released on exit. */
   readonly goodbye?: string
+}
+
+/** How long to wait after a file-changing tool before re-indexing the workspace. */
+export const PROJECT_REINDEX_DEBOUNCE_MS = 1500
+
+/** How many sessions get their title read, since each one costs a log read. */
+export const SESSION_TITLE_LIMIT = 40
+
+/**
+ * Whether an event is a tool result for a tool that could have changed files.
+ *
+ * A blunt filter on purpose: the alternative is a registry of which tools write,
+ * which would go stale the moment a plugin adds one. Re-indexing after a shell
+ * command that changed nothing costs one walk; *not* re-indexing after one that
+ * added a file leaves the window lying.
+ * @param event - The session event.
+ * @returns True when the workspace may have changed.
+ */
+export function isFileMutatingTool(event: { type: string; data?: unknown }): boolean {
+  if (event.type !== 'tool/result') return false
+  const data = event.data
+  if (data === null || typeof data !== 'object') return false
+  const name = (data as { name?: unknown }).name
+  if (typeof name === 'string') {
+    return /^(bash|pwsh|shell|edit|write|str_replace|apply_patch|notebook|create|delete|move)/iu.test(name)
+  }
+  // A result with a tool-private diff in its metadata came from a writer.
+  const meta = (data as { meta?: unknown }).meta
+  return meta !== null && typeof meta === 'object'
+}
+
+/**
+ * The user's home directory, for collapsing workspace paths in the list.
+ * @returns The path, or undefined when it cannot be determined.
+ */
+function homeDirectory(): string | undefined {
+  return process.env['HOME'] ?? process.env['USERPROFILE']
 }
 
 /** The terminal-mode service a host may use to hand the screen over. */
@@ -113,6 +152,7 @@ export function resolveSkin(config: Config): Skin {
 export function createHost(input: MountInput): { host: AppHost; dispose(): void } {
   const { ctx, agent, config, terminal } = input
   const controllers = new Set<AbortController>()
+  const project = new ProjectIndex(agent.session.header.cwd ?? process.cwd())
   let app: TvisionApp | undefined
   let quitting = false
 
@@ -175,6 +215,22 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       }
       return 0
     },
+    async resume(sessionId: string, cwd?: string): Promise<never> {
+      const host = ctx.get('tvisionResumeHost')
+      if (host === undefined) {
+        throw new Error('this launcher cannot resume in place; restart with --resume')
+      }
+      // Never returns on success.
+      return host.handoff(sessionId, cwd)
+    },
+    async indexFiles() {
+      const snapshot = project.refresh()
+      return {
+        rows: project.rows(),
+        paths: snapshot.files.map(file => file.path),
+        summary: project.summary(),
+      }
+    },
     quit(): void {
       if (quitting) return
       quitting = true
@@ -233,10 +289,15 @@ export function mount(input: MountInput): () => void {
   })
   attach?.(app)
 
-  // 1. The conversation: one subscription, folded into the document.
+  // 1. The conversation: one subscription, folded into the document. A tool that
+  //    touched the filesystem also invalidates the project index, which is why
+  //    the fold reports that rather than the view guessing at it.
   const offSession = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
     void app.applyEvent(event as unknown as { type: string; seq: number; time: number; data?: unknown })
+      .then(() => {
+        if (isFileMutatingTool(event)) void refreshProject()
+      })
   })
 
   // 2. Agent lifecycle keeps the running indicator honest when a turn is
@@ -263,6 +324,68 @@ export function mount(input: MountInput): () => void {
     return answer ?? next()
   })
 
+  // 5. The window contents the host owns. Both are populated once at mount and
+  //    refreshed on the events that can change them, never on the frame loop.
+  void app.refreshProject()
+  void refreshSessions()
+  const offCreated = ctx.on('agent/created', () => { void refreshSessions() })
+
+  let projectTimer: ReturnType<typeof setTimeout> | undefined
+
+  /**
+   * Re-index the workspace. Coalesced: a turn can run a dozen shell commands and
+   * each one would otherwise trigger a full walk.
+   * @returns A promise that settles when the re-index has been scheduled.
+   */
+  async function refreshProject(): Promise<void> {
+    if (projectTimer !== undefined) clearTimeout(projectTimer)
+    projectTimer = setTimeout(() => {
+      projectTimer = undefined
+      void app.refreshProject()
+    }, PROJECT_REINDEX_DEBOUNCE_MS)
+  }
+
+  /**
+   * Load the resumable sessions into the Sessions window.
+   * @returns A promise that settles when the list has been applied.
+   */
+  async function refreshSessions(): Promise<void> {
+    const query = ctx.get('sessionQuery')
+    if (query === undefined) return
+    try {
+      const records = await query.listSessions()
+      // Titles cost a log read each, so only the visible page is asked for.
+      const page = records.slice(0, SESSION_TITLE_LIMIT)
+      const titles = new Map<string, string>()
+      if (page.length > 0) {
+        const snapshots = await query.readTitleSnapshots(page.map(record => record.header.id))
+        for (const observation of snapshots) {
+          // A rejected observation is isolated to its session: leave that row
+          // untitled and keep the rest of the list.
+          if (observation.status !== 'fulfilled') continue
+          const title = observation.value.title?.title
+          if (typeof title === 'string' && title !== '') {
+            titles.set(String(observation.sessionId), title)
+          }
+        }
+      }
+      app.setSessions(records.map(record => ({
+        id: String(record.header.id),
+        createdAt: record.header.createdAt,
+        ...(record.header.cwd === undefined ? {} : { cwd: record.header.cwd }),
+        live: record.live,
+        persisted: record.persisted,
+        ...(titles.get(String(record.header.id)) === undefined
+          ? {}
+          : { title: titles.get(String(record.header.id)) }),
+      })), homeDirectory())
+    } catch (error) {
+      // A query failure must not take the desktop down; the window simply says so.
+      app.setWindowTitle(WINDOW_IDS.sessions, 'Sessions — unavailable')
+      ctx.logger.warn(`tvision: could not list sessions: ${String(error)}`)
+    }
+  }
+
   const escapeFlush = (): void => app.flushInput()
   terminal.onEscapeTimeout = escapeFlush
   terminal.setTitle(`tvision — ${String(agent.id)}`)
@@ -278,6 +401,8 @@ export function mount(input: MountInput): () => void {
   return () => {
     offSession()
     offStatus()
+    offCreated()
+    if (projectTimer !== undefined) clearTimeout(projectTimer)
     offApproval()
     offQuestions()
     terminal.onEscapeTimeout = undefined

@@ -56,7 +56,7 @@ dsh --profile tvision --skin amber --no-mouse            # start options
 
 Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch directory or `$DSH_HOME`. A local or self-hosted endpoint needs no code change — point `DEEPSEEK_BASE_URL` at it, or set `llm-deepseek.baseURL` in `$DSH_HOME/settings.yaml`.
 
-> **Status.** The desktop mounts, draws, takes input, streams a transcript, and asks for approvals. A live model turn has not been run end to end on the author's machine; see [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished) for exactly what is and is not wired.
+> **Status.** The desktop mounts, draws, takes input, streams a transcript, asks for approvals, indexes the workspace, lists and resumes sessions. A live model turn has not been run end to end on the author's machine; see [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished) for exactly what is and is not wired.
 
 ---
 
@@ -72,7 +72,7 @@ Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch director
 | `F4` | Expand / collapse every tool card |
 | `F5` | Focus the composer |
 | `F6` | Next window |
-| `F7` | Project window |
+| `F7` | Project window — choosing a file references it in the composer |
 | `F8` | Tasks window |
 | `F9` | Cycle skin |
 | `F10` | Menu bar |
@@ -153,7 +153,7 @@ Read [docs/DESIGN.md](docs/DESIGN.md) for the full reasoning, the architecture, 
 ```sh
 npm install
 npm run typecheck     # tsc --noEmit
-npm test              # 411 tests
+npm test              # 505 tests
 npm run build         # bundles lib/
 npm run demo          # the demo
 ```
@@ -171,7 +171,7 @@ src/kit/        cell · text · styles · screen · painter · widget · wm · i
 src/session/    the retained document
 src/views/      transcript · dialogs
 src/widgets/    frame · menubar · statusbar
-src/app/        app · composer · questions · events
+src/app/        app · composer · questions · events · project · sessions
 src/term/       the real terminal
 ```
 

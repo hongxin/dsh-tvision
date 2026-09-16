@@ -274,6 +274,37 @@ describe('desktop snapshots', () => {
     expectSnapshot('window-menu', await view.frame())
   })
 
+  it('renders the session list', async () => {
+    const view = scene(104, 28)
+    view.app.start()
+    const now = Date.now()
+    view.app.setSessions([
+      { id: 'main-session-7f3a91c2', createdAt: now - 4 * 60_000, cwd: '/home/dev/project', live: true, persisted: true, title: 'Make the parser stream' },
+      { id: 'main-session-2b8e40d1', createdAt: now - 3 * 3_600_000, cwd: '/home/dev/project', live: false, persisted: true, title: 'Fix the fence tokenizer' },
+      { id: 'main-session-9c1d5f07', createdAt: now - 26 * 3_600_000, cwd: '/home/dev/other', live: false, persisted: true, firstPrompt: 'why is the first token so slow?' },
+      { id: 'main-session-4ae77b30', createdAt: now - 5 * 86_400_000, live: false, persisted: true },
+      { id: 'main-session-0d5c1e88', createdAt: now - 6 * 86_400_000, live: false, persisted: false },
+    ], '/home/dev')
+    view.app.setListRows(WINDOW_IDS.project, [
+      { label: 'parser.ts', detail: 'src' },
+      { label: 'stream.ts', detail: 'src' },
+      { label: 'parser.spec.ts', detail: 'tests' },
+    ])
+    view.app.setWindowTitle(WINDOW_IDS.project, 'Project — 3 files')
+    view.app.openWindow(WINDOW_IDS.sessions)
+    expectSnapshot('sessions', await view.frame())
+  })
+
+  it('renders the session list with the workspace collapsed', async () => {
+    const view = scene()
+    view.app.start()
+    view.app.setSessions([
+      { id: 'main-session-7f3a91c2', createdAt: Date.now() - 60_000, cwd: '/home/dev/project', live: false, persisted: true, title: 'A session whose workspace is long enough to shorten' },
+    ], '/home/dev')
+    view.app.openWindow(WINDOW_IDS.sessions)
+    expectSnapshot('sessions-home', await view.frame())
+  })
+
   it('renders a tiled desktop', async () => {
     const view = scene()
     view.app.start()

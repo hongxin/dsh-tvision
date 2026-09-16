@@ -30,9 +30,11 @@ import { MenuBarBase, type Menu } from '../widgets/menubar.ts'
 import { StatusBar, formatDuration, formatTokens, pressureBar } from '../widgets/statusbar.ts'
 import { SessionDocument } from '../session/model.ts'
 import { TranscriptView } from '../views/transcript.ts'
+import { textWidth } from '../kit/text.ts'
 import { Composer, type Completion, type ComposerTheme } from './composer.ts'
 import { Dialog, type DialogSpec } from '../views/dialogs.ts'
 import { askApproval as askApprovalDialog, askQuestions as askQuestionsDialog } from './questions.ts'
+import { buildSessionRows, describeSessionRow, type SessionRow } from './sessions.ts'
 
 /** The terminal surface the app writes to. */
 export interface AppTerminal {
@@ -55,6 +57,20 @@ export interface AppHost {
   files?(prefix: string): readonly string[]
   /** A one-line label for the current model route. */
   modelLabel?(): string | undefined
+  /**
+   * Resume a persisted session, replacing this process. Rejects when the
+   * handoff could not be committed, in which case the desktop is still alive.
+   */
+  resume?(sessionId: string, cwd?: string): Promise<never>
+  /**
+   * Index the workspace for the Project window. Rejects on an unreadable root.
+   * @returns Rows for the window, the paths behind them, and a one-line summary.
+   */
+  indexFiles?(): Promise<{
+    rows: { label: string; detail?: string }[]
+    paths: readonly string[]
+    summary: string
+  }>
   /** Context-window pressure in tokens, or 0 when unknown. */
   contextWindow?(): number
   /** Leave the application. */
@@ -350,12 +366,24 @@ class ListWindow implements Widget {
 
   /**
    * Swap the row source, for contents that are replaced rather than derived.
+   *
+   * The selection is clamped rather than reset: a list that refreshes while the
+   * agent works — a file index, a job list — must not throw the reader back to
+   * the top every few seconds.
    * @param items - The new source.
    */
   setSource(items: () => readonly { label: string; detail?: string; marker?: string }[]): void {
     this.items = items
-    this.selected = 0
-    this.offset = 0
+    this.selected = Math.max(0, Math.min(this.items().length - 1, this.selected))
+    this.offset = Math.max(0, Math.min(this.offset, this.selected))
+  }
+
+  /**
+   * The rows this window would show right now.
+   * @returns The rows, resolved from whatever source it has.
+   */
+  visibleRows(): readonly { label: string; detail?: string; marker?: string }[] {
+    return this.items()
   }
 
   /**
@@ -373,6 +401,11 @@ class ListWindow implements Widget {
     this.selected = Math.max(0, Math.min(rows.length - 1, this.selected))
     if (this.selected < this.offset) this.offset = this.selected
     if (this.selected >= this.offset + painter.height) this.offset = this.selected - painter.height + 1
+    // The detail column is measured from the right and the label takes what is
+    // left of it, so the two can never overlap: a label drawn to the window's
+    // full width would run straight through the detail text beside it.
+    const detailWidth = this.detailColumnWidth(painter.width, rows)
+    const labelWidth = Math.max(0, painter.width - MARKER_WIDTH - detailWidth)
     for (let row = 0; row < painter.height; row++) {
       const item = rows[this.offset + row]
       if (item === undefined) break
@@ -380,16 +413,39 @@ class ListWindow implements Widget {
       const style = index === this.selected
         ? (context.focused ? palette.listFocused : palette.listSelected)
         : palette.listNormal
-      const marker = item.marker ?? ' '
-      painter.text(0, row, ` ${marker} `, 3, style)
-      const label = item.label
-      const room = Math.max(0, painter.width - 3)
-      painter.text(3, row, label, room, style)
-      if (item.detail !== undefined && painter.width > 30) {
-        const detailRoom = Math.max(0, painter.width - 3 - Math.min(20, Math.floor(room / 2)) - 1)
-        painter.text(painter.width - detailRoom, row, item.detail, detailRoom, style)
+      painter.text(0, row, ` ${item.marker ?? ' '} `, MARKER_WIDTH, style)
+      painter.text(MARKER_WIDTH, row, item.label, labelWidth, style)
+      if (detailWidth > 0 && item.detail !== undefined) {
+        painter.text(painter.width - detailWidth, row, item.detail, detailWidth, style)
       }
     }
+  }
+
+  /**
+   * How wide the right-hand detail column should be.
+   *
+   * Sized to the widest detail actually present rather than to a fixed fraction,
+   * and capped so the label always keeps the majority of the window. A column of
+   * workspace paths can be long, and stealing half the window for it would make
+   * the labels — which is what the reader is scanning — unreadable.
+   * @param width - The window interior's width.
+   * @param rows - The rows being drawn.
+   * @returns The detail column width, or 0 when nothing has a detail.
+   */
+  private detailColumnWidth(
+    width: number,
+    rows: readonly { label: string; detail?: string }[],
+  ): number {
+    if (width < MIN_DETAIL_WINDOW_WIDTH) return 0
+    let widest = 0
+    for (const row of rows) {
+      if (row.detail === undefined) continue
+      widest = Math.max(widest, textWidth(row.detail))
+    }
+    if (widest === 0) return 0
+    const cap = Math.max(0, Math.floor(width * MAX_DETAIL_SHARE))
+    // One column of gutter so the two columns do not touch.
+    return Math.min(widest + 1, cap, Math.max(0, width - MARKER_WIDTH - MIN_LABEL_WIDTH))
   }
 
   /**
@@ -442,6 +498,27 @@ class ListWindow implements Widget {
   }
 }
 
+/** Columns reserved for the marker gutter at the left of a list row. */
+const MARKER_WIDTH = 3
+
+/** Below this interior width a list shows labels only, with no detail column. */
+const MIN_DETAIL_WINDOW_WIDTH = 30
+
+/** The most of a list window the detail column may take. */
+const MAX_DETAIL_SHARE = 0.45
+
+/** The least a label may be squeezed to before the detail column is dropped. */
+const MIN_LABEL_WIDTH = 16
+
+/**
+ * Describe any thrown value as a one-line message.
+ * @param error - Whatever was thrown.
+ * @returns A readable string.
+ */
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * The application.
  *
@@ -473,6 +550,12 @@ export class TvisionApp {
   private readonly composerHeight: number
   /** Counter for dialog window ids, so two dialogs never collide. */
   private dialogSeq = 0
+  /** The session rows last set, so a row's identity survives the list widget. */
+  private sessionRows: readonly SessionRow[] = []
+  /** The workspace each listed session ran in, for the resume handoff. */
+  private readonly sessionCwd = new Map<string, string>()
+  /** The file paths behind the Project window's rows. */
+  private projectRows: readonly { path: string }[] = []
 
   /**
    * @param options - Terminal, host, identity, and skin.
@@ -679,7 +762,7 @@ export class TvisionApp {
 
   /**
    * Replace a list window's rows, for a source that changes wholesale — a file
-   * index that finished, a session list that was re-read. The Projects, Sessions
+   * index that finished, a session list that was re-read. The Project, Sessions
    * and Jobs windows take their contents this way; Tasks and Conversation read
    * the session document directly.
    * @param id - The window id.
@@ -707,8 +790,57 @@ export class TvisionApp {
       if (todo !== undefined) this.notify(`Task ${todo.status}: ${todo.text}`)
       return
     }
+    if (id === WINDOW_IDS.sessions) {
+      void this.resumeSession(this.sessionRows[index])
+      return
+    }
+    if (id === WINDOW_IDS.project) {
+      // Choosing a file references it, so the next prompt can point at it without
+      // retyping the path.
+      const row = this.projectRows[index]
+      if (row?.path !== undefined) {
+        this.composer.insert(`@${row.path} `)
+        this.windows.focus(WINDOW_IDS.transcript)
+      }
+      return
+    }
     this.notify(`Selected row ${index + 1}.`)
   }
+
+  /**
+   * Resume a session, handing the process over.
+   *
+   * The handoff replaces this process, so everything here is best-effort: if the
+   * host rejects, the desktop is still alive and must be restored to a usable
+   * state with an explanation rather than left half-torn-down.
+   * @param row - The chosen session row.
+   */
+  async resumeSession(row: SessionRow | undefined): Promise<void> {
+    if (row === undefined) return
+    const resume = this.options.host.resume
+    if (resume === undefined) {
+      this.notify('This host cannot resume in place; restart with --resume.', 'warning')
+      return
+    }
+    if (!row.resumable) {
+      this.notify(describeSessionRow(row), 'warning')
+      return
+    }
+    const cwd = this.sessionCwd.get(row.id)
+    this.notify(`Resuming ${row.id}…`, 'info', 2000)
+    this.frame()
+    try {
+      // A handoff that commits never returns; one that rejects leaves this
+      // process alive, which is what the catch below is for.
+      await resume(row.id, cwd)
+    } catch (error) {
+      /* c8 ignore next 3 -- a committed handoff never returns. */
+      this.renderer.invalidate()
+      this.windows.requestRender()
+      this.notify(`Could not resume ${row.id}: ${describeError(error)}`, 'error')
+    }
+  }
+
 
   /** Show a transient message in the status line. */
   notify(text: string, tone: 'info' | 'warning' | 'error' = 'info', milliseconds = 6000): void {
@@ -920,6 +1052,19 @@ export class TvisionApp {
       }
     }
     return false
+  }
+
+  /**
+   * Set a window's title, so a view can report state that belongs in the chrome
+   * rather than in its rows — an index that truncated, a count that changed.
+   * @param id - The window id.
+   * @param title - The new title.
+   */
+  setWindowTitle(id: string, title: string): void {
+    const window = this.windows.get(id)
+    if (window === undefined || window.title === title) return
+    window.title = title
+    this.windows.requestRender()
   }
 
   /**
@@ -1299,6 +1444,97 @@ export class TvisionApp {
     this.options.terminal.write(ScreenRenderer.enter())
     this.windows.requestRender()
     this.frame()
+  }
+
+  /**
+   * Refresh the Project window from the host's file index.
+   *
+   * Awaited by the caller rather than run on the frame loop: a walk is I/O, and
+   * a frame that waits on a filesystem is a frame that stutters.
+   * @returns The summary the window title reports, or undefined without a host index.
+   */
+  async refreshProject(): Promise<string | undefined> {
+    const index = this.options.host.indexFiles
+    if (index === undefined) return undefined
+    try {
+      const result = await index()
+      this.setListRows(WINDOW_IDS.project, result.rows)
+      this.projectRows = result.paths.map(path => ({ path }))
+      this.setWindowTitle(WINDOW_IDS.project, `Project — ${result.summary}`)
+      return result.summary
+    } catch (error) {
+      this.setListRows(WINDOW_IDS.project, [])
+      this.projectRows = []
+      this.setWindowTitle(WINDOW_IDS.project, 'Project — unreadable')
+      this.notify(`Could not index the workspace: ${describeError(error)}`, 'error')
+      return undefined
+    }
+  }
+
+  /**
+   * Replace the Sessions window's rows.
+   *
+   * Kept as a plain setter rather than a fetch because the caller owns storage
+   * access; the application only knows how to draw a list.
+   * @param sessions - The sessions to show.
+   * @param home - The home directory, for the workspace column.
+   */
+  setSessions(
+    sessions: readonly {
+      id: string
+      createdAt: number
+      cwd?: string
+      live: boolean
+      persisted: boolean
+      title?: string
+      firstPrompt?: string
+    }[],
+    home?: string,
+  ): void {
+    this.sessionCwd.clear()
+    for (const session of sessions) {
+      if (session.cwd !== undefined) this.sessionCwd.set(session.id, session.cwd)
+    }
+    this.sessionRows = buildSessionRows(sessions, {
+      ...(this.options.info.sessionId === '' ? {} : { currentId: this.options.info.sessionId }),
+      ...(home === undefined ? {} : { home }),
+    })
+    this.setListRows(
+      WINDOW_IDS.sessions,
+      this.sessionRows.map(row => ({
+        label: row.resumable ? row.label : `${row.label} (not resumable)`,
+        ...(row.detail === '' ? {} : { detail: row.detail }),
+        marker: row.marker,
+      })),
+    )
+    this.setWindowTitle(WINDOW_IDS.sessions, `Sessions — ${this.sessionRows.length}`)
+  }
+
+  /**
+   * The sessions currently listed, for tests and for the status line.
+   * @returns The rows.
+   */
+  get sessions(): readonly SessionRow[] {
+    return this.sessionRows
+  }
+
+  /**
+   * The rows a list window is currently showing, rendered as text.
+   *
+   * Exists so a test can assert on a window's contents without depending on
+   * where the window happens to be placed, how tall it is, or where it is
+   * scrolled. Asks the widget, so it works for a window whose rows are derived
+   * from the session document as well as one that was handed them.
+   * @param id - The window id.
+   * @returns The rows, one per line; empty for a window that is not a list.
+   */
+  listRowsFor(id: string): string {
+    const widget = this.lists.get(id)
+    if (widget === undefined) return ''
+    return widget
+      .visibleRows()
+      .map(row => `${row.marker ?? ' '} ${row.label}${row.detail === undefined ? '' : `  ${row.detail}`}`)
+      .join('\n')
   }
 
   /**

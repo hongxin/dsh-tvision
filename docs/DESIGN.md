@@ -106,9 +106,9 @@ F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7
 | Window | Key | What it is |
 |---|---|---|
 | **Conversation** | — | The transcript, with the composer on its last line. Always open. |
-| **Project** | `F7` | Files in the workspace; choosing one can reference it. |
+| **Project** | `F7` | Files in the workspace, ranked; choosing one references it. |
 | **Tasks** | `F8` | The agent's own todo list, live. |
-| **Sessions** | `F3` | Resumable sessions, newest first. |
+| **Sessions** | `F3` | Resumable sessions, newest first; Enter hands the process over. |
 | **Jobs** | — | Background jobs the agent started. |
 | **Help** | `F1` | The key list, plus the mouse reference. |
 | **About** | — | Identity, session, cwd, skin. |
@@ -168,6 +168,7 @@ knows about terminals.**
   ┌─────────────────────────────────────────────────────────────────────┐
   │ app/          the desktop: windows, menus, keys, host interface     │
   │   app.ts  composer.ts  questions.ts  events.ts                      │
+  │   project.ts  sessions.ts                                           │
   ├─────────────────────────────────────────────────────────────────────┤
   │ views/        agent-shaped widgets                                  │
   │   transcript.ts   dialogs.ts                                        │
@@ -293,7 +294,7 @@ in the code:
 
 ## 4. Testing
 
-411 tests, and the split is deliberate rather than incidental.
+505 tests, and the split is deliberate rather than incidental.
 
 | Suite | What it pins |
 |---|---|
@@ -304,7 +305,11 @@ in the code:
 | `input.spec.ts` | Every sequence, and every sequence delivered one byte at a time. |
 | `chrome.spec.ts` | The menu state machine and the function-key strip. |
 | `transcript.spec.ts` | The document fold and the row builder. |
+| `project.spec.ts` | The file index: exclusions, the entry budget, ranking, a symlink loop. |
+| `sessions.spec.ts` | The session list fold: label fallbacks, resumability, stable ordering. |
+| `terminal.spec.ts` | Raw mode, the alternate screen, and restoring both on every exit path. |
 | `app.spec.ts` | The whole desktop: feed bytes in, assert on the frame. |
+| `app-windows.spec.ts` | The windows the host fills in, including every failure path. |
 | `integration.spec.ts` | Streaming, resize mid-stream, and a burst of mixed input. |
 | `snapshot.spec.ts` | Checked-in frames of the whole interface, as ASCII. |
 
@@ -377,14 +382,15 @@ Honest scope, so the gaps are not mistaken for decisions.
   and by `dsh --profile tvision --dump-config`, which composes the tree
   correctly. A real model turn has not been run from this machine because the
   sandbox cannot allocate a pty.
-- **Sessions and Jobs windows are shells.** They open, scroll, and focus, and
-  their rows can be supplied through `setListRows`; nothing yet reads the session
-  query or job services into them.
-- **No resume-from-the-UI.** `--resume <id>` works; choosing a session from the
-  Sessions window does not yet hand the process over.
-- **The Project window does not index files yet.** The `@file` completion in the
-  composer does, because it shares the workspace search; the window takes rows
-  through `setListRows`, which is the seam a file index would use.
+- **The Jobs window is a shell.** It opens, scrolls, and focuses; nothing yet
+  reads the job service into it.
+- **The Sessions window lists but does not search.** It reads the session query,
+  folds titles for the visible page, and resumes on Enter. Filtering and search
+  are not wired.
+- **The Project index is rebuilt, never watched.** It refreshes on mount and
+  after a tool that could have written a file, coalesced by a 1.5 s timer. A
+  long-running turn therefore sees a slightly stale list, and an edit made by
+  another program is not noticed at all.
 - **No plugin-facing overlay API.** The upstream TUI exposes one; this does not
   yet, so a third-party plugin cannot open a window.
 - **Skin persistence.** `--skin` and `F9` work; the choice is not written back to
