@@ -654,3 +654,34 @@ describe('kinsoku (禁則) wrapping', () => {
     expect(clean(lines)).toBe(true)
   })
 })
+
+describe('settled reasoning blocks', () => {
+  it('lifts a reasoner block (type reasoning, payload in text) into a reasoning piece', () => {
+    // The shape DeepSeek reasoner settles to: unlike Anthropic's `thinking`
+    // block whose payload rides `thinking`, the harness records `reasoning`
+    // with its payload in `text`. Recognising only the former dropped every
+    // reasoner's thoughts from the transcript.
+    const pieces = readContentBlocks([
+      { type: 'reasoning', text: 'The user greeted me; answer in kind.' },
+      { type: 'text', text: '你好！' },
+    ])
+    expect(pieces).toEqual([
+      { kind: 'reasoning', text: 'The user greeted me; answer in kind.' },
+      { kind: 'text', text: '你好！' },
+    ])
+  })
+
+  it('a replayed log puts the question before the answer', () => {
+    // In the log, step/start precedes the drained user/message; the assistant
+    // entry must therefore be created at first content, not at step start, or
+    // a resumed session renders the Agent header above the question.
+    const document = new SessionDocument()
+    foldEvent(document, { type: 'step/start', seq: 1, time: 1, data: { turn: 1, step: 1 } })
+    foldEvent(document, { type: 'user/message', seq: 2, time: 2, data: { content: [{ type: 'text', text: '你好' }], source: { kind: 'user' } } })
+    foldEvent(document, { type: 'assistant/message', seq: 3, time: 3, data: {
+      turn: 1, step: 1,
+      message: { content: [{ type: 'text', text: '你好！' }] },
+    } })
+    expect(document.all.map(entry => entry.kind)).toEqual(['user', 'assistant'])
+  })
+})

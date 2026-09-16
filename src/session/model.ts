@@ -580,6 +580,13 @@ export function readContentBlocks(
       pieces.push(...splitFencedCode(block.text))
     } else if (block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking !== '') {
       pieces.push({ kind: 'reasoning', text: block.thinking })
+    } else if (block.type === 'reasoning' && typeof block.text === 'string' && block.text !== '') {
+      // The harness's own settled shape for a reasoner's thoughts: the block
+      // type is `reasoning` and the payload rides `text` — unlike Anthropic's
+      // `thinking` block, whose payload rides `thinking`. Recognising only the
+      // latter silently dropped every DeepSeek reasoner's reasoning from the
+      // transcript.
+      pieces.push({ kind: 'reasoning', text: block.text })
     }
   }
   return pieces

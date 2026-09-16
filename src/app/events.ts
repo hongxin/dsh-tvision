@@ -148,10 +148,12 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       return { changed: true }
     }
     case 'step/start': {
-      document.beginAssistant(
-        { turn: num(data, 'turn', 0), step: num(data, 'step', 0) },
-        event.time,
-      )
+      // Deliberately no beginAssistant here. In the log, the drained
+      // user/message lands *after* the step that will answer it, so an entry
+      // created at step start renders the Agent header above the question on a
+      // replayed session. streamChunk and settleAssistant both create the entry
+      // on demand — at first content, which is after the question, exactly
+      // where the live session had it.
       return { changed: true }
     }
     case 'assistant/chunk': {
