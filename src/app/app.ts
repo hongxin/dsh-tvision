@@ -1512,13 +1512,11 @@ export class TvisionApp {
   }
 
   /**
-   * Run the frame loop until the host quits.
+   * Take the screen and paint the first frame.
    *
-   * The loop is a poll rather than a subscription because there is nothing to
-   * subscribe to: the terminal delivers bytes, and the app turns them into
-   * mutations; a repaint is due when the mutation said so. A 16 ms tick matches
-   * the terminal's own practical refresh ceiling and costs nothing when idle,
-   * because an unchanged frame renders to the empty string.
+   * This does *not* start the repaint loop — {@link startFrameLoop} does, and a
+   * host that forgets it gets a desktop that paints once and never again, which
+   * is exactly the failure the loop exists to prevent.
    */
   start(): void {
     if (this.running) return
@@ -1527,6 +1525,25 @@ export class TvisionApp {
     this.options.terminal.write(ScreenRenderer.enter({ mouse: this.options.mouse ?? true }))
     this.windows.requestRender()
     this.frame()
+  }
+
+  /**
+   * Poll for due frames until the returned stopper is called.
+   *
+   * The loop is a poll rather than a subscription because there is nothing to
+   * subscribe to: the terminal delivers bytes, and the app turns them into
+   * mutations; a repaint is due when the mutation said so. A 16 ms tick matches
+   * the terminal's own practical refresh ceiling and costs nothing when idle,
+   * because an unchanged frame renders to the empty string. Unref'd so a host
+   * that leaks the stopper cannot keep the process alive on it.
+   * @param intervalMs - Poll interval (default 16, the practical ceiling).
+   * @returns The stopper; call it *before* leaving the alternate screen, or a
+   * straggling tick paints a frame onto the shell the user just got back.
+   */
+  startFrameLoop(intervalMs = 16): () => void {
+    const timer = setInterval(() => this.frame(), intervalMs)
+    timer.unref?.()
+    return () => clearInterval(timer)
   }
 
   /**

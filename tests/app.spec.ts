@@ -851,3 +851,32 @@ describe('screen modes', () => {
     expect(terminal.output.split('\u001B[?1049l').length - 1).toBe(1)
   })
 })
+
+describe('frame loop', () => {
+  it('paints a due frame on the pump tick, and nothing when idle', () => {
+    vi.useFakeTimers()
+    try {
+      const { app, terminal } = build()
+      app.start()
+      terminal.writes = 0
+      // The loop, not the mutation, is what turns a dirty flag into bytes:
+      // this is the pump the real profile runs on.
+      const stop = app.startFrameLoop()
+      // A mutation, not a bare request: an unchanged frame diffs to the empty
+      // string by design, so the tick must have something real to paint.
+      app.notify('the agent says hi')
+      vi.advanceTimersByTime(17)
+      expect(terminal.writes).toBeGreaterThan(0)
+      // An unchanged frame renders to the empty string, so idling writes nothing.
+      terminal.writes = 0
+      vi.advanceTimersByTime(50)
+      expect(terminal.writes).toBe(0)
+      stop()
+      app.windows.requestRender()
+      vi.advanceTimersByTime(50)
+      expect(terminal.writes).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

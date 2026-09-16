@@ -391,6 +391,12 @@ export function mount(input: MountInput): () => void {
   terminal.setTitle(`tvision — ${String(agent.id)}`)
   app.start()
 
+  // 6. The repaint pump. Everything above only *marks* frames due; without this
+  //    loop the desktop paints once at mount and never again, no matter what the
+  //    agent streams or the user types. The demo has its own; this is the one
+  //    the real profile runs on.
+  const stopFrameLoop = app.startFrameLoop()
+
   // 5. Terminal input: raw mode in, decoded events out. The terminal owns the
   //    ESC timeout, because only it knows when input went quiet.
   terminal.start(
@@ -399,6 +405,9 @@ export function mount(input: MountInput): () => void {
   )
 
   return () => {
+    // Stop the pump first: a tick that lands after the alternate screen is
+    // left paints a frame onto the shell the user just got back.
+    stopFrameLoop()
     offSession()
     offStatus()
     offCreated()

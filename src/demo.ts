@@ -331,9 +331,9 @@ export async function runDemo(argv: readonly string[] = process.argv.slice(2)): 
   terminal.setTitle(`tvision ${VERSION} — demo`)
   app.start()
 
-  // A frame loop, at the terminal's practical refresh ceiling. An unchanged
-  // frame renders to the empty string, so idling costs nothing.
-  const timer = setInterval(() => app?.frame(), 16)
+  // The same repaint pump the real profile runs on: an unchanged frame renders
+  // to the empty string, so idling costs nothing.
+  const stopFrameLoop = app.startFrameLoop()
   terminal.start(
     chunkIn => app?.feed(chunkIn),
     () => app?.handle({ type: 'resize', columns: terminal.columns, rows: terminal.rows }),
@@ -347,7 +347,7 @@ export async function runDemo(argv: readonly string[] = process.argv.slice(2)): 
   try {
     await done
   } finally {
-    clearInterval(timer)
+    stopFrameLoop()
     terminal.stop()
   }
 }
