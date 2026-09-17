@@ -685,3 +685,26 @@ describe('settled reasoning blocks', () => {
     expect(document.all.map(entry => entry.kind)).toEqual(['user', 'assistant'])
   })
 })
+
+describe('streaming accumulation', () => {
+  it('does not rebuild the entry when nothing new arrived', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.streamChunk({ turn: 0, step: 0 }, { kind: 'text', text: 'hello' }, 2)
+    const first = document.all[0]
+    const again = document.all[0]
+    expect(again).toBe(first)
+  })
+
+  it('settles correctly even if no reader looked at the chunks', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.streamChunk({ turn: 0, step: 0 }, { kind: 'reasoning', text: 'partial' }, 2)
+    document.streamChunk({ turn: 0, step: 0 }, { kind: 'text', text: 'half ' }, 3)
+    document.settleAssistant({ turn: 0, step: 0 }, [{ kind: 'text', text: 'the final answer' }], 4)
+    const entry = document.all.find(candidate => candidate.kind === 'assistant')
+    expect(entry?.text).toBe('the final answer')
+    expect(entry?.reasoning).toBe('partial')
+    expect(entry?.streaming).toBe(false)
+  })
+})

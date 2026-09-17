@@ -119,6 +119,18 @@ export class SessionDocument {
   private nextSyntheticId = -1
   /** The assistant entry currently being streamed, if any. */
   private openAssistant: Entry | undefined
+  /**
+   * Streaming accumulation, so a chunk costs O(1) instead of a copy of the
+   * whole response. Parts pile up per content-kind bucket and are joined
+   * lazily by {@link materialize} — at most once per reader, which in practice
+   * is once per painted frame — so the growing text is rebuilt by delta, never
+   * re-concatenated from scratch per token.
+   */
+  private pending: {
+    position: { turn: number; step: number }
+    buckets: { kind: ContentPiece['kind']; parts: string[]; joined: string }[]
+  } | undefined
+  private pendingDirty = false
   private todos: TodoItem[] = []
   private title: string | undefined
   private phase: AgentPhase = 'idle'
@@ -132,9 +144,47 @@ export class SessionDocument {
   private readonly listeners = new Set<() => void>()
   private version = 0
 
-  /** Every entry, oldest first. */
+  /** Every entry, oldest first. The open streaming entry is joined first. */
   get all(): readonly Entry[] {
+    this.materialize()
     return this.entries
+  }
+
+  /**
+   * Fold the pending stream parts into the open assistant entry, if any.
+   *
+   * Per bucket this appends only the parts accumulated since the last call, so
+   * the cost is proportional to what arrived, not to the response's length.
+   * Does nothing when no chunks are pending; the stored entry is replaced
+   * immutably, which is the invalidation signal the view's row cache reads.
+   */
+  private materialize(): void {
+    if (!this.pendingDirty || this.pending === undefined || this.openAssistant === undefined) return
+    const buckets = this.pending.buckets
+    let textDelta = ''
+    let reasoningDelta = ''
+    for (const bucket of buckets) {
+      const fresh = bucket.parts.join('')
+      bucket.parts = []
+      if (fresh === '') continue
+      bucket.joined += fresh
+      if (bucket.kind === 'text') textDelta += fresh
+      if (bucket.kind === 'reasoning') reasoningDelta += fresh
+    }
+    this.pendingDirty = false
+    const target = this.openAssistant
+    const index = this.entries.indexOf(target)
+    if (index < 0) return
+    const pieces = buckets.map(bucket =>
+      bucket.joined === '' ? undefined : ({ kind: bucket.kind, text: bucket.joined } as ContentPiece))
+    this.entries[index] = {
+      ...target,
+      pieces: pieces.filter((piece): piece is ContentPiece => piece !== undefined),
+      text: (target.text ?? '') + textDelta,
+      reasoning: (target.reasoning ?? '') + reasoningDelta,
+      streaming: true,
+    }
+    this.openAssistant = this.entries[index]
   }
 
   /** The task list as last written. */
@@ -189,6 +239,8 @@ export class SessionDocument {
     this.entries.length = 0
     this.byCallId.clear()
     this.openAssistant = undefined
+    this.pending = undefined
+    this.pendingDirty = false
     this.todos = []
     this.title = undefined
     this.phase = 'idle'
@@ -220,6 +272,7 @@ export class SessionDocument {
    * @returns The updated entry, or undefined when the id is unknown.
    */
   update(id: number, patch: Partial<Entry>): Entry | undefined {
+    this.materialize()
     const index = this.entries.findIndex(entry => entry.id === id)
     if (index < 0) return undefined
     const current = this.entries[index]
@@ -269,6 +322,8 @@ export class SessionDocument {
       streaming: true,
     })
     this.openAssistant = entry
+    this.pending = { position, buckets: [] }
+    this.pendingDirty = false
     return entry
   }
 
@@ -288,23 +343,22 @@ export class SessionDocument {
     if (target === undefined || target.turn !== position.turn || target.step !== position.step) {
       target = this.beginAssistant(position, time)
     }
-    const pieces = [...(target.pieces ?? [])]
-    const last = pieces[pieces.length - 1]
-    // Consecutive chunks of the same kind extend one piece; that is what makes a
-    // streamed answer wrap as prose rather than as one paragraph per token.
-    if (last !== undefined && last.kind === piece.kind) {
-      pieces[pieces.length - 1] = { ...last, text: last.text + piece.text }
-    } else {
-      pieces.push(piece)
+    // O(1): the chunk lands in a bucket and the entry is rebuilt by
+    // materialize() when a reader next looks. Consecutive chunks of the same
+    // kind share a bucket, which is what makes a streamed answer wrap as prose
+    // rather than as one paragraph per token.
+    if (this.pending === undefined || this.pending.position.turn !== position.turn
+      || this.pending.position.step !== position.step) {
+      this.pending = { position, buckets: [] }
     }
-    const reasoning = pieces.filter(part => part.kind === 'reasoning').map(part => part.text).join('')
-    const text = pieces.filter(part => part.kind === 'text').map(part => part.text).join('')
-    const index = this.entries.indexOf(target)
-    /* c8 ignore next -- the entry came from this array. */
-    if (index < 0) return
-    const next: Entry = { ...target, pieces, reasoning, text, streaming: true }
-    this.entries[index] = next
-    this.openAssistant = next
+    const buckets = this.pending.buckets
+    const last = buckets[buckets.length - 1]
+    if (last !== undefined && last.kind === piece.kind && piece.text !== '') {
+      last.parts.push(piece.text)
+    } else if (piece.text !== '') {
+      buckets.push({ kind: piece.kind, parts: [piece.text], joined: '' })
+    }
+    this.pendingDirty = true
     this.touch()
   }
 
@@ -320,6 +374,9 @@ export class SessionDocument {
     content: readonly ContentPiece[],
     time: number,
   ): void {
+    this.materialize()
+    this.pending = undefined
+    this.pendingDirty = false
     const target = this.openAssistant
     if (target === undefined) {
       const created = this.beginAssistant(position, time)
@@ -360,6 +417,9 @@ export class SessionDocument {
    * @param time - When the step ended.
    */
   endStep(position: { turn: number; step: number }, time: number): void {
+    this.materialize()
+    this.pending = undefined
+    this.pendingDirty = false
     const target = this.openAssistant
     if (target !== undefined && target.turn === position.turn && target.step === position.step) {
       const index = this.entries.indexOf(target)
