@@ -1088,7 +1088,13 @@ export class WindowManager {
     }
     const consumed = active.widget.onKey?.(event, context) === 1
     if (consumed) this.requestRender()
-    else if (this.bottomChrome?.onKey?.(event, this) === true) this.requestRender()
+    else if (this.bottomChrome?.onKey?.(event, this) === true) {
+      // Truthful from here too: the chrome answered the key, so the event was
+      // consumed even though the focused widget did not. A false return lets a
+      // caller re-dispatch what was already handled.
+      this.requestRender()
+      return true
+    }
     return consumed
   }
 

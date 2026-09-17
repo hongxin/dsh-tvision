@@ -510,3 +510,34 @@ describe('status bar formatting', () => {
     expect(pressureBar(2, 4)).toBe('████')
   })
 })
+
+describe('hint strip slot arithmetic', () => {
+  it('never lets the last slot run past the screen edge', () => {
+    // Surplus larger than the slot count (three short hints on a narrow
+    // strip) is where the old arithmetic granted the last slot one column
+    // too many: the box painted past the edge and the painter clipped it.
+    const bar = new StatusBar({
+      hints: () => [
+        { key: 'f1', label: 'A', action: () => {} },
+        { key: 'f2', label: 'B', action: () => {} },
+        { key: 'f3', label: 'C', action: () => {} },
+      ],
+      status: () => [],
+      message: () => undefined,
+      invoke: () => {},
+    })
+    const buffer = new CellBuffer(30, 2)
+    bar.draw(new Painter(buffer, rect(0, 0, 30, 2)), {
+      palette: resolvePalette(TURBO_VISION),
+      focused: true,
+      requestRender: () => {},
+    })
+    const boxes = bar.boxes
+    const last = boxes[boxes.length - 1]
+    if (last === undefined) throw new Error('no hint boxes were recorded')
+    expect(last.end).toBeLessThanOrEqual(30)
+    // And with surplus flowing past every slot, the strip ends flush.
+    expect(last.end).toBe(30)
+    expect(boxes[0]?.end ?? 0).toBeGreaterThan(0)
+  })
+})

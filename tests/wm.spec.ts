@@ -671,3 +671,18 @@ describe('closing a modal window', () => {
     expect(closed).toBe(1)
   })
 })
+
+describe('key routing truth', () => {
+  it('reports consumed when only the bottom chrome answers', () => {
+    const manager = makeManager()
+    manager.bottomChrome = {
+      draw: () => {},
+      onKey: () => true,
+    }
+    openWindow(manager, 'a', new SpyWidget(), rect(2, 2, 40, 12))
+    manager.focus('a')
+    // The focused widget declines the key; the chrome takes it. Saying "not
+    // consumed" invites a caller to re-dispatch an already-handled event.
+    expect(manager.handle({ type: 'key', key: 'f5' })).toBe(true)
+  })
+})

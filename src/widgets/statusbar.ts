@@ -212,7 +212,14 @@ export class StatusBar {
       if (hint === undefined) continue
       const start = index * slotWidth + Math.min(index, surplus)
       const extra = index < surplus ? 1 : 0
-      const width = slotWidth + extra + (index === slots - 1 ? Math.max(0, surplus - index) : 0)
+      // Surplus beyond one column per slot belongs to the last slot, whose box
+      // then ends flush with the screen edge. The old arithmetic added that
+      // remainder on top of an `extra` it had already counted, painting one
+      // column past the edge; stretching to the full remaining width instead
+      // would turn a lone hint into a whole-row button, which the surplus=0
+      // guard for single slots exists to prevent.
+      const remainder = index === slots - 1 && surplus >= slots ? surplus - slots : 0
+      const width = slotWidth + extra + remainder
       const enabled = hint.action !== undefined
       const number = hint.key.toUpperCase()
       const numberWidth = textWidth(number)
