@@ -300,3 +300,28 @@ describe('closing a dialog window by its system box', () => {
     expect(app.composer.value).toBe('hi')
   })
 })
+
+describe('a superseded dialog', () => {
+  it('settles as dismissed while the new one answers normally', async () => {
+    const { app } = build()
+    app.start()
+    const first = app.ask({
+      title: 'First',
+      question: 'one?',
+      choices: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }],
+    })
+    const second = app.ask({
+      title: 'Second',
+      question: 'two?',
+      choices: [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }],
+    })
+    app.frame()
+    // Only the second dialog holds the desktop; answer it with Enter.
+    app.feed('\r')
+    await expect(second).resolves.toBe('yes')
+    await expect(first).resolves.toBeUndefined()
+    // And neither window is left behind.
+    expect(app.windows.all().some(window => !window.closed && window.title === 'First')).toBe(false)
+    expect(app.windows.all().some(window => !window.closed && window.title === 'Second')).toBe(false)
+  })
+})
