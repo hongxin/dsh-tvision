@@ -109,19 +109,14 @@ describe('layout planning', () => {
     expect(plan.transcript.width + plan.sideWidth).toBe(140)
   })
 
-  it('reserves a usable composer height', () => {
-    // A separator, the input line, and one row so a completion popup has
-    // somewhere to open without the pane resizing under the reader.
-    expect(planLayout(100, 30, rect(0, 1, 100, 27)).composerHeight).toBe(3)
-    expect(planLayout(100, 10, rect(0, 1, 100, 7)).composerHeight).toBeLessThanOrEqual(7)
-  })
-
-  it('gives the composer up before it starves the transcript', () => {
-    // On a desktop of five rows the transcript keeps its floor and the composer
-    // takes what is left, even though that is less than it would like.
-    const plan = planLayout(60, 8, rect(0, 1, 60, 5))
-    expect(plan.composerHeight).toBeLessThan(3)
-    expect(plan.composerHeight + 4).toBeLessThanOrEqual(5)
+  it('gives the transcript window the whole desktop column', () => {
+    // The pane inside it splits composer rows from transcript rows itself,
+    // yielding on a short desktop; the window never pre-reserves them.
+    const plan = planLayout(100, 30, rect(0, 1, 100, 27))
+    expect(plan.transcript.height).toBe(27)
+    expect(plan.transcript.width).toBe(100 - plan.sideWidth)
+    const short = planLayout(60, 8, rect(0, 1, 60, 5))
+    expect(short.transcript).toEqual(rect(0, 1, 60, 5))
   })
 })
 

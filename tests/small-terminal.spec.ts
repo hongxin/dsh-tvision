@@ -80,8 +80,6 @@ describe('planLayout', () => {
     // as useless as a transcript with no input line.
     const plan = planLayout(60, 12, rect(0, 1, 60, 8))
     expect(plan.transcript.height).toBeGreaterThanOrEqual(4)
-    expect(plan.composerHeight).toBeGreaterThanOrEqual(1)
-    expect(plan.composerHeight + 4).toBeLessThanOrEqual(8)
   })
 
   it('keeps the side column off a narrow screen', () => {

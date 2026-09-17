@@ -160,26 +160,6 @@ describe('Painter', () => {
     for (let x = 0; x < 6; x++) expect(buffer.at(x, 0)?.style.bg).toBe(3)
   })
 
-  it('wraps a paragraph to the width and reports rows painted', () => {
-    const buffer = new CellBuffer(10, 4)
-    const painted = new Painter(buffer, rect(0, 0, 10, 4))
-      .paragraph(0, 0, 10, 4, 'one two three four five six', {})
-    // Greedy wrapping at ten columns: "one two three" fills the line exactly,
-    // then "four five" and "six".
-    expect(painted).toBe(3)
-    expect(buffer.lines()).toEqual([
-      'one two',
-      'three four',
-      'five six',
-      '',
-    ])
-  })
-
-  it('preserves paragraph breaks', () => {
-    const buffer = new CellBuffer(6, 4)
-    new Painter(buffer, rect(0, 0, 6, 4)).paragraph(0, 0, 6, 4, 'a\n\nb', {})
-    expect(buffer.lines()).toEqual(['a', '', 'b', ''])
-  })
 })
 
 describe('clipping helpers', () => {

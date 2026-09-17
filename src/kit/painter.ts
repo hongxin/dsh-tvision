@@ -333,62 +333,6 @@ export class Painter {
     this.text(localX + titleAt, localY, shown, textWidth(shown), titleStyle ?? style)
   }
 
-  /**
-   * Wrap text to the region width, then paint as many lines as fit.
-   * @param localX - Left column.
-   * @param localY - First row.
-   * @param width - Wrap width in columns.
-   * @param height - Maximum rows to paint.
-   * @param text - The text to wrap; `\n` starts a new paragraph.
-   * @param style - The style.
-   * @param options - `indent` prepends spaces to continuation lines.
-   * @returns The number of rows actually painted.
-   */
-  paragraph(
-    localX: number,
-    localY: number,
-    width: number,
-    height: number,
-    text: string,
-    style: Style,
-    options: { indent?: number } = {},
-  ): number {
-    if (width <= 0 || height <= 0) return 0
-    const indent = options.indent ?? 0
-    const paragraphs = text.split('\n')
-    const lines: string[] = []
-    for (const paragraph of paragraphs) {
-      if (paragraph === '') {
-        lines.push('')
-        continue
-      }
-      let current = ''
-      let currentWidth = 0
-      for (const word of paragraph.split(/(\s+)/u)) {
-        if (word === '') continue
-        const wordWidth = textWidth(word)
-        if (currentWidth > 0 && currentWidth + wordWidth > width) {
-          lines.push(current)
-          current = ''
-          currentWidth = 0
-          if (/^\s+$/u.test(word)) continue
-        }
-        current += word
-        currentWidth += wordWidth
-      }
-      lines.push(current)
-    }
-    let painted = 0
-    for (let index = 0; index < lines.length && painted < height; index++) {
-      const line = lines[index] ?? ''
-      const offset = index === 0 ? 0 : indent
-      const room = Math.max(0, width - offset)
-      const clipped = clipToWidth(line, room)
-      this.text(localX + offset, localY + painted, clipped, room, style)
-      painted++
-    }
-    return painted
-  }
 }
 
 /**
