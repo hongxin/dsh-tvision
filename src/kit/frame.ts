@@ -12,7 +12,7 @@
  * - the frame casts a two-column, one-row drop shadow onto whatever is behind
  *   it, which is what makes stacked windows read as *stacked*;
  * - the bottom-right corner carries a `⋮` grip, and dragging it resizes.
- * @module @dsh-tvision/dsh-tvision/widgets/frame
+ * @module @dsh-tvision/dsh-tvision/kit/frame
  */
 
 import type { Rect, Style } from '../kit/cell.ts'

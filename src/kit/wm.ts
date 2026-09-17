@@ -27,7 +27,7 @@ import type { ResolvedPalette, Skin } from './skin.ts'
 import { resolvePalette } from './skin.ts'
 import { HIDDEN_CURSOR, ScreenRenderer, type CursorState } from './screen.ts'
 import { Painter } from './painter.ts'
-import { drawFrame, frameHitTest, interiorRect } from '../widgets/frame.ts'
+import { drawFrame, frameHitTest, interiorRect } from './frame.ts'
 
 /** Minimum window size the manager will allow a drag to produce. */
 export const MIN_WINDOW_WIDTH = 12

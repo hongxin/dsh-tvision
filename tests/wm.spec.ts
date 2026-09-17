@@ -14,7 +14,7 @@ import { WindowManager } from '../src/kit/wm.ts'
 import type { InputEvent, MouseInput } from '../src/kit/input.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../src/kit/widget.ts'
 import { Consumed } from '../src/kit/widget.ts'
-import { frameHitTest, interiorRect } from '../src/widgets/frame.ts'
+import { frameHitTest, interiorRect } from '../src/kit/frame.ts'
 import { TURBO_VISION, resolvePalette, DEFAULT_SKIN_ID, SKINS, findSkin, skinOrDefault } from '../src/kit/skin.ts'
 import { DEFAULT_SKIN_ID as DEFAULT_ID } from '../src/kit/skin.ts'
 
