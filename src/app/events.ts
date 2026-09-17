@@ -182,15 +182,18 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       )
       const usage = field(data, 'usage')
       if (usage !== undefined && usage !== null) {
-        // `total` is passed only when the provider actually reported one: a NaN
-        // sentinel here flowed into the context bar, whose `'█'.repeat(NaN)`
-        // renders an empty bar and whose percentage reads "NaN%".
-        const total = num(usage, 'total', Number.NaN)
+        // The harness reports usage with *Tokens-suffixed names — verified
+        // against real logs: inputTokens/outputTokens/totalTokens/cacheReadTokens.
+        // The unsuffixed names this used to read matched nothing, so the status
+        // counters sat at ↑0 ↓0 through every real turn. `total` is passed only
+        // when one was actually reported: a NaN sentinel here flowed into the
+        // context bar, whose `'█'.repeat(NaN)` renders an empty bar.
+        const total = num(usage, 'totalTokens', Number.NaN)
         document.addUsage({
-          input: num(usage, 'input', 0),
-          output: num(usage, 'output', 0),
-          cacheRead: num(usage, 'cacheRead', 0),
-          cacheWrite: num(usage, 'cacheWrite', 0),
+          input: num(usage, 'inputTokens', 0),
+          output: num(usage, 'outputTokens', 0),
+          cacheRead: num(usage, 'cacheReadTokens', 0),
+          cacheWrite: num(usage, 'cacheWriteTokens', 0),
           ...(Number.isFinite(total) ? { total } : {}),
         })
       }
@@ -339,6 +342,7 @@ function contextLabel(source: string): string {
     case 'system':
     case 'plugin':
     case 'skill-catalog':
+    case 'agent-instructions':
       return 'Context'
     /* c8 ignore next 2 -- an unrecognised source keeps its own name. */
     default:
