@@ -103,7 +103,6 @@ export interface AppOptions {
 export interface LayoutPlan {
   readonly transcript: Rect
   readonly side: Rect
-  readonly composerHeight: number
   readonly sideWidth: number
 }
 
@@ -124,18 +123,9 @@ export function planLayout(columns: number, _rows: number, desktop: Rect): Layou
   // having: two 25-column windows are worse than one 50-column one.
   const sideWidth = columns >= 96 ? Math.max(28, Math.min(48, Math.floor(columns * 0.28))) : 0
   const transcriptWidth = sideWidth === 0 ? desktop.width : desktop.width - sideWidth
-  // The composer is a separator row and the input line, and it grows when the
-  // completion popup opens. Two rows is therefore the size it always uses and
-  // three the most it can without leaving a blank row above the sigil. It is also
-  // the part that gives way on a short terminal: an input line with no transcript
-  // is as useless as a transcript with no input line, so the transcript gets the
-  // floor and the composer takes what is left.
-  const available = Math.max(1, desktop.height)
-  const composerHeight = available <= MIN_TRANSCRIPT_HEIGHT + 1
-    ? 1
-    : Math.max(2, Math.min(COMPOSER_MAX_ROWS, available - MIN_TRANSCRIPT_HEIGHT))
-  // The pane always draws its separator, so a height of one would put the rule on
-  // the input line. Below that the transcript simply gets the whole desktop.
+  // The transcript window takes the whole column; the pane inside it splits
+  // composer rows from transcript rows itself, yielding on a short desktop so
+  // the input line never starves the reading surface (see TranscriptPane.draw).
   return {
     transcript: { x: desktop.x, y: desktop.y, width: transcriptWidth, height: desktop.height },
     side: {
@@ -144,7 +134,6 @@ export function planLayout(columns: number, _rows: number, desktop: Rect): Layou
       width: sideWidth,
       height: desktop.height,
     },
-    composerHeight,
     sideWidth,
   }
 }
@@ -160,9 +149,6 @@ const MIN_TRANSCRIPT_HEIGHT = 4
  * rows on an ordinary terminal and two when the transcript needs the row more.
  */
 const COMPOSER_INPUT_ROWS = 2
-
-/** What {@link planLayout} reports for the composer pane: its input rows plus the separator. */
-const COMPOSER_MAX_ROWS = COMPOSER_INPUT_ROWS + 1
 
 /**
  * The smallest terminal this desktop is worth drawing in.
@@ -346,7 +332,7 @@ class TranscriptPane implements Widget {
     const palette = context.palette
     // The pane owns its own arithmetic, because it is the only thing that knows
     // what it has to draw: a separator, the popup if one is open, and the input
-    // line. `composerHeight()` is the size it *wants*; what it *gets* is bounded
+    // line. The pane's wanted height is what it *asks* for; what it *gets* is bounded
     // by the room left after the transcript's floor, and a pane that keeps a
     // popup row it has no room for shows a blank line above the sigil.
     const wanted = COMPOSER_INPUT_ROWS + this.composer.completionRows
@@ -618,6 +604,14 @@ export class TvisionApp {
   private chrome: ChromePlan
   /** Counter for dialog window ids, so two dialogs never collide. */
   private dialogSeq = 0
+  /**
+   * The modal `ask()` currently holding the desktop, if any. A second ask
+   * supersedes it, and the superseded promise must settle — a leaked one is a
+   * wedged agent turn. Help and About windows are deliberately not tracked
+   * here: they never settle anything, and a dialog under a Help window
+   * recovers when the Help window closes.
+   */
+  private openDialog: { id: string; dialog: Dialog } | undefined
   /** The session rows last set, so a row's identity survives the list widget. */
   private sessionRows: readonly SessionRow[] = []
   /** The workspace each listed session ran in, for the resume handoff. */
@@ -1418,10 +1412,16 @@ export class TvisionApp {
       width,
       height,
     }
-    // A second dialog replaces the first as modal, and the first is settled by
-    // its own dismissal path rather than left holding the keyboard. Closing the
-    // window itself — the system box, the Window menu — must settle the promise
-    // too, or the agent turn that asked waits forever on an answered dialog.
+    // A second dialog supersedes the first as modal; the first settles as
+    // dismissed here rather than leaking its awaiter. (A Help window over a
+    // dialog is the other way around: nothing settles, and closing the Help
+    // window hands the desktop back.) Closing the window itself — the system
+    // box, the Window menu — must settle the promise too, or the agent turn
+    // that asked waits forever on an answered dialog.
+    if (this.openDialog !== undefined && !this.openDialog.dialog.done) {
+      this.openDialog.dialog.settle({ dismissed: true })
+    }
+    this.openDialog = { id, dialog }
     this.windows.open({
       id,
       title: spec.title,
@@ -1439,6 +1439,7 @@ export class TvisionApp {
       const result = await dialog.result
       return result.value
     } finally {
+      if (this.openDialog?.id === id) this.openDialog = undefined
       this.windows.close(id)
       if (this.windows.modalWindowId === id) this.windows.setModal(undefined)
       this.windows.requestRender()
