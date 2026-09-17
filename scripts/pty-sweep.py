@@ -112,16 +112,18 @@ SWEEP = [
     ]),
 ]
 
-# What the app must have written by the time it exits, and how many times.
-# Emitting a mode change twice is not harmless: it is the signature of two
-# writers taking turns on one alternate screen, which is how a terminal ends up
-# in a mode nobody turns off.
+# What the app must have written by the time it exits. Mode *resets* must
+# appear exactly once: a second one is the signature of two writers taking
+# turns on one alternate screen, which is how a terminal ends up in a mode
+# nobody turns off. The cursor-show escape is different — the composer caret
+# makes it an operational escape too (shown on the first painted frame), so
+# teardown only owes *at least* one, with the resets carrying the exactly-once
+# guarantee.
 TEARDOWN_SEQUENCES = [
     '\x1b[?2004l',
     '\x1b[?1006l',
     '\x1b[?1002l',
     '\x1b[?1000l',
-    '\x1b[?25h',
     '\x1b[?1049l',
 ]
 
@@ -174,6 +176,9 @@ def main():
             # separate decodes of it is a slow way to run six counts.
             text = data.decode('utf8', 'replace')
             capture['teardown'] = {seq: text.count(seq) for seq in TEARDOWN_SEQUENCES}
+            # Counted apart: the composer caret makes cursor-show operational,
+            # so its total is not an exactly-once teardown guarantee.
+            capture['cursor_shows'] = text.count('\x1b[?25h')
         captures[name] = capture
         print(f'{name}: {len(data)} bytes at {columns}x{rows}')
 

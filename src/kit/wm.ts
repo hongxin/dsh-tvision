@@ -372,6 +372,13 @@ export class WindowManager {
   private overlayRect: Rect | undefined
   /** The last painted frame, kept for tests and for the debug overlay. */
   private frame: CellBuffer | undefined
+  /**
+   * The spare buffer paint() writes into next. Two buffers alternate: the
+   * renderer retains the painted one as its diff basis, so it must never be
+   * the one being overwritten, and a fully-rewritten fresh surface each frame
+   * costs a whole grid of cell allocations at repaint rate.
+   */
+  private spare: CellBuffer | undefined
   /** Set while a modal dialog is open, to swallow clicks on lower windows. */
   private modalId: string | undefined
   private cursor: CursorState = HIDDEN_CURSOR
@@ -812,7 +819,15 @@ export class WindowManager {
    * @returns The frame buffer, also retained for {@link lastFrame}.
    */
   paint(): CellBuffer {
-    const buffer = new CellBuffer(this.columns, this.rows)
+    // Alternate buffers, allocating only on a size change. The retained
+    // previous frame — the renderer's diff basis — is never written through
+    // this reference again, and clear() reuses the cell records it finds, so
+    // steady-state painting allocates nothing.
+    if (this.spare === undefined || this.spare.width !== this.columns || this.spare.height !== this.rows) {
+      this.spare = new CellBuffer(this.columns, this.rows)
+    }
+    const buffer = this.spare
+    this.spare = this.frame
     const desktopStyle: Style = this.palette.desktop
     buffer.clear(desktopStyle)
     const root = new Painter(buffer, makeRect(0, 0, this.columns, this.rows))

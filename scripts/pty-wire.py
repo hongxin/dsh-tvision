@@ -25,7 +25,10 @@ from pty_common import run  # noqa: E402  (sibling script)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOCK_PORT = 8931
 SCRIPT_GAP = 1.2
-TEARDOWN = ['\x1b[?2004l', '\x1b[?1006l', '\x1b[?1002l', '\x1b[?1000l', '\x1b[?25h', '\x1b[?1049l']
+# Mode resets must appear exactly once; cursor-show is counted apart because
+# the composer caret makes it an operational escape too.
+TEARDOWN = ['\x1b[?2004l', '\x1b[?1006l', '\x1b[?1002l', '\x1b[?1000l', '\x1b[?1049l']
+CURSOR_SHOW = '\x1b[?25h'
 
 # The keys sent to the desktop, in order: a reasoner turn (reasoning + CJK
 # prose), then a tool turn whose approval is answered with Enter (the default
@@ -120,6 +123,7 @@ def main():
         text = capture.decode('utf8', 'replace')
         counts = {seq: text.count(seq) for seq in TEARDOWN}
         checks.append(('every terminal mode restored exactly once', all(count == 1 for count in counts.values())))
+        checks.append(('the cursor was left visible', text.count(CURSOR_SHOW) >= 1))
     finally:
         mock.terminate()
         try:

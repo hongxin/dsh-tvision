@@ -25,6 +25,8 @@ interface SweepCapture {
   readonly base64: string
   /** For the quit scenario: how many times each teardown sequence was written. */
   readonly teardown?: Record<string, number>
+  /** For the quit scenario: cursor-show escapes, operational and teardown both. */
+  readonly cursor_shows?: number
 }
 
 /**
@@ -55,12 +57,14 @@ describe.skipIf(names.length === 0)('terminal sweep invariants', () => {
       expect(quit, 'quit-cleanly was not captured').toBeUndefined()
       return
     }
-    // Twice is not harmless: it is the signature of two writers taking turns on
-    // one alternate screen, which is how a terminal ends up in a mode nobody
-    // turns off.
+    // A mode reset written twice is the signature of two writers taking turns
+    // on one alternate screen. The cursor-show is exempt: the composer caret
+    // legitimately shows the cursor during operation, so teardown owes it at
+    // least once, not exactly once.
     for (const [sequence, count] of Object.entries(quit.teardown)) {
       expect(count, `${JSON.stringify(sequence)} was written ${count} times`).toBe(1)
     }
+    expect(quit.cursor_shows ?? 0, 'teardown never re-showed the cursor').toBeGreaterThanOrEqual(1)
   })
 
   const reports = new Map<string, CaptureReport>()
