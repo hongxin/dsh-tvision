@@ -130,7 +130,13 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       const content = field(data, 'content')
       const text = typeof content === 'string' ? content : textOfBlocks(content)
       if (text.trim() === '') return UNCHANGED
-      const source = str(data, 'source')
+      // `source` is an object in live logs ({kind: 'user'} | {kind: 'plugin', …})
+      // and a plain string in some older ones; either way the kind is what
+      // separates a human turn from injected context. Reading only the string
+      // form made every plugin injection — the whole skill catalog, runtime
+      // snapshots — render as `> You`, in the user's voice.
+      const rawSource = field(data, 'source')
+      const source = typeof rawSource === 'string' ? rawSource : str(rawSource, 'kind')
       // A live send is echoed: the composer already added this text locally so
       // the transcript would show it twice — once instantly, once from the log.
       // The echo text is byte-identical to what the composer stored (the host
@@ -209,7 +215,12 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       return { changed: true }
     }
     case 'tool/result': {
-      const callId = str(data, 'callId') ?? `seq-${event.seq}`
+      // The result cites its call from inside the message: dsh-agent-loop
+      // appends {turn, step, message} with the call id at message.source.callId
+      // (and again on the content block), never at the top level — a fallback
+      // to `seq-<n>` here meant no result ever found its card, and every tool
+      // in a real transcript stayed "running" forever.
+      const callId = toolResultCallId(data) ?? `seq-${event.seq}`
       const message = field(data, 'message')
       const isError = isToolError(message, data)
       const text = toolResultText(message)
@@ -326,7 +337,9 @@ function contextLabel(source: string): string {
     case 'hook':
       return 'Hook'
     case 'system':
-      return 'System'
+    case 'plugin':
+    case 'skill-catalog':
+      return 'Context'
     /* c8 ignore next 2 -- an unrecognised source keeps its own name. */
     default:
       return source
@@ -368,6 +381,28 @@ function pieceOfChunk(chunk: unknown): ContentPiece | undefined {
     return reasoning === undefined || reasoning === '' ? undefined : { kind: 'reasoning', text: reasoning }
   }
   if (typeof text === 'string' && text !== '') return { kind: 'text', text }
+  return undefined
+}
+
+/**
+ * The call id a `tool/result` event cites, wherever the harness put it.
+ *
+ * @param data - The event's data.
+ * @returns The call id, or undefined when the event cites none.
+ */
+function toolResultCallId(data: unknown): string | undefined {
+  const direct = str(data, 'callId')
+  if (direct !== undefined) return direct
+  const message = field(data, 'message')
+  const fromSource = str(field(message, 'source'), 'callId')
+  if (fromSource !== undefined) return fromSource
+  const blocks = field(message, 'content')
+  if (Array.isArray(blocks)) {
+    for (const block of blocks) {
+      const id = str(block, 'toolCallId')
+      if (id !== undefined) return id
+    }
+  }
   return undefined
 }
 
