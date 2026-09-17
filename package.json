@@ -54,15 +54,18 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "prepare": "tsdown",
+    "coverage": "vitest run --coverage",
     "demo": "node lib/demo.js",
-    "verify:pty": "node --experimental-strip-types scripts/replay-capture.ts",
-    "sweep:pty": "python3 scripts/pty-sweep.py",
+    "prepare": "tsdown",
     "report": "python3 scripts/tv-report.py",
     "review:brief": "node --experimental-strip-types scripts/review-brief.ts",
-    "coverage": "vitest run --coverage"
+    "sweep:pty": "python3 scripts/pty-sweep.py",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:all": "npm test && npm run verify:profile && npm run verify:wire",
+    "verify:profile": "python3 scripts/pty-profile.py --profile tvision",
+    "verify:pty": "node --experimental-strip-types scripts/replay-capture.ts",
+    "verify:wire": "python3 scripts/pty-wire.py"
   },
   "engines": {
     "node": "^22.19 || >=24"
