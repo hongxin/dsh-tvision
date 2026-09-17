@@ -155,6 +155,13 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
   const project = new ProjectIndex(agent.session.header.cwd ?? process.cwd())
   let app: TvisionApp | undefined
   let quitting = false
+  /**
+   * The route's advertised context window, memoised. Reading it meant scanning
+   * the whole event log backwards — on every painted frame, because the status
+   * line asks per frame. Only a new `request/context` event can change the
+   * answer, so that is the only invalidation.
+   */
+  let cachedContextWindow: number | undefined
 
   const host: AppHost = {
     send(text: string): void {
@@ -203,6 +210,7 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       return `${options.provider}/${options.model}`
     },
     contextWindow: () => {
+      if (cachedContextWindow !== undefined) return cachedContextWindow
       // The route's advertised window rides `request/context`, which is absent
       // until the first request — which reads correctly as "not yet known" and
       // hides the pressure bar rather than showing a fabricated one.
@@ -211,7 +219,10 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         const event = events[index]
         if (event?.type !== 'request/context') continue
         const contextWindow = (event.data as { contextWindow?: number }).contextWindow
-        if (typeof contextWindow === 'number') return contextWindow
+        if (typeof contextWindow === 'number') {
+          cachedContextWindow = contextWindow
+          return contextWindow
+        }
       }
       return 0
     },
@@ -252,8 +263,13 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       app = undefined
     },
     // `app` is assigned by `mount` through this setter, so the host's closures
-    // can reach the desktop without a circular construction.
-    ...({ attach: (instance: TvisionApp) => { app = instance } } as object),
+    // can reach the desktop without a circular construction. `invalidateContext`
+    // rides the same object: the mount owns the event subscription that knows
+    // when a new `request/context` has arrived.
+    ...({
+      attach: (instance: TvisionApp) => { app = instance },
+      invalidateContext: () => { cachedContextWindow = undefined },
+    } as object),
   }
 }
 
@@ -297,8 +313,12 @@ export function mount(input: MountInput): () => void {
   // 1. The conversation: one subscription, folded into the document. A tool that
   //    touched the filesystem also invalidates the project index, which is why
   //    the fold reports that rather than the view guessing at it.
+  const invalidateContext = (handle as unknown as { invalidateContext?: () => void }).invalidateContext
   const offSession = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
+    // A new advertised context window rides this event and nothing else; the
+    // host's memoised value dies with it. The cast mirrors the event's own shape.
+    if ((event as { type?: string }).type === 'request/context') invalidateContext?.()
     void app.applyEvent(event as unknown as { type: string; seq: number; time: number; data?: unknown })
       .then(() => {
         if (isFileMutatingTool(event)) void refreshProject()
