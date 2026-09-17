@@ -25,7 +25,7 @@ import type { Painter } from '../kit/painter.ts'
 import { WindowManager, DEFAULT_MINIMUM_TERMINMINAL } from '../kit/wm.ts'
 import { InputDecoder } from '../kit/input.ts'
 import type { InputEvent } from '../kit/input.ts'
-import { ScreenRenderer, detectTruecolor } from '../kit/screen.ts'
+import { ScreenRenderer, detectTruecolor, type CursorState } from '../kit/screen.ts'
 import { MenuBarBase, type Menu } from '../widgets/menubar.ts'
 import { StatusBar, formatDuration, formatTokens, pressureBar } from '../widgets/statusbar.ts'
 import { SessionDocument } from '../session/model.ts'
@@ -295,6 +295,8 @@ class TranscriptPane implements Widget {
   private readonly composer: Composer
   /** The inner rectangle of the composer region, recorded while drawing. */
   private composerRect: Rect = { x: 0, y: 0, width: 0, height: 0 }
+  /** The pane's screen origin, recorded while drawing, for the caret. */
+  private origin: { x: number; y: number } = { x: 0, y: 0 }
 
   /**
    * @param view - The transcript view.
@@ -316,11 +318,20 @@ class TranscriptPane implements Widget {
   }
 
   /**
-   * The row the composer is drawn on, in screen coordinates.
-   * @returns The row index.
+   * Where the hardware cursor should sit: on the composer's input line, at the
+   * caret's visible column. The terminal blinks it natively, so the composer
+   * paints no caret of its own. Undefined before the first draw (or when the
+   * composer has no room), leaving the cursor hidden.
+   * @returns The cursor position in screen coordinates.
    */
-  caretRow(): number {
-    return this.composerRect.y + this.composerRect.height - 1
+  cursor(): CursorState | undefined {
+    if (this.composerRect.width <= 0 || this.composerRect.height <= 0) return undefined
+    return {
+      x: this.origin.x + this.composerRect.x
+        + this.composer.caretColumn(this.composerRect.width),
+      y: this.origin.y + this.composerRect.y + this.composerRect.height - 1,
+      visible: true,
+    }
   }
 
   /**
@@ -349,6 +360,7 @@ class TranscriptPane implements Widget {
       painter.set(column, ruleRow, '─', palette.windowFrame)
     }
     this.composerRect = { x: 0, y: ruleRow + 1, width: painter.width, height: inputHeight }
+    this.origin = context.origin ?? { x: painter.x, y: painter.y }
     this.composer.draw(painter.sub(0, ruleRow + 1, painter.width, inputHeight), context)
   }
 

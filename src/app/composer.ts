@@ -84,7 +84,7 @@ export function stripModifiers(key: string): string {
  */
 export class Composer implements Widget {
   private text = ''
-  private cursor = 0
+  private caretIndex = 0
   /** Horizontal scroll, in columns, when the text is wider than the window. */
   private scroll = 0
   private historyIndex = -1
@@ -113,7 +113,22 @@ export class Composer implements Widget {
 
   /** The caret position, in code units. */
   get caret(): number {
-    return this.cursor
+    return this.caretIndex
+  }
+
+  /**
+   * The caret's visible column within the composer line, sigil included.
+   *
+   * Valid immediately after a draw, when the horizontal scroll has been
+   * adjusted to keep the caret in view — which is exactly when the pane asks,
+   * to place the hardware cursor.
+   * @returns The column, already clamped to the composer's width.
+   */
+  caretColumn(width: number): number {
+    const sigil = this.options.prompt?.() ?? 'dsh> '
+    const caretWidth = textWidth(this.text.slice(0, this.caretIndex))
+    const column = textWidth(sigil) + Math.max(0, caretWidth - this.scroll)
+    return Math.min(column, Math.max(0, width - 1))
   }
 
   /** How many rows the completion popup wants above the input. */
@@ -124,7 +139,7 @@ export class Composer implements Widget {
   /** Replace the buffer, as a slash command or a resume does. */
   setValue(text: string, cursor = text.length): void {
     this.text = text
-    this.cursor = Math.max(0, Math.min(text.length, cursor))
+    this.caretIndex = Math.max(0, Math.min(text.length, cursor))
     this.dismissCompletions()
     this.options.changed?.(this.text)
   }
@@ -132,7 +147,7 @@ export class Composer implements Widget {
   /** Empty the buffer and reset the history walk. */
   clear(): void {
     this.text = ''
-    this.cursor = 0
+    this.caretIndex = 0
     this.scroll = 0
     this.historyIndex = -1
     this.dismissCompletions()
@@ -144,8 +159,8 @@ export class Composer implements Widget {
    * @param text - The text to insert.
    */
   insert(text: string): void {
-    this.text = this.text.slice(0, this.cursor) + text + this.text.slice(this.cursor)
-    this.cursor += text.length
+    this.text = this.text.slice(0, this.caretIndex) + text + this.text.slice(this.caretIndex)
+    this.caretIndex += text.length
     this.options.changed?.(this.text)
   }
 
@@ -183,7 +198,7 @@ export class Composer implements Widget {
     }
     // Keep the caret in view by scrolling the window over the text rather than
     // the text over the window.
-    const caretColumn = textWidth(this.text.slice(0, this.cursor))
+    const caretColumn = textWidth(this.text.slice(0, this.caretIndex))
     if (caretColumn - this.scroll >= room) this.scroll = caretColumn - room + 1
     if (caretColumn < this.scroll) this.scroll = caretColumn
     const visibleStart = this.indexOfColumn(this.scroll)
@@ -288,28 +303,28 @@ export class Composer implements Widget {
     if (ctrl || alt) {
       switch (plain) {
         case 'a':
-          this.cursor = 0
+          this.caretIndex = 0
           return Consumed.Yes
         case 'e':
-          this.cursor = this.text.length
+          this.caretIndex = this.text.length
           return Consumed.Yes
         case 'u':
-          this.text = this.text.slice(this.cursor)
-          this.cursor = 0
+          this.text = this.text.slice(this.caretIndex)
+          this.caretIndex = 0
           this.options.changed?.(this.text)
           return Consumed.Yes
         case 'k':
-          this.text = this.text.slice(0, this.cursor)
+          this.text = this.text.slice(0, this.caretIndex)
           this.options.changed?.(this.text)
           return Consumed.Yes
         case 'w': {
           // Delete the whitespace and the word before the caret, which is what
           // every readline does and what makes the next word you type land
           // where the deleted one was.
-          const before = this.text.slice(0, this.cursor)
+          const before = this.text.slice(0, this.caretIndex)
           const cut = before.replace(/\s*\S*$/u, '')
-          this.text = cut + this.text.slice(this.cursor)
-          this.cursor = cut.length
+          this.text = cut + this.text.slice(this.caretIndex)
+          this.caretIndex = cut.length
           this.options.changed?.(this.text)
           return Consumed.Yes
         }
@@ -319,33 +334,33 @@ export class Composer implements Widget {
     }
     switch (plain) {
       case 'backspace':
-        if (this.cursor > 0) {
+        if (this.caretIndex > 0) {
           // By cluster, not code unit: deleting half a surrogate pair leaves a
           // lone surrogate that renders as U+FFFD and is submitted verbatim.
-          const start = prevClusterStart(this.text, this.cursor)
-          this.text = this.text.slice(0, start) + this.text.slice(this.cursor)
-          this.cursor = start
+          const start = prevClusterStart(this.text, this.caretIndex)
+          this.text = this.text.slice(0, start) + this.text.slice(this.caretIndex)
+          this.caretIndex = start
           this.options.changed?.(this.text)
         }
         return Consumed.Yes
       case 'delete':
-        if (this.cursor < this.text.length) {
-          const end = nextClusterEnd(this.text, this.cursor)
-          this.text = this.text.slice(0, this.cursor) + this.text.slice(end)
+        if (this.caretIndex < this.text.length) {
+          const end = nextClusterEnd(this.text, this.caretIndex)
+          this.text = this.text.slice(0, this.caretIndex) + this.text.slice(end)
           this.options.changed?.(this.text)
         }
         return Consumed.Yes
       case 'left':
-        this.cursor = prevClusterStart(this.text, this.cursor)
+        this.caretIndex = prevClusterStart(this.text, this.caretIndex)
         return Consumed.Yes
       case 'right':
-        this.cursor = nextClusterEnd(this.text, this.cursor)
+        this.caretIndex = nextClusterEnd(this.text, this.caretIndex)
         return Consumed.Yes
       case 'home':
-        this.cursor = 0
+        this.caretIndex = 0
         return Consumed.Yes
       case 'end':
-        this.cursor = this.text.length
+        this.caretIndex = this.text.length
         return Consumed.Yes
       case 'tab':
         this.refreshCompletions()
@@ -390,7 +405,7 @@ export class Composer implements Widget {
     const column = Math.max(0, event.x - sigilWidth)
     const target = this.indexOfColumn(column + this.scroll)
     // Snap the caret to the nearest character boundary rather than a code unit.
-    this.cursor = Math.min(this.text.length, target)
+    this.caretIndex = Math.min(this.text.length, target)
     return Consumed.Yes
   }
 
@@ -433,7 +448,7 @@ export class Composer implements Widget {
     /* c8 ignore next -- the index was clamped above. */
     if (entry === undefined) return
     this.text = entry
-    this.cursor = entry.length
+    this.caretIndex = entry.length
     this.options.changed?.(this.text)
   }
 
@@ -446,9 +461,9 @@ export class Composer implements Widget {
     }
     // The token runs back to the last whitespace, which is what makes `/mode`
     // and `@src/a` complete as units.
-    const before = this.text.slice(0, this.cursor)
+    const before = this.text.slice(0, this.caretIndex)
     const start = Math.max(0, before.search(/\S*$/u) < 0 ? 0 : before.length - (before.match(/\S*$/u)?.[0].length ?? 0))
-    const matches = source(before.slice(start), this.cursor)
+    const matches = source(before.slice(start), this.caretIndex)
     this.completions = matches
     this.completionStart = start
     this.completionIndex = matches.length > 0 ? 0 : -1
@@ -459,9 +474,9 @@ export class Composer implements Widget {
   private acceptCompletion(): void {
     const completion = this.completions[this.completionIndex]
     if (completion === undefined) return
-    const rest = this.text.slice(this.cursor)
+    const rest = this.text.slice(this.caretIndex)
     this.text = this.text.slice(0, this.completionStart) + completion.insert + rest
-    this.cursor = this.completionStart + completion.insert.length
+    this.caretIndex = this.completionStart + completion.insert.length
     this.dismissCompletions()
     this.options.changed?.(this.text)
   }

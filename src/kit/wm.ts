@@ -945,7 +945,7 @@ export class WindowManager {
     }
     if (window.scrollable) window.scroll = this.measureWindow(window)
     if (active) {
-      const cursor = (window.widget as { cursor?: () => CursorState | undefined }).cursor?.()
+      const cursor = window.widget.cursor?.()
       if (cursor !== undefined) this.cursor = cursor
     }
   }

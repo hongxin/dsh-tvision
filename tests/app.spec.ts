@@ -935,3 +935,40 @@ describe('usage without a reported total', () => {
     expect(terminal.lastFrame()).not.toContain('NaN')
   })
 })
+
+describe('the composer caret', () => {
+  /** The hardware cursor's screen column from the frame's final CUP, if shown. */
+  const cursorColumn = (frame: string): number | undefined => {
+    const match = /\u001B\[\d+;(\d+)H\u001B\[\?25h/u.exec(frame)
+    return match === null ? undefined : Number(match[1])
+  }
+
+  it('is shown on the input line and advances by display width', () => {
+    const { app, terminal } = build()
+    app.start()
+    // start() painted the first frame and parked the cursor in the composer.
+    const col1 = cursorColumn(terminal.output)
+    expect(col1).toBeDefined()
+    app.feed('你好') // two wide glyphs: four columns
+    const col2 = cursorColumn(app.renderForTest())
+    app.feed('x')
+    const col3 = cursorColumn(app.renderForTest())
+    if (col1 === undefined || col2 === undefined || col3 === undefined) {
+      throw new Error('the hardware cursor was not positioned')
+    }
+    expect(col2 - col1).toBe(4)
+    expect(col3 - col2).toBe(1)
+  })
+
+  it('clamps to the composer edge when the text scrolls', () => {
+    const { app } = build()
+    app.start()
+    app.composer.insert('y'.repeat(300))
+    const column = cursorColumn(app.renderForTest())
+    if (column === undefined) throw new Error('the hardware cursor was not positioned')
+    // The interior is at most the transcript window's width; one column of
+    // slack keeps the caret inside the border.
+    expect(column).toBeLessThanOrEqual(100 - 2)
+    expect(column).toBeGreaterThan(50)
+  })
+})

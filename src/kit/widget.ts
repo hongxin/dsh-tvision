@@ -10,6 +10,7 @@
  */
 
 import type { Palette } from './skin.ts'
+import type { CursorState } from './screen.ts'
 import type { Painter } from './painter.ts'
 
 /**
@@ -140,5 +141,15 @@ export interface Widget {
    * @returns Preferred content size, excluding the frame the window adds.
    */
   measure?(): SizeHint
+
+  /**
+   * Where the hardware cursor should sit after this widget paints, in screen
+   * coordinates. Called immediately after {@link Widget.draw}, so a widget may
+   * position it from what it just painted — this is how a one-line composer
+   * gets a visible, terminal-native blinking caret without painting one.
+   * Omitted or `undefined` leaves the cursor hidden.
+   * @returns The cursor position, or undefined to keep it hidden.
+   */
+  cursor?(): CursorState | undefined
 }
 
