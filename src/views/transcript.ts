@@ -78,6 +78,8 @@ export class TranscriptView implements Widget {
   private cacheKey = ''
   /** The palette the cached rows were built for, compared by identity. */
   private cachedPalette: ResolvedPalette | undefined
+  /** Per-entry row memo; see {@link EntryRowCache}. */
+  private readonly entryCache: EntryRowCache = new WeakMap()
   private scrollTop = 0
   private stick = true
   private lastHeight = 0
@@ -237,7 +239,7 @@ export class TranscriptView implements Widget {
       [...this.expanded].sort((a, b) => a - b).join(','),
     ].join('|')
     if (key === this.cacheKey && palette === this.cachedPalette) return this.rows
-    this.rows = buildRows(this.document.all, width, palette, this.theme, this.expanded)
+    this.rows = buildRows(this.document.all, width, palette, this.theme, this.expanded, this.entryCache)
     this.cacheKey = key
     this.cachedPalette = palette
     return this.rows
@@ -370,12 +372,45 @@ export class TranscriptView implements Widget {
  * @param expanded - Entries individually expanded beyond the theme default.
  * @returns The rows, oldest first.
  */
+/**
+ * A per-entry row memo. Entries are replaced immutably on every mutation, so
+ * the entry object's identity says whether its rows are stale — a cache keyed
+ * by the entry itself never serves a row built from an older version, and dead
+ * entries are collected with the WeakMap.
+ */
+export type EntryRowCache = WeakMap<Entry, {
+  bodyWidth: number
+  palette: ResolvedPalette
+  collapsed: boolean
+  showReasoning: boolean
+  expanded: boolean
+  rows: TranscriptRow[]
+}>
+
+/**
+ * Whether a cached record still answers for this entry under these options.
+ */
+function cacheHit(
+  cached: { bodyWidth: number; palette: ResolvedPalette; collapsed: boolean; showReasoning: boolean; expanded: boolean },
+  bodyWidth: number,
+  palette: ResolvedPalette,
+  theme: TranscriptTheme,
+  expandedNow: boolean,
+): boolean {
+  return cached.bodyWidth === bodyWidth
+    && cached.palette === palette
+    && cached.collapsed === theme.collapsed
+    && cached.showReasoning === theme.showReasoning
+    && cached.expanded === expandedNow
+}
+
 export function buildRows(
   entries: readonly Entry[],
   width: number,
   palette: ResolvedPalette,
   theme: TranscriptTheme,
   expanded: ReadonlySet<number> = new Set(),
+  cache?: EntryRowCache,
 ): TranscriptRow[] {
   const rows: TranscriptRow[] = []
   const bodyWidth = Math.max(8, width - theme.gutterWidth)
@@ -383,7 +418,25 @@ export function buildRows(
   for (const entry of entries) {
     if (!first) rows.push(blankRow(entry.id))
     first = false
-    rows.push(...entryRows(entry, bodyWidth, palette, theme, expanded))
+    // `entryRows` is per-entry pure (the only cross-entry facts — the blank
+    // spacers and the first-entry rule — live outside the memo), so a cache
+    // hit skips the re-wrap. A streaming frame then re-wraps exactly the one
+    // entry that changed, not the whole document.
+    const wantsExpanded = expanded.has(entry.id)
+    const cached = cache?.get(entry)
+    if (cached !== undefined && cacheHit(cached, bodyWidth, palette, theme, wantsExpanded)) {
+      rows.push(...cached.rows)
+      continue
+    }
+    const built = entryRows(entry, bodyWidth, palette, theme, expanded)
+    cache?.set(entry, {
+      bodyWidth, palette,
+      collapsed: theme.collapsed,
+      showReasoning: theme.showReasoning,
+      expanded: wantsExpanded,
+      rows: built,
+    })
+    rows.push(...built)
   }
   if (rows.length === 0) {
     rows.push({

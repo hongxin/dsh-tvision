@@ -708,3 +708,29 @@ describe('streaming accumulation', () => {
     expect(entry?.streaming).toBe(false)
   })
 })
+
+describe('per-entry row memo', () => {
+  it("reuses untouched entries and re-wraps only the changed one", () => {
+    const document = new SessionDocument()
+    document.addUser('question one', 1)
+    document.addUser('question two', 2)
+    const view = new TranscriptView(document, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    const before = view.rowsFor(70, palette)
+    // A streaming chunk replaces only the assistant entry being appended.
+    document.streamChunk({ turn: 0, step: 0 }, { kind: 'text', text: 'answer' }, 3)
+    const after = view.rowsFor(70, palette)
+    // Blank spacers are attributed to the entry that follows and are rebuilt
+    // every pass; the memo's promise is about content rows, so find those.
+    const rowOf = (rows: typeof before, id: number) => rows.find(row => row.entryId === id && row.startsEntry === true)
+    const firstUser = document.all.find(entry => entry.text === 'question one')
+    const secondUser = document.all.find(entry => entry.text === 'question two')
+    if (firstUser === undefined || secondUser === undefined) throw new Error('users missing')
+    // Same row objects, not rebuilt equals — the whole point of the memo.
+    expect(rowOf(after, firstUser.id)).toBe(rowOf(before, firstUser.id))
+    expect(rowOf(after, secondUser.id)).toBe(rowOf(before, secondUser.id))
+    const assistant = document.all.find(entry => entry.kind === 'assistant')
+    if (assistant === undefined) throw new Error('assistant missing')
+    expect(rowOf(after, assistant.id)).toBeDefined()
+    expect(after.length).toBeGreaterThan(before.length)
+  })
+})
