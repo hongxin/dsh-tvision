@@ -983,3 +983,30 @@ describe('the composer caret', () => {
     expect(column).toBeGreaterThan(50)
   })
 })
+
+describe('arrange restores the opening geometry', () => {
+  it('the side column after Arrange is pixel-for-pixel the desktop it opened with', () => {
+    const { app } = build()
+    app.start()
+    app.frame()
+    const opened = app.windows.lastFrame()?.lines() ?? []
+    // Move things first, so Arrange is actually restoring something.
+    app.windows.beginDrag(WINDOW_IDS.project, 'move', 10, 2)
+    app.windows.handle({ type: 'mouse', kind: 'drag', button: 'left', x: 18, y: 6 })
+    app.windows.cancelDrag()
+    app.handle({ type: 'key', key: 'f10' })
+    app.handle({ type: 'key', key: 'escape' })
+    // Arrange through the menu path's own action.
+    app.windows.get(WINDOW_IDS.transcript)?.setRect({ x: 5, y: 3, width: 60, height: 20 })
+    const arranged = (() => {
+      // The View ▸ Layout ▸ Arrange menu item calls arrange; drive it through
+      // the private path the menu uses via the app's own hint plumbing is not
+      // available, so call the documented public seam: tile then arrange is
+      // the user path, but arrange alone is what we are pinning.
+      ;(app as unknown as { arrange?: () => void }).arrange?.()
+      app.frame()
+      return app.windows.lastFrame()?.lines() ?? []
+    })()
+    expect(arranged).toEqual(opened)
+  })
+})

@@ -143,6 +143,30 @@ export function planLayout(columns: number, _rows: number, desktop: Rect): Layou
   }
 }
 
+/**
+ * The side column's two rectangles: Project above, Tasks below.
+ *
+ * The two windows overlap by one row so the dividing frame is shared rather
+ * than doubled — a single line, the way a tiled text-mode desktop looked, and
+ * both grips stay one row clear of the status bands. Both the opening layout
+ * and Arrange must produce exactly this geometry, which is why it lives here
+ * once.
+ * @param plan - The layout plan.
+ * @returns The Project and Tasks rectangles.
+ */
+function sideRects(plan: LayoutPlan): { project: Rect; tasks: Rect } {
+  const half = Math.floor(plan.side.height / 2)
+  return {
+    project: { x: plan.side.x, y: plan.side.y, width: plan.side.width, height: half },
+    tasks: {
+      x: plan.side.x,
+      y: plan.side.y + half - 1,
+      width: plan.side.width,
+      height: plan.side.height - half - 1,
+    },
+  }
+}
+
 /** The fewest rows the transcript may be left with before the composer yields. */
 const MIN_TRANSCRIPT_HEIGHT = 4
 
@@ -848,31 +872,18 @@ export class TvisionApp {
       scrollable: false,
     })
     if (plan.sideWidth > 0) {
-      // The two side windows overlap by a row so the dividing frame is shared
-      // rather than doubled, which is how a tiled text-mode desktop looked.
-      // Half each, minus the one row the two frames share. Sharing it means a
-      // single dividing line rather than two stacked borders, and it leaves both
-      // windows' grips one row clear of the status bands — a grip the chrome
-      // covers is a grip the pointer can never reach.
-      const half = Math.floor(plan.side.height / 2)
-      const projectHeight = half
-      const tasksHeight = plan.side.height - half - 1
+      const sides = sideRects(plan)
       this.windows.open({
         id: WINDOW_IDS.project,
         title: 'Project',
-        rect: { x: plan.side.x, y: plan.side.y, width: plan.side.width, height: projectHeight },
+        rect: sides.project,
         widget: this.listWindow(WINDOW_IDS.project, () => [], 'No project files indexed yet.'),
         resizable: true,
       })
       this.windows.open({
         id: WINDOW_IDS.tasks,
         title: 'Tasks',
-        rect: {
-          x: plan.side.x,
-          y: plan.side.y + projectHeight - 1,
-          width: plan.side.width,
-          height: tasksHeight,
-        },
+        rect: sides.tasks,
         widget: this.listWindow(
           WINDOW_IDS.tasks,
           () => this.document.todoList.map(todo => ({
@@ -1319,11 +1330,11 @@ export class TvisionApp {
     const plan = planLayout(this.windows.width, this.windows.height, this.windows.desktop)
     this.windows.get(WINDOW_IDS.transcript)?.setRect(plan.transcript)
     if (plan.sideWidth > 0) {
-      const half = Math.floor(plan.side.height / 2)
-      this.windows.get(WINDOW_IDS.project)?.setRect({ x: plan.side.x, y: plan.side.y, width: plan.side.width, height: half })
-      this.windows.get(WINDOW_IDS.tasks)?.setRect({
-        x: plan.side.x, y: plan.side.y + half, width: plan.side.width, height: plan.side.height - half,
-      })
+      // Exactly the geometry the desktop opened with — one shared divider,
+      // grips clear of the chrome — not a near-miss of it.
+      const sides = sideRects(plan)
+      this.windows.get(WINDOW_IDS.project)?.setRect(sides.project)
+      this.windows.get(WINDOW_IDS.tasks)?.setRect(sides.tasks)
     }
     this.windows.requestRender()
   }
