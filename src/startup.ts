@@ -17,7 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { CONFIGURED_AGENT_IDENTITIES_KEY } from '@deepseek-ai/dsh-agent-loop'
-import { SKINS } from './kit/skin.ts'
+import { DEFAULT_SKIN_ID, SKINS } from './kit/skin.ts'
 
 /** Service key under which the parsed launch options are provided. */
 export const TVISION_STARTUP_SERVICE = 'tvisionStartup'
@@ -84,7 +84,7 @@ export function apply(ctx: Context): void {
     ctx.provide(TVISION_STARTUP_SERVICE, {
       sessionId: identity.id,
       resume: identity.resume,
-      skin: options.skin ?? 'tvision',
+      skin: options.skin ?? DEFAULT_SKIN_ID,
       mouse: options.mouse !== false,
     } satisfies TvisionStartup)
     installResumeHost(ctx)

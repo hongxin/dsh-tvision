@@ -567,8 +567,12 @@ export const ANSI: Skin = {
 /** Every shipped skin, in picker order. */
 export const SKINS: readonly Skin[] = Object.freeze([TURBO_VISION, PHOSPHOR, AMBER, SLATE, ANSI])
 
-/** The skin used when nothing else is configured. */
-export const DEFAULT_SKIN_ID = TURBO_VISION.id
+/**
+ * The skin used when nothing else is configured: the terminal's own sixteen
+ * colours, inherited rather than imposed. The Turbo Vision blue remains the
+ * demo's showcase and `--skin tvision` away.
+ */
+export const DEFAULT_SKIN_ID = ANSI.id
 
 /**
  * Look up a skin by id.
@@ -583,10 +587,10 @@ export function findSkin(id: string): Skin | undefined {
 /**
  * Look up a skin by id, falling back to the default.
  * @param id - The skin id, or undefined.
- * @returns The requested skin, or {@link TURBO_VISION}.
+ * @returns The requested skin, or the default ({@link ANSI}).
  */
 export function skinOrDefault(id: string | undefined): Skin {
-  if (id === undefined) return TURBO_VISION
-  return findSkin(id) ?? TURBO_VISION
+  if (id === undefined) return ANSI
+  return findSkin(id) ?? ANSI
 }
 

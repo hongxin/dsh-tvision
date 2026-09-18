@@ -127,6 +127,8 @@ Drag a title bar to move a window · drag the `⋮` grip to resize · click `≡
 
 Each skin is a complete set of ~55 semantic roles rather than a palette swap, so any skin that renders one widget legibly renders them all.
 
+The installed default is `ansi` — your terminal's own colours; `--skin tvision` (or `F9`) gets the Borland blue. The standalone demo keeps `tvision` as its showcase.
+
 ---
 
 ## Why
