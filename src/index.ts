@@ -24,6 +24,7 @@
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
@@ -34,7 +35,7 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import { TvisionApp, WINDOW_IDS, type AppHost } from './app/app.ts'
 import { ProjectIndex } from './app/project.ts'
-import { DEFAULT_SKIN_ID, findSkin, SKINS, type Skin } from './kit/skin.ts'
+import { DEFAULT_SKIN_ID, findSkin, SKINS, skinOrDefault, type Skin } from './kit/skin.ts'
 import { ProcessTerminal } from './term/process-terminal.ts'
 
 export { TvisionApp } from './app/app.ts'
@@ -68,6 +69,9 @@ export interface Config {
   /** A line to print once the terminal is released on exit. */
   readonly goodbye?: string
 }
+
+/** The persisted preference shape: today, the remembered skin. */
+const TVISION_SETTINGS = z.object({ skin: z.string().default(DEFAULT_SKIN_ID) })
 
 /** How long to wait after a file-changing tool before re-indexing the workspace. */
 export const PROJECT_REINDEX_DEBOUNCE_MS = 1500
@@ -136,15 +140,30 @@ export interface MountInput {
     list?: (caller: unknown) => unknown[]
     kill?: (id: string, caller: unknown, reason?: string) => void
   }
+  /**
+   * The settings seam: `read` yields the remembered skin id when the settings
+   * service has resolved one, `save` persists a new choice. Both optional —
+   * a composition without the service boots with the flag/default alone.
+   */
+  readonly settings: {
+    read?(): string | undefined
+    save?(id: string): void
+    watch?(listener: (next: { skin?: string }) => void): void
+  }
 }
 
 /**
- * Read the starting skin from config, falling back to the shipped default.
- * @param config - The plugin configuration.
+ * Read the starting skin, by precedence: the `--skin` flag, then the choice
+ * remembered in settings, then the shipped default. An explicit flag outranks
+ * the memory — a one-off look must not rewrite a preference the user did not
+ * change — and an unknown id anywhere falls back to the catalogue's first
+ * entry rather than failing the boot.
+ * @param config - The plugin configuration (flag-derived skin, when present).
+ * @param saved - The remembered skin id from the settings service, if any.
  * @returns The skin.
  */
-export function resolveSkin(config: Config): Skin {
-  return findSkin(config.skin ?? DEFAULT_SKIN_ID) ?? SKINS[0] ?? (() => {
+export function resolveSkin(config: Config, saved?: string): Skin {
+  return findSkin(config.skin ?? saved ?? DEFAULT_SKIN_ID) ?? SKINS[0] ?? (() => {
     /* c8 ignore next -- the catalogue is never empty. */
     throw new Error('tvision: no skins loaded')
   })()
@@ -265,6 +284,9 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       }
       jobsSlot.kill(id, agent)
     },
+    saveSkin: (id: string): void => {
+      input.settings.save?.(id)
+    },
     quit(): void {
       if (quitting) return
       quitting = true
@@ -325,9 +347,16 @@ export function mount(input: MountInput): () => void {
       sessionId: String(agent.id),
       cwd: agent.session.header.cwd ?? process.cwd(),
     },
-    skin: resolveSkin(config),
+    skin: resolveSkin(config, input.settings.read?.()),
   })
   attach?.(app)
+  // The settings user layer resolves after this effect runs on a cold boot, so
+  // the remembered skin can arrive one frame late; watch keeps it honest.
+  input.settings.watch?.((next) => {
+    if (config.skin === undefined && next.skin !== undefined) {
+      app.setSkin(skinOrDefault(next.skin))
+    }
+  })
 
   // 1. The conversation: one subscription, folded into the document. A tool that
   //    touched the filesystem also invalidates the project index, which is why
@@ -494,6 +523,29 @@ export function mount(input: MountInput): () => void {
  * @param ctx - Plugin context.
  * @param config - Plugin configuration from the profile patch.
  */
+/**
+ * The remembered-skin seam, filled when (and only when) a settings provider
+ * exists. Registered under the plugin's own namespace in $DSH_HOME/settings.yaml
+ * — the same file the web surface's preferences live in.
+ */
+function createSettingsSeam(ctx: Context): MountInput['settings'] {
+  const seam: MountInput['settings'] = {}
+  void ctx.inject(['settings'], () => {
+    const service = ctx.get('settings') as unknown as {
+      register: (ns: string, schema: unknown) => {
+        get: () => { skin?: string }
+        watch: (listener: (next: { skin?: string }) => void) => () => void
+        update: (patch: { skin?: string }) => Promise<void>
+      }
+    }
+    const scope = service.register('tvision', TVISION_SETTINGS)
+    seam.read = () => scope.get().skin
+    seam.save = (id) => { void scope.update({ skin: id }) }
+    seam.watch = (listener) => scope.watch(listener)
+  })
+  return seam
+}
+
 export function apply(ctx: Context, config: Config = {}): void {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     // Not a terminal: nothing here can work, and frame-drawing into a pipe is
@@ -511,6 +563,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         config,
         terminal,
         jobsSlot: {},
+        settings: createSettingsSeam(ctx),
         requestExit: () => {
           // Leave the alternate screen first, then let the tree unwind: a
           // process that exits from inside raw mode leaves the shell broken.

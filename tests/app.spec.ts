@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TvisionApp, WINDOW_IDS, planLayout } from '../src/app/app.ts'
 import type { AppHost } from '../src/app/app.ts'
-import { TURBO_VISION } from '../src/kit/skin.ts'
+import { TURBO_VISION, findSkin } from '../src/kit/skin.ts'
 import { rect } from '../src/kit/cell.ts'
 
 /** A terminal that remembers everything written to it. */
@@ -446,12 +446,23 @@ describe('global keys', () => {
     expect(app.windows.isOpen(WINDOW_IDS.sessions)).toBe(true)
   })
 
-  it('cycles the skin on F9', async () => {
-    const { app } = build()
+  it('cycles the skin on F9 and reports the choice to the host', async () => {
+    const saved: string[] = []
+    const { app } = build({ saveSkin: (id) => { saved.push(id) } })
     app.start()
     app.feed('\u001B[20~')
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(app.activeSkin.id).not.toBe('tvision')
+    // From tvision, the cycle's next stop is phosphor.
+    expect(saved).toEqual(['phosphor'])
+  })
+
+  it('setSkin persists through the same hook', () => {
+    const saved: string[] = []
+    const { app } = build({ saveSkin: (id) => { saved.push(id) } })
+    app.start()
+    app.setSkin(findSkin('amber')!)
+    expect(saved).toEqual(['amber'])
   })
 
   it('redraws on Ctrl+L', () => {

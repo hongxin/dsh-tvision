@@ -76,6 +76,8 @@ export interface AppHost {
   contextWindow?(): number
   /** Ask the jobs registry to stop a background job. */
   killJob?(id: string): void
+  /** Persist a skin choice; absent means preferences are not stored. */
+  saveSkin?(id: string): void
   /** Leave the application. */
   quit(): void
   /** Called after the app has released the terminal. */
@@ -766,11 +768,12 @@ export class TvisionApp {
     return this.skin
   }
 
-  /** Apply a new skin to the whole desktop. */
+  /** Apply a new skin to the whole desktop, and remember the choice. */
   setSkin(skin: Skin): void {
     this.skin = skin
     this.windows.setSkin(skin)
     this.windows.requestRender()
+    this.options.host.saveSkin?.(skin.id)
   }
 
   /** The line the composer prints as its sigil, including the running timer. */

@@ -17,7 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { CONFIGURED_AGENT_IDENTITIES_KEY } from '@deepseek-ai/dsh-agent-loop'
-import { DEFAULT_SKIN_ID, SKINS } from './kit/skin.ts'
+import { SKINS } from './kit/skin.ts'
 
 /** Service key under which the parsed launch options are provided. */
 export const TVISION_STARTUP_SERVICE = 'tvisionStartup'
@@ -31,8 +31,12 @@ export interface TvisionStartup {
   readonly sessionId: SessionId
   /** Whether the session resumes persisted history. */
   readonly resume: boolean
-  /** The skin id to start with. */
-  readonly skin: string
+  /**
+   * The skin id to start with, present only when `--skin` was passed: an
+   * explicit flag outranks the remembered choice, and the remembered choice
+   * outranks the default — so an unflagged boot publishes nothing here.
+   */
+  readonly skin?: string
   /** Whether mouse reporting is enabled. */
   readonly mouse: boolean
 }
@@ -84,7 +88,7 @@ export function apply(ctx: Context): void {
     ctx.provide(TVISION_STARTUP_SERVICE, {
       sessionId: identity.id,
       resume: identity.resume,
-      skin: options.skin ?? DEFAULT_SKIN_ID,
+      ...(options.skin === undefined ? {} : { skin: options.skin }),
       mouse: options.mouse !== false,
     } satisfies TvisionStartup)
     installResumeHost(ctx)
