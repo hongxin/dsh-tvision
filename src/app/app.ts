@@ -407,26 +407,36 @@ class TranscriptPane implements Widget {
  * what choosing a row does; giving each its own class would triple the code for
  * no behaviour.
  */
+/** One row of a list window, with an optional filter haystack. */
+type ListRow = { label: string; detail?: string; marker?: string; filter?: string }
+
 class ListWindow implements Widget {
   private offset = 0
   private selected = 0
-  private items: () => readonly { label: string; detail?: string; marker?: string }[]
+  private items: () => readonly ListRow[]
   private readonly choose: (index: number) => void
   private readonly empty: string
+  /** Whether typing filters the rows, mc-style; only the Sessions window opts in. */
+  private readonly filterable: boolean
+  /** The active filter query; empty means unfiltered and byte-identical to before. */
+  private query = ''
 
   /**
    * @param items - Supplies the rows for the current frame.
    * @param choose - Called when a row is activated.
    * @param empty - Shown when there are no rows.
+   * @param options - `filterable` lets printable keys filter the rows.
    */
   constructor(
-    items: () => readonly { label: string; detail?: string; marker?: string }[],
+    items: () => readonly ListRow[],
     choose: (index: number) => void,
     empty: string,
+    options: { filterable?: boolean } = {},
   ) {
     this.items = items
     this.choose = choose
     this.empty = empty
+    this.filterable = options.filterable ?? false
   }
 
   /**
@@ -437,18 +447,33 @@ class ListWindow implements Widget {
    * the top every few seconds.
    * @param items - The new source.
    */
-  setSource(items: () => readonly { label: string; detail?: string; marker?: string }[]): void {
+  setSource(items: () => readonly ListRow[]): void {
     this.items = items
     this.selected = Math.max(0, Math.min(this.items().length - 1, this.selected))
     this.offset = Math.max(0, Math.min(this.offset, this.selected))
   }
 
   /**
-   * The rows this window would show right now.
+   * The rows this window would show right now, the filter applied.
    * @returns The rows, resolved from whatever source it has.
    */
-  visibleRows(): readonly { label: string; detail?: string; marker?: string }[] {
-    return this.items()
+  visibleRows(): readonly ListRow[] {
+    return this.rows()
+  }
+
+  /**
+   * The active query, for tests and the status line.
+   * @returns The filter text, or '' when unfiltered.
+   */
+  get filterQuery(): string {
+    return this.query
+  }
+
+  /** The current rows, narrowed by the query when one is active. */
+  private rows(): readonly ListRow[] {
+    if (this.query === '') return this.items()
+    const needle = this.query.toLowerCase()
+    return this.items().filter(row => (row.filter ?? `${row.label} ${row.detail ?? ''}`).toLowerCase().includes(needle))
   }
 
   /**
@@ -458,20 +483,27 @@ class ListWindow implements Widget {
    */
   draw(painter: Painter, context: WidgetContext): void {
     const palette = context.palette
-    const rows = this.items()
+    const rows = this.rows()
+    const filtered = this.query !== ''
     if (rows.length === 0) {
-      painter.text(0, 0, this.empty, painter.width, palette.reasoning)
+      const notice = filtered ? `No match for "${this.query}".` : this.empty
+      // The query line stays visible over the empty state, so clearing it is
+      // always one Backspace away from whatever was typed.
+      if (filtered) painter.text(0, 0, this.queryLine(rows), painter.width, palette.reasoning)
+      painter.text(0, filtered ? 1 : 0, notice, painter.width, palette.reasoning)
       return
     }
     this.selected = Math.max(0, Math.min(rows.length - 1, this.selected))
+    const listHeight = painter.height - (filtered ? 1 : 0)
     if (this.selected < this.offset) this.offset = this.selected
-    if (this.selected >= this.offset + painter.height) this.offset = this.selected - painter.height + 1
+    if (this.selected >= this.offset + listHeight) this.offset = this.selected - listHeight + 1
+    if (filtered) painter.text(0, 0, this.queryLine(rows), painter.width, palette.reasoning)
     // The detail column is measured from the right and the label takes what is
     // left of it, so the two can never overlap: a label drawn to the window's
     // full width would run straight through the detail text beside it.
     const detailWidth = this.detailColumnWidth(painter.width, rows)
     const labelWidth = Math.max(0, painter.width - MARKER_WIDTH - detailWidth)
-    for (let row = 0; row < painter.height; row++) {
+    for (let row = filtered ? 1 : 0; row < painter.height; row++) {
       const item = rows[this.offset + row]
       if (item === undefined) break
       const index = this.offset + row
@@ -518,8 +550,38 @@ class ListWindow implements Widget {
    * @param event - The key event.
    * @returns Whether the key was consumed.
    */
+  /** The status line shown while a query is active. */
+  private queryLine(rows: readonly ListRow[]): string {
+    return `/${this.query} — ${rows.length} of ${this.items().length}`
+  }
+
   onKey(event: KeyEvent): Consumed {
-    const count = this.items().length
+    // Type-to-filter, mc muscle memory: printable keys narrow, Backspace
+    // widens, Escape clears. Keys reach this widget only while it holds focus,
+    // so a typing burst over the transcript still lands in the composer.
+    if (this.filterable) {
+      const ctrl = event.ctrl === true || event.key.startsWith('ctrl+')
+      const alt = event.alt === true || event.key.startsWith('alt+')
+      if (!ctrl && !alt && event.text !== undefined && event.text !== '' && event.text !== '\r') {
+        this.query = (this.query + event.text).slice(0, 64)
+        this.selected = 0
+        this.offset = 0
+        return Consumed.Yes
+      }
+      if (event.key === 'backspace') {
+        if (this.query === '') return Consumed.No
+        this.query = this.query.slice(0, -1)
+        return Consumed.Yes
+      }
+      if (event.key === 'escape') {
+        if (this.query === '') return Consumed.No
+        this.query = ''
+        this.selected = 0
+        this.offset = 0
+        return Consumed.Yes
+      }
+    }
+    const count = this.rows().length
     switch (event.key) {
       case 'down':
         this.selected = Math.min(Math.max(0, count - 1), this.selected + 1)
@@ -607,7 +669,7 @@ export class TvisionApp {
   private readonly decoder = new InputDecoder()
   private readonly renderer: ScreenRenderer
   private readonly lists = new Map<string, ListWindow>()
-  private readonly listRows = new Map<string, readonly { label: string; detail?: string; marker?: string }[]>()
+  private readonly listRows = new Map<string, readonly ListRow[]>()
   private skin: Skin
   private transient: { text: string; tone: 'info' | 'warning' | 'error'; until: number } | undefined
   private running = false
@@ -814,7 +876,7 @@ export class TvisionApp {
       id: WINDOW_IDS.sessions,
       title: 'Sessions',
       rect: { x: Math.max(2, plan.transcript.width - 50), y: 3, width: 46, height: 12 },
-      widget: this.listWindow(WINDOW_IDS.sessions, () => [], 'Press F3 to list resumable sessions.'),
+      widget: this.listWindow(WINDOW_IDS.sessions, () => [], 'Press F3 to list resumable sessions.', { filterable: true }),
       listed: true,
     })
     this.windows.close(WINDOW_IDS.sessions)
@@ -838,10 +900,11 @@ export class TvisionApp {
    */
   private listWindow(
     id: string,
-    items: () => readonly { label: string; detail?: string; marker?: string }[],
+    items: () => readonly ListRow[],
     empty: string,
+    options: { filterable?: boolean } = {},
   ): ListWindow {
-    const widget = new ListWindow(items, index => this.activateListRow(id, index), empty)
+    const widget = new ListWindow(items, index => this.activateListRow(id, index), empty, options)
     this.lists.set(id, widget)
     return widget
   }
@@ -854,7 +917,7 @@ export class TvisionApp {
    * @param id - The window id.
    * @param rows - The new rows.
    */
-  setListRows(id: string, rows: readonly { label: string; detail?: string; marker?: string }[]): void {
+  setListRows(id: string, rows: readonly ListRow[]): void {
     const widget = this.lists.get(id)
     if (widget === undefined) {
       this.notify(`No list window named ${id}.`, 'warning')
@@ -1622,6 +1685,9 @@ export class TvisionApp {
         label: row.resumable ? row.label : `${row.label} (not resumable)`,
         ...(row.detail === '' ? {} : { detail: row.detail }),
         marker: row.marker,
+        // The whole row is searchable: a title, a workspace path, or the raw id
+        // are all things a person remembers about the session they want.
+        filter: `${row.label} ${row.detail} ${row.id}`,
       })),
     )
     this.setWindowTitle(WINDOW_IDS.sessions, `Sessions — ${this.sessionRows.length}`)

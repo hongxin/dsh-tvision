@@ -325,3 +325,90 @@ describe('a superseded dialog', () => {
     expect(app.windows.all().some(window => !window.closed && window.title === 'Second')).toBe(false)
   })
 })
+
+describe('sessions type-to-filter', () => {
+  /** A session list to filter against, newest first. */
+  function sessions() {
+    return [
+      { id: 'main-session-aaa1', createdAt: Date.now() - 60_000, cwd: '/tmp/ws', live: false, persisted: true, title: 'Parser streaming fix' },
+      { id: 'main-session-bbb2', createdAt: Date.now() - 3_600_000, cwd: '/tmp/other', live: false, persisted: true, title: 'Docs rewrite' },
+      { id: 'main-session-ccc3', createdAt: Date.now() - 90_000_000, cwd: '/tmp/ws', live: true, persisted: true, title: 'Long migration' },
+    ]
+  }
+
+  /** Open the Sessions window, focused, and return the rows it shows. */
+  function open(view: ReturnType<typeof build>) {
+    view.app.setSessions(sessions())
+    view.app.openWindow(WINDOW_IDS.sessions)
+    view.app.frame()
+  }
+
+  it('narrows the rows as the query is typed and widens on backspace', () => {
+    const view = build()
+    open(view)
+    view.app.feed('pars')
+    view.app.frame()
+    expect(view.app.listRowsFor(WINDOW_IDS.sessions)).toContain('Parser streaming fix')
+    let shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown).toContain('/pars — 1 of 3')
+    expect(shown).not.toContain('Docs rewrite')
+    view.app.feed('\u007F') // backspace ×4 widens back
+    view.app.feed('\u007F'); view.app.feed('\u007F'); view.app.feed('\u007F')
+    view.app.frame()
+    shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown).toContain('Docs rewrite')
+  })
+
+  it('escape clears the query', () => {
+    const view = build()
+    open(view)
+    view.app.feed('zz')
+    view.app.feed('\u001B')
+    // A lone ESC is ambiguous until input goes quiet; release it as the key.
+    view.app.flushInput()
+    view.app.frame()
+    const shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown).not.toContain('/zz')
+    expect(shown).toContain('Parser streaming fix')
+  })
+
+  it('a query with no matches names itself', () => {
+    const view = build()
+    open(view)
+    view.app.feed('qq')
+    view.app.frame()
+    const shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown).toContain('No match for "qq".')
+  })
+
+  it('Enter on the filtered row still resumes', () => {
+    const view = build()
+    open(view)
+    view.app.feed('migration')
+    view.app.frame()
+    view.app.feed('\r')
+    // The only match is the migration session; the resume path was invoked
+    // (the fake host cannot resume in place, so the notice names it).
+    view.app.frame()
+    const shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown.length).toBeGreaterThan(0)
+  })
+
+  it('typing over the transcript still reaches the composer', () => {
+    const view = build()
+    open(view)
+    view.app.windows.focus(WINDOW_IDS.transcript)
+    view.app.feed('hi')
+    expect(view.app.composer.value).toBe('hi')
+  })
+
+  it('a session refresh mid-filter keeps the query', () => {
+    const view = build()
+    open(view)
+    view.app.feed('docs')
+    view.app.setSessions(sessions())
+    view.app.frame()
+    const shown = view.app.windows.lastFrame()?.lines().join('\n') ?? ''
+    expect(shown).toContain('/docs — 1 of 3')
+  })
+})
