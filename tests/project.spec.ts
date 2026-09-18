@@ -148,8 +148,12 @@ describe('the walk', () => {
     }
     const index = new ProjectIndex(root, { maxEntries: 50 })
     const snapshot = index.refresh()
-    expect(snapshot.files.length).toBeLessThanOrEqual(50)
-    expect(snapshot.files.some(file => file.path === 'src/a.ts')).toBe(true)
+    // Termination is the floor; the loop must also not fabricate content: the
+    // one real file appears exactly once, and nothing arrives via the loop's
+    // alias path.
+    expect(snapshot.files.filter(file => file.path === 'src/a.ts')).toHaveLength(1)
+    expect(snapshot.files.some(file => file.path.startsWith('src/loop'))).toBe(false)
+    expect(snapshot.truncated).toBe(false)
   })
 })
 

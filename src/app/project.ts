@@ -19,7 +19,7 @@
  * @module @dsh-tvision/dsh-tvision/app/project
  */
 
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 
 /** How the index is built. */
@@ -169,6 +169,11 @@ export class ProjectIndex {
     const excluded = new Set(this.options.excludedDirectories)
     let truncated = false
     const queue: string[] = ['']
+    // Canonical paths of directories already walked. A symlinked directory
+    // that points back up the tree would otherwise be queued again at every
+    // visit, and the entry budget would paper over the loop with a listing
+    // full of duplicates rather than failing loudly.
+    const visited = new Set<string>([this.canonicalRoot()])
     while (queue.length > 0) {
       const directory = queue.shift()
       /* c8 ignore next -- the queue is only pushed to with a string. */
@@ -191,6 +196,17 @@ export class ProjectIndex {
           continue
         }
         if (stats.isDirectory()) {
+          // Resolve the symlink before descending: a directory already walked
+          // under another name is a loop, not new content. A resolution failure
+          // degrades to the old behaviour (the budget still bounds the walk)
+          // rather than taking the listing down.
+          try {
+            const real = realpathSync(join(this.root, relativePath))
+            if (visited.has(real)) continue
+            visited.add(real)
+          } catch {
+            /* c8 ignore next -- an unresolvable link is simply descended into. */
+          }
           queue.push(relativePath)
           continue
         }
@@ -218,6 +234,16 @@ export class ProjectIndex {
       elapsedMs: Date.now() - started,
     })
     return this.snapshot
+  }
+
+  /** The root's canonical path, seeding the visited set. */
+  private canonicalRoot(): string {
+    try {
+      return realpathSync(this.root)
+    } catch {
+      /* c8 ignore next -- an unresolvable root lists what it can. */
+      return this.root
+    }
   }
 
   /**
