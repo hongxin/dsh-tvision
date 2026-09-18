@@ -45,6 +45,21 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
+    # Background-job turn, then open View ▸ Jobs through the menu bar: F10,
+    # right to View, and the &Jobs accelerator.
+    ('job-prompt', b'wire-job\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('approve-or-noop', b'\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('menu', b'\x1b[21~'),
+    ('dwell', b''),
+    ('to-view', b'\x1b[C'),
+    ('dwell', b''),
+    ('pick-jobs', b'j'),
+    ('dwell', b''),
+    ('dwell', b''),
     ('quit', b'\x11'),
 ]
 
@@ -79,7 +94,7 @@ def replay(capture, columns, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsh-home', default=None)
-    parser.add_argument('--seconds', type=float, default=40.0)
+    parser.add_argument('--seconds', type=float, default=60.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
     args = parser.parse_args()
 
@@ -107,6 +122,7 @@ def main():
         capture = run(argv, SCRIPT, 100, 30, args.seconds, SCRIPT_GAP)
         screen = replay(capture, 100, 30)
 
+        text = capture.decode('utf8', 'replace')
         # The mock must actually have served both turns; a profile that found a
         # real endpoint elsewhere would "pass" every screen check while lying.
         mock_log = ''
@@ -117,10 +133,13 @@ def main():
         except ValueError:
             pass
         checks.append(('the mock served the turns', mock_log.count('/chat/completions') >= 2))
-        checks.append(('the reasoning rendered as dimmed rows', '· The user asked for the scripted' in screen))
-        checks.append(('the cjk reply rendered with the seam', '本地 mock 端点的回复' in screen and 'wire-test' in screen))
+        # Transient content is asserted on the byte stream, not the final
+        # screen: the Jobs window covers the transcript, and a covering window
+        # is not evidence the prose never rendered.
+        checks.append(('the reasoning rendered as dimmed rows', '· The user asked for the scripted' in text))
+        checks.append(('the cjk reply rendered with the seam', '本地 mock 端点的回复' in text and 'wire-test' in text))
         checks.append(('the tool card settled with its output', 'wire-tool-ok' in screen and '~ bash' in screen))
-        text = capture.decode('utf8', 'replace')
+        checks.append(('the jobs window holds the background job', 'sleep 5' in screen and '▸' in screen))
         counts = {seq: text.count(seq) for seq in TEARDOWN}
         checks.append(('every terminal mode restored exactly once', all(count == 1 for count in counts.values())))
         checks.append(('the cursor was left visible', text.count(CURSOR_SHOW) >= 1))

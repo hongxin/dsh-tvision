@@ -127,6 +127,15 @@ export interface MountInput {
   readonly terminal: ProcessTerminal
   /** Called when the user asks to leave; the launcher owns the exit. */
   readonly requestExit: () => void
+  /**
+   * The jobs registry slot, filled by mount's `ctx.inject(['jobs'])` and read
+   * by the host's `killJob`. Behind a mutable slot so neither side touches a
+   * service that may not exist in this composition.
+   */
+  readonly jobsSlot: {
+    list?: (caller: unknown) => unknown[]
+    kill?: (id: string, caller: unknown, reason?: string) => void
+  }
 }
 
 /**
@@ -162,6 +171,8 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
    * answer, so that is the only invalidation.
    */
   let cachedContextWindow: number | undefined
+  // The jobs registry rides in on the input; see MountInput.jobsSlot.
+  const jobsSlot = input.jobsSlot
 
   const host: AppHost = {
     send(text: string): void {
@@ -247,6 +258,13 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
     // completion is silently dead in production — the demo supplies its own
     // list, which is why the gap did not show there.
     files: (prefix: string): readonly string[] => project.complete(prefix),
+    killJob: (id: string): void => {
+      if (jobsSlot.kill === undefined) {
+        ctx.logger.warn(`tvision: no jobs registry; cannot kill ${id}`)
+        return
+      }
+      jobsSlot.kill(id, agent)
+    },
     quit(): void {
       if (quitting) return
       quitting = true
@@ -290,6 +308,7 @@ function describe(error: unknown): string {
  */
 export function mount(input: MountInput): () => void {
   const { ctx, agent, config, terminal } = input
+  if (input.jobsSlot === undefined) throw new Error('tvision: mount needs a jobsSlot')
   const handle = createHost(input)
   const attach = (handle as unknown as { attach?: (app: TvisionApp) => void }).attach
   const size = terminal.size()
@@ -354,6 +373,24 @@ export function mount(input: MountInput): () => void {
   void app.refreshProject()
   void refreshSessions()
   const offCreated = ctx.on('agent/created', () => { void refreshSessions() })
+
+  // 6. Background jobs: a service subscription, not session events — a job
+  //    outlives the turn that started it. The callback only runs when a
+  //    registry exists, so a composition without one keeps the empty window.
+  void ctx.inject(['jobs'], () => {
+    const registry = ctx.get('jobs') as unknown as {
+      list: (caller: unknown) => unknown[]
+      kill: (id: string, caller: unknown, reason?: string) => void
+      onJobsChanged: (listener: () => void) => () => void
+    }
+    input.jobsSlot.list = (caller) => registry.list(caller)
+    input.jobsSlot.kill = (id: string, caller: unknown, reason?: string) => { registry.kill(id, caller, reason) }
+    const sync = (): void => {
+      app.setJobs(registry.list(agent) as readonly import('./app/jobs.ts').JobSummary[])
+    }
+    sync()
+    return registry.onJobsChanged(sync)
+  })
 
   let projectTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -473,6 +510,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         agent,
         config,
         terminal,
+        jobsSlot: {},
         requestExit: () => {
           // Leave the alternate screen first, then let the tree unwind: a
           // process that exits from inside raw mode leaves the shell broken.

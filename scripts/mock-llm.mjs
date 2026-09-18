@@ -32,6 +32,15 @@ const TURNS = [
     usage: { prompt_tokens: 120, completion_tokens: 48, total_tokens: 168 },
   },
   {
+    // A background bash job: returns immediately with a jobId, leaving the
+    // Jobs window holding a live row the harness's registry drives.
+    match: 'wire-job',
+    reasoning: 'The user asked for the background job turn. Start a sleep in the background.',
+    toolCall: { id: 'call_mock_sleep', name: 'bash', arguments: '{"command":"sleep 5","run_in_background":true}' },
+    followupContent: 'The sleep is running in the background; the Jobs window holds it.',
+    usage: { prompt_tokens: 210, completion_tokens: 28, total_tokens: 238 },
+  },
+  {
     match: 'wire-tool',
     reasoning: 'The user asked for the tool turn. Call bash with a harmless echo.',
     toolCall: { id: 'call_mock_echo', name: 'bash', arguments: '{"command":"echo wire-tool-ok"}' },
@@ -42,6 +51,9 @@ const TURNS = [
 ]
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Which scripted turns have already emitted their tool call. */
+const emittedTool = new Set()
 
 /**
  * Slice text into fixed-size code-point chunks, losslessly.
@@ -119,19 +131,20 @@ const server = createServer(async (req, res) => {
   const messages = request.messages ?? []
   const lastUser = [...messages].reverse().find((message) => message.role === 'user')
   const lastText = typeof lastUser?.content === 'string' ? lastUser.content : JSON.stringify(lastUser?.content ?? '')
-  // A tool turn answers the *second* request (after the tool result is fed
-  // back) with plain prose; the first request emits the call itself.
-  const sawToolResult = messages.some((message) =>
-    message.role === 'tool'
-    || message.tool_call_id !== undefined
-    || (Array.isArray(message.content) && message.content.some((block) => block.type === 'tool-result')))
   const turn = TURNS.find((candidate) => lastText.includes(candidate.match)) ?? TURNS[0]
-  const chosen = sawToolResult && turn.followupContent !== undefined
+  // A tool turn's *second* request answers with prose. Detecting that from the
+  // message shape (any role:'tool' anywhere) misfires when a LATER turn runs
+  // after an earlier one already used a tool — the harness feeds the whole
+  // conversation back every time — so the server remembers which turn's call
+  // it already emitted instead.
+  const followup = turn.followupContent !== undefined && emittedTool.has(turn.match)
+  const chosen = followup
     ? { ...turn, reasoning: undefined, toolCall: undefined, content: turn.followupContent }
     : turn
+  if (turn.toolCall !== undefined && !followup) emittedTool.add(turn.match)
   console.log(`[mock-llm] ${req.url} model=${request.model} tools=${(request.tools ?? []).length} ` +
     `roles=${messages.map((message) => message.role).join(',')} ` +
-    `turn="${turn.match}" followup=${sawToolResult} last="${lastText.slice(0, 40).replace(/\n/g, ' ')}"`)
+    `turn="${turn.match}" followup=${followup} last="${lastText.slice(0, 40).replace(/\n/g, ' ')}"`)
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
   await streamTurn(chosen, res, request.model)
   res.end()

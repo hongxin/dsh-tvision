@@ -35,6 +35,7 @@ import { Composer, type Completion, type ComposerTheme } from './composer.ts'
 import { Dialog, type DialogSpec } from '../views/dialogs.ts'
 import { askApproval as askApprovalDialog, askQuestions as askQuestionsDialog } from './questions.ts'
 import { buildSessionRows, describeSessionRow, type SessionRow } from './sessions.ts'
+import { buildJobRows, describeJobRow, type JobRow, type JobSummary } from './jobs.ts'
 
 /** The terminal surface the app writes to. */
 export interface AppTerminal {
@@ -73,6 +74,8 @@ export interface AppHost {
   }>
   /** Context-window pressure in tokens, or 0 when unknown. */
   contextWindow?(): number
+  /** Ask the jobs registry to stop a background job. */
+  killJob?(id: string): void
   /** Leave the application. */
   quit(): void
   /** Called after the app has released the terminal. */
@@ -467,6 +470,11 @@ class ListWindow implements Widget {
    */
   get filterQuery(): string {
     return this.query
+  }
+
+  /** The selected row's index into the (filtered) rows. */
+  selection(): number {
+    return this.selected
   }
 
   /** The current rows, narrowed by the query when one is active. */
@@ -943,6 +951,12 @@ export class TvisionApp {
       void this.resumeSession(this.sessionRows[index])
       return
     }
+    if (id === WINDOW_IDS.jobs) {
+      const widget = this.lists.get(id)
+      const row = (widget?.visibleRows() ?? [])[widget?.selection() ?? 0] as JobRow | undefined
+      this.notify(describeJobRow(row))
+      return
+    }
     if (id === WINDOW_IDS.project) {
       // Choosing a file references it, so the next prompt can point at it without
       // retyping the path.
@@ -1177,6 +1191,13 @@ export class TvisionApp {
     }
     if (alt && key.length === 1) {
       return this.menu.handleKey({ ...event, key, alt: true }) === Consumed.Yes
+    }
+    // `k` on the focused Jobs window kills the selected job — after a
+    // confirmation, because a kill is the one destructive key on a list of
+    // work the agent is still doing.
+    if (key === 'k' && this.windows.activeWindowId === WINDOW_IDS.jobs) {
+      void this.killSelectedJob()
+      return true
     }
     if (ctrl) {
       switch (key) {
@@ -1556,6 +1577,32 @@ export class TvisionApp {
     return askQuestionsDialog(this, request.questions)
   }
 
+  /**
+   * Confirm and kill the job selected in the Jobs window.
+   */
+  private async killSelectedJob(): Promise<void> {
+    const widget = this.lists.get(WINDOW_IDS.jobs)
+    const rows = widget?.visibleRows() ?? []
+    const row = rows[widget?.selection() ?? 0]
+    if (row === undefined || (row as JobRow).killable !== true) return
+    const job = (row as JobRow)
+    const answer = await this.ask({
+      title: 'Kill job',
+      question: `Stop ${job.label}?`,
+      detail: [
+        `job:   ${job.id}`,
+        `state: ${job.detail}`,
+        '',
+        'The process is asked to stop; its output so far is kept in the log.',
+      ].join('\n'),
+      choices: [
+        { value: 'kill', label: 'Kill', dangerous: true },
+        { value: 'cancel', label: 'Cancel', isDefault: true },
+      ],
+    })
+    if (answer === 'kill') this.options.host.killJob?.(job.id)
+  }
+
   /** A new session: clear the transcript and let the host mint one. */
   private newSession(): void {
     this.document.clear()
@@ -1699,6 +1746,16 @@ export class TvisionApp {
    */
   get sessions(): readonly SessionRow[] {
     return this.sessionRows
+  }
+
+  /**
+   * Replace the Jobs window's contents, the push-style counterpart of the
+   * sessions setter: the caller owns the registry subscription.
+   * @param jobs - The jobs to show, straight from the registry.
+   */
+  setJobs(jobs: readonly JobSummary[]): void {
+    this.setListRows(WINDOW_IDS.jobs, buildJobRows(jobs))
+    this.setWindowTitle(WINDOW_IDS.jobs, `Jobs — ${jobs.length}`)
   }
 
   /**
