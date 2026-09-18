@@ -448,22 +448,22 @@ assumption.
 
 Honest scope, so the gaps are not mistaken for decisions.
 
+Honest scope, so the gaps are not mistaken for decisions. The three that
+opened this list — the Jobs shell, Sessions without search, skin that forgot
+itself on exit — shipped; what remains:
+
 - **No login flow.** The desktop mounts and draws without a key; a real turn
   needs `DEEPSEEK_API_KEY` or a configured endpoint.
-- **No verified live turn.** Every path up to the request is exercised by tests
-  and by `dsh --profile tvision --dump-config`, which composes the tree
-  correctly. A real model turn has not been run from this machine because the
-  sandbox cannot allocate a pty.
-- **The Jobs window is a shell.** It opens, scrolls, and focuses; nothing yet
-  reads the job service into it.
-- **The Sessions window lists but does not search.** It reads the session query,
-  folds titles for the visible page, and resumes on Enter. Filtering and search
-  are not wired.
-- **The Project index is rebuilt, never watched.** It refreshes on mount and
-  after a tool that could have written a file, coalesced by a 1.5 s timer. A
-  long-running turn therefore sees a slightly stale list, and an edit made by
-  another program is not noticed at all.
+- **The Project index is refreshed, never watched.** It refreshes on mount and
+  after a tool that could have written a file, coalesced by a 1.5 s timer (and
+  a symlink loop no longer poisons it). A long-running turn therefore sees a
+  slightly stale list, and an edit made by another program is not noticed at
+  all.
 - **No plugin-facing overlay API.** The upstream TUI exposes one; this does not
   yet, so a third-party plugin cannot open a window.
-- **Skin persistence.** `--skin` and `F9` work; the choice is not written back to
-  settings.
+
+The live turn, for the record, is no longer in the "not verified" column: the
+profile has since been driven end to end against the real API from a real
+terminal, and the whole stack — boot, streaming, tools, approvals, teardown —
+is exercised without spend by the mock-wire rung of the verification ladder
+(`npm run verify:wire`, see CLAUDE.md).

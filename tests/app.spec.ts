@@ -992,7 +992,7 @@ describe('arrange restores the opening geometry', () => {
     const opened = app.windows.lastFrame()?.lines() ?? []
     // Move things first, so Arrange is actually restoring something.
     app.windows.beginDrag(WINDOW_IDS.project, 'move', 10, 2)
-    app.windows.handle({ type: 'mouse', kind: 'drag', button: 'left', x: 18, y: 6 })
+    app.windows.handle({ type: 'mouse', kind: 'drag', button: 'left', x: 18, y: 6, shift: false, alt: false, ctrl: false })
     app.windows.cancelDrag()
     app.handle({ type: 'key', key: 'f10' })
     app.handle({ type: 'key', key: 'escape' })

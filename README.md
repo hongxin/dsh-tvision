@@ -109,6 +109,15 @@ Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch director
 
 Scrolling away from the end stops new output from pulling you back down. `End` re-arms it.
 
+### Sessions and Jobs
+
+| Key | Action |
+|---|---|
+| type | Filter the Sessions list — title, workspace, or id |
+| `Backspace` / `Esc` | Edit / clear the filter |
+| `k` | Kill the selected job (asks first) |
+| `Enter` | Resume the session / describe the job |
+
 ### Mouse
 
 Drag a title bar to move a window · drag the `⋮` grip to resize · click `≡` to close · click `▲` or double-click a title to zoom · wheel-scroll whatever the pointer is over, including the function-key strip.
