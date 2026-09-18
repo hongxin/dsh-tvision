@@ -720,6 +720,9 @@ export class TvisionApp {
       topInset: chrome.top,
       bottomInset: chrome.bottom,
       minimum: MINIMUM_TERMINAL,
+      // The manager re-plans the bands itself on resize, so the ordering the
+      // old manual applyChrome enforced cannot be forgotten by a caller.
+      chrome: (rows) => planChrome(rows),
     })
     this.chrome = chrome
     this.renderer = new ScreenRenderer(detectTruecolor())
@@ -1156,9 +1159,6 @@ export class TvisionApp {
    * @param event - The event.
    */
   handle(event: InputEvent): void {
-    // A resize re-plans the chrome before the manager reflows, because the bands
-    // it will lay out against are the ones this decides.
-    if (event.type === 'resize') this.applyChrome(event.rows)
     if (event.type === 'paste') {
       this.composer.insert(event.text.replace(/\r\n?/gu, '\n'))
       this.windows.requestRender()

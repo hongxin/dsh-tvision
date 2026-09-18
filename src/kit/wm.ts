@@ -284,6 +284,14 @@ export interface WindowManagerOptions {
   readonly minimum?: { readonly columns: number; readonly rows: number }
   /** Whether box-drawing glyphs are available; false falls back to ASCII. */
   readonly unicode?: boolean
+  /**
+   * How many rows each chrome band gets for a screen height. When present,
+   * {@link WindowManager.resize} re-plans the bands itself before reflowing,
+   * so the order — plan against the new height, then lay windows out against
+   * the new bands — is owned by the one place that reflows rather than
+   * remembered by every caller.
+   */
+  readonly chrome?: (rows: number) => { top: number; bottom: number }
 }
 
 /** What a chrome widget (menu bar, hint bar) is drawn through. */
@@ -363,6 +371,8 @@ export class WindowManager {
   private bottomInsetValue: number
   /** The usability floor; see {@link WindowManagerOptions.minimum}. */
   readonly minimum: { readonly columns: number; readonly rows: number }
+  /** The chrome band planner, when the host supplied one. */
+  private readonly chromePlanner: ((rows: number) => { top: number; bottom: number }) | undefined
   private drag: DragState | undefined
   private lastClick: { x: number; y: number; at: number; id: string } | undefined
   private wantsRender = true
@@ -413,6 +423,7 @@ export class WindowManager {
     this.topInsetValue = options.topInset ?? 1
     this.bottomInsetValue = options.bottomInset ?? 2
     this.minimum = options.minimum ?? DEFAULT_MINIMUM_TERMINMINAL
+    this.chromePlanner = options.chrome
     this.unicode = options.unicode ?? true
   }
 
@@ -521,6 +532,13 @@ export class WindowManager {
     if (nextColumns === this.columns && nextRows === this.rows) return
     this.columns = nextColumns
     this.rows = nextRows
+    // Bands first, windows second: the reflow below lays windows out against
+    // the desktop these bands leave, so planning happens here — before any
+    // caller of resize() can forget the order.
+    if (this.chromePlanner !== undefined) {
+      const plan = this.chromePlanner(this.rows)
+      this.setChrome(plan.top, plan.bottom)
+    }
     const desktop = this.desktop
     for (const window of this.windows) {
       const wasZoomed = window.zoomed

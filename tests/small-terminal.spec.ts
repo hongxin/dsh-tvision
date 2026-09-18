@@ -207,3 +207,17 @@ describe('the transcript pane', () => {
     expect(rows.join('\n')).toContain('a prompt')
   })
 })
+
+describe('chrome replanning on a direct resize', () => {
+  it('the manager re-plans its own bands when resize is called directly', () => {
+    // The ordering — plan bands for the new height, then reflow windows against
+    // them — is owned by the manager now. This is the path a test, the demo,
+    // or an embedding takes when it does not route through app.handle.
+    const view = at(FLOOR.columns, FLOOR.rows)
+    view.app.start()
+    expect(view.app.windows.bottomBand.height).toBe(1)
+    view.app.windows.resize(100, 24)
+    expect(view.app.windows.bottomBand.height).toBe(2)
+    expect(view.frame().join('\n')).toContain('F10 menu')
+  })
+})
