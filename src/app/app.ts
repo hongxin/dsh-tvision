@@ -375,7 +375,10 @@ class TranscriptPane implements Widget {
     // line. The pane's wanted height is what it *asks* for; what it *gets* is bounded
     // by the room left after the transcript's floor, and a pane that keeps a
     // popup row it has no room for shows a blank line above the sigil.
-    const wanted = COMPOSER_INPUT_ROWS + this.composer.completionRows
+    // The search bar, while open, takes the row above the composer rule — next
+    // to where the reader is typing, occluding nothing.
+    const searchBar = this.view.searchActive ? 1 : 0
+    const wanted = COMPOSER_INPUT_ROWS + this.composer.completionRows + searchBar
     const inputHeight = Math.max(
       1,
       Math.min(wanted, Math.max(1, painter.height - MIN_TRANSCRIPT_HEIGHT - 1)),
@@ -384,7 +387,12 @@ class TranscriptPane implements Widget {
     if (transcriptHeight > 0) {
       this.view.draw(painter.sub(0, 0, painter.width, transcriptHeight), context)
     }
-    const ruleRow = transcriptHeight
+    if (searchBar > 0) {
+      const { current, total } = this.view.searchStatus()
+      const label = `/${this.view.query} — ${current} of ${total} · Enter next · Shift+Enter prev · Esc close`
+      painter.text(0, transcriptHeight, label, painter.width, palette.reasoning, { ellipsis: true })
+    }
+    const ruleRow = transcriptHeight + searchBar
     for (let column = 0; column < painter.width; column++) {
       painter.set(column, ruleRow, '─', palette.windowFrame)
     }
@@ -401,8 +409,9 @@ class TranscriptPane implements Widget {
    * @returns Whether the key was consumed.
    */
   onKey(event: KeyEvent, _context: WidgetContext): Consumed {
-    // The transcript owns the pager keys and the composer owns everything else,
-    // so the order here is the whole policy.
+    // The open search bar owns the keys first — it is a text field; then the
+    // transcript's pager keys, then the composer. The order is the whole policy.
+    if (this.view.searchKey(event) === Consumed.Yes) return Consumed.Yes
     if (this.view.onKey(event) === Consumed.Yes) return Consumed.Yes
     return this.composer.onKey(event)
   }
@@ -1230,6 +1239,13 @@ export class TvisionApp {
           return true
         case 'z':
           this.windows.toggleZoom()
+          return true
+        case 'f':
+          // Searching is reading: focus the transcript first, so the bar's
+          // keys land in the pane no matter which window had the keyboard.
+          this.windows.focus(WINDOW_IDS.transcript)
+          this.transcript.beginSearch()
+          this.windows.requestRender()
           return true
         case 'r':
           this.toggleReasoning()

@@ -1010,3 +1010,23 @@ describe('arrange restores the opening geometry', () => {
     expect(arranged).toEqual(opened)
   })
 })
+
+describe('transcript search through the app', () => {
+  it('Ctrl+F opens the bar, typing filters, Escape closes', () => {
+    const { app } = build()
+    app.start()
+    app.document.addUser('the parser buffers everything', 1)
+    app.windows.requestRender()
+    app.feed('\u0006') // Ctrl+F — must never type an f into the composer
+    expect(app.composer.value).toBe('')
+    app.feed('parser')
+    app.windows.requestRender()
+    const withQuery = app.renderForTest()
+    expect(withQuery).toContain('/parser — 1 of ')
+    expect(withQuery).toContain('Enter next')
+    app.feed('\u001B')
+    app.flushInput()
+    app.windows.requestRender()
+    expect(app.renderForTest()).not.toContain('/parser')
+  })
+})

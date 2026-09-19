@@ -31,10 +31,10 @@
 
 import type { Style } from '../kit/cell.ts'
 import type { Painter } from '../kit/painter.ts'
-import type { MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
+import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
-import { spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
+import { prevClusterStart, spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
 import { formatDuration } from '../widgets/statusbar.ts'
 import type { ContentPiece, Entry, SessionDocument } from '../session/model.ts'
 
@@ -90,6 +90,14 @@ export class TranscriptView implements Widget {
   private lastLimit = 0
   /** Which entries are individually expanded, overriding the theme default. */
   private readonly expanded = new Set<number>()
+  /** The active search query, or '' when the search bar is closed. */
+  private searchQuery = ''
+  /** Where the search started, so Escape restores the reading position. */
+  private searchReturn: { offset: number; following: boolean } | undefined
+  /** Indices into the cached rows that match the query. */
+  private searchHits: number[] = []
+  /** Which hit is current (index into searchHits), or -1 when none. */
+  private searchCursor = -1
 
   /**
    * @param document - The session document to render.
@@ -198,6 +206,118 @@ export class TranscriptView implements Widget {
     this.scrollTop = next
   }
 
+  /** Whether the incremental search bar is open. */
+  get searchActive(): boolean {
+    return this.searchReturn !== undefined
+  }
+
+  /** The current search query, for the bar the pane paints. */
+  get query(): string {
+    return this.searchQuery
+  }
+
+  /**
+   * Where the search stands, for the bar's `i of n` readout.
+   * @returns The current hit (1-based) and the hit count.
+   */
+  searchStatus(): { current: number; total: number } {
+    return { current: this.searchCursor + 1, total: this.searchHits.length }
+  }
+
+  /** Open the search bar, remembering where the reader was. */
+  beginSearch(): void {
+    if (this.searchReturn !== undefined) return
+    this.searchReturn = { offset: this.scrollTop, following: this.stick }
+    // Searching is reading history; new output must not yank the view around
+    // while the reader is trying to find something.
+    this.stick = false
+    this.searchQuery = ''
+    this.searchHits = []
+    this.searchCursor = -1
+  }
+
+  /** Close the bar and put the reader back where they were. */
+  closeSearch(): void {
+    if (this.searchReturn === undefined) return
+    const { offset, following } = this.searchReturn
+    this.searchReturn = undefined
+    this.searchQuery = ''
+    this.searchHits = []
+    this.searchCursor = -1
+    this.stick = following
+    this.scrollTop = offset
+  }
+
+  /**
+   * Feed a key to the open search bar.
+   *
+   * Printable keys join the query; Enter steps to the next hit and
+   * Shift+Enter to the previous (bare `n` must stay typeable); Backspace
+   * edits; Escape closes and restores. Returns Consumed.No for keys the bar
+   * does not own, so the pane can pass them on.
+   */
+  searchKey(event: KeyEvent): Consumed {
+    if (this.searchReturn === undefined) return Consumed.No
+    const ctrl = event.ctrl === true || event.key.startsWith('ctrl+')
+    const alt = event.alt === true || event.key.startsWith('alt+')
+    if (event.key === 'escape') {
+      this.closeSearch()
+      return Consumed.Yes
+    }
+    if (event.key === 'enter') {
+      this.stepSearch(event.shift === true ? -1 : 1)
+      return Consumed.Yes
+    }
+    if (event.key === 'backspace') {
+      if (this.searchQuery === '') return Consumed.Yes
+      this.searchQuery = this.searchQuery.slice(0, prevClusterStart(this.searchQuery, this.searchQuery.length))
+      this.recomputeSearchHits()
+      return Consumed.Yes
+    }
+    if (!ctrl && !alt && event.text !== undefined && event.text !== '' && event.text !== '\r' && event.text !== '\n') {
+      this.searchQuery = (this.searchQuery + event.text).slice(0, 64)
+      this.recomputeSearchHits()
+      return Consumed.Yes
+    }
+    return Consumed.No
+  }
+
+  /** Recompute the hits for the current query and land on the nearest from here. */
+  private recomputeSearchHits(): void {
+    const needle = this.searchQuery.toLowerCase()
+    this.searchHits = []
+    if (needle !== '') {
+      // Keys arrive before the next paint; measure against the document as it
+      // stands, the same discipline limit() follows.
+      const rows = this.lastPalette === undefined || this.lastWidth === 0
+        ? this.rows
+        : this.rowsFor(this.lastWidth, this.lastPalette)
+      for (let index = 0; index < rows.length; index++) {
+        if (rows[index]?.text.toLowerCase().includes(needle) === true) this.searchHits.push(index)
+      }
+    }
+    const first = this.searchHits.findIndex(hit => hit >= this.scrollTop)
+    this.searchCursor = this.searchHits.length === 0 ? -1 : (first < 0 ? 0 : first)
+    this.revealSearchCursor()
+  }
+
+  /** Step to the next (or previous) hit, wrapping. */
+  private stepSearch(direction: 1 | -1): void {
+    if (this.searchHits.length === 0) return
+    this.searchCursor = (this.searchCursor + direction + this.searchHits.length) % this.searchHits.length
+    this.revealSearchCursor()
+  }
+
+  /** Bring the current hit into the viewport. */
+  private revealSearchCursor(): void {
+    if (this.searchCursor < 0) return
+    const target = this.searchHits[this.searchCursor] ?? 0
+    if (target < this.scrollTop) this.scrollTop = target
+    else if (target >= this.scrollTop + Math.max(1, this.lastHeight)) {
+      this.scrollTop = Math.max(0, target - Math.max(1, this.lastHeight) + 1)
+    }
+  }
+
   /**
    * Toggle one entry between collapsed and expanded.
    * @param entryId - The entry id.
@@ -264,8 +384,16 @@ export class TranscriptView implements Widget {
       const source = rows[this.scrollTop + row]
       if (source === undefined) break
       // A blank spacer row before each entry keeps the transcript breathable
-      // without every entry having to remember to emit one.
-      this.paintRow(painter, row, source, painter.width)
+      // without every entry having to remember to emit one. Search hits paint
+      // over the body style, so the shape of the results is legible before
+      // any of them is read.
+      const hitIndex = this.searchActive
+        ? this.searchHits.indexOf(this.scrollTop + row)
+        : -1
+      const style = hitIndex < 0
+        ? source.style
+        : hitIndex === this.searchCursor ? palette.searchHit : palette.searchHitDim
+      this.paintRow(painter, row, source, painter.width, style)
     }
     // A "scrolled up" indicator in the bottom-right, so a reader knows there is
     // more below without the title bar having to say so.
@@ -282,12 +410,12 @@ export class TranscriptView implements Widget {
    * @param source - The row to paint.
    * @param width - Available columns.
    */
-  private paintRow(painter: Painter, row: number, source: TranscriptRow, width: number): void {
+  private paintRow(painter: Painter, row: number, source: TranscriptRow, width: number, bodyStyle?: Style): void {
     const gutterWidth = Math.min(this.theme.gutterWidth, width)
     const gutter = takeColumns(source.text, gutterWidth)
     painter.text(0, row, gutter, gutterWidth, source.gutterStyle)
     const body = source.text.slice(gutter.length)
-    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), source.style)
+    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), bodyStyle ?? source.style)
     void width
   }
 

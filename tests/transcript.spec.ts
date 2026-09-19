@@ -734,3 +734,81 @@ describe('per-entry row memo', () => {
     expect(after.length).toBeGreaterThan(before.length)
   })
 })
+
+describe('incremental search', () => {
+  /** A view over a document with findable words, rendered at a fixed width. */
+  function viewWith(needleRows: string[]) {
+    const document = new SessionDocument()
+    needleRows.forEach((text, index) => document.addUser(text, index + 1))
+    const view = new TranscriptView(document, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    view.draw(new Painter(new CellBuffer(40, 5), rect(0, 0, 40, 5)), {
+      palette, focused: true, requestRender: () => {},
+    })
+    return view
+  }
+
+  it('jumps to the nearest hit at or below the reader, wrapping on Enter', () => {
+    const view = viewWith(['alpha one', 'beta two', 'alpha three', 'gamma four', 'alpha five'])
+    view.beginSearch()
+    view.searchKey({ type: 'key', key: 'a', text: 'a' })
+    view.searchKey({ type: 'key', key: 'l', text: 'l' })
+    // 'al' matches alpha at rows 0, 2, 4 (row texts include the '  ' prefix and
+    // heading, but 'al' only occurs in alpha rows).
+    const first = view.searchStatus()
+    expect(first.total).toBe(3)
+    // The view opened stuck to the bottom, so the nearest hit at-or-below is
+    // the last one; the search starts there, not at the top.
+    expect(first.current).toBe(3)
+    view.searchKey({ type: 'key', key: 'enter' })
+    // Enter wraps to the first.
+    expect(view.searchStatus().current).toBe(1)
+    view.searchKey({ type: 'key', key: 'enter' })
+    expect(view.searchStatus().current).toBe(2)
+  })
+
+  it('Escape restores the reading position and following state', () => {
+    const view = viewWith(['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'])
+    view.draw(new Painter(new CellBuffer(40, 3), rect(0, 0, 40, 3)), {
+      palette, focused: true, requestRender: () => {},
+    })
+    view.scrollToStart()
+    const offsetBefore = view.offset
+    const followingBefore = view.following
+    view.beginSearch()
+    view.searchKey({ type: 'key', key: 'e', text: 'e' })
+    view.searchKey({ type: 'key', key: 'escape' })
+    expect(view.searchActive).toBe(false)
+    expect(view.offset).toBe(offsetBefore)
+    expect(view.following).toBe(followingBefore)
+  })
+
+  it('searching pauses stick-to-bottom', () => {
+    const view = viewWith(['one'])
+    expect(view.following).toBe(true)
+    view.beginSearch()
+    expect(view.following).toBe(false)
+    view.searchKey({ type: 'key', key: 'escape' })
+    expect(view.following).toBe(true)
+  })
+
+  it('a CJK query matches CJK rows', () => {
+    const view = viewWith(['解析器缓冲整个文档', '别的内容', '解析器输出 token'])
+    view.beginSearch()
+    for (const char of '解析器') {
+      view.searchKey({ type: 'key', key: char, text: char })
+    }
+    expect(view.searchStatus().total).toBe(2)
+  })
+
+  it('backspace edits the query cluster-safely and widens the hits', () => {
+    const view = viewWith(['alpha one', 'alps two'])
+    view.beginSearch()
+    view.searchKey({ type: 'key', key: 'a', text: 'a' })
+    view.searchKey({ type: 'key', key: 'l', text: 'l' })
+    view.searchKey({ type: 'key', key: 'p', text: 'p' })
+    expect(view.searchStatus().total).toBe(2)
+    view.searchKey({ type: 'key', key: 'backspace' })
+    expect(view.query).toBe('al')
+    expect(view.searchStatus().total).toBe(2)
+  })
+})
