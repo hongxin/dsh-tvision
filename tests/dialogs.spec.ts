@@ -489,3 +489,49 @@ describe('askQuestions', () => {
     expect(answer.answers.map(item => item.id)).toEqual(['first', 'second'])
   })
 })
+
+describe('dialog text input', () => {
+  const spec = (input: { placeholder?: string; initial?: string }): DialogSpec => ({
+    title: 'API key',
+    question: 'Paste the key:',
+    input,
+    choices: [{ value: 'save', label: 'Save' }, { value: 'cancel', label: 'Cancel', isDefault: false }],
+  })
+  const key = (name: string, text?: string) => ({ type: 'key' as const, key: name, ...(text === undefined ? {} : { text }) })
+
+  it('types, edits cluster-safely, and settles with the input', () => {
+    const dialog = new Dialog(spec({}))
+    dialog.onKey(key('s', 's'))
+    dialog.onKey(key('k', 'k'))
+    dialog.onKey(key('y', 'y'))
+    dialog.onKey(key('backspace'))
+    expect(dialog.result).toBeInstanceOf(Promise)
+    dialog.onKey(key('enter'))
+    return dialog.result.then((result) => {
+      expect(result.value).toBe('save')
+      expect(result.input).toBe('sk')
+    })
+  })
+
+  it('a wide glyph backspaces as one unit', () => {
+    const dialog = new Dialog(spec({}))
+    dialog.onKey(key('好', '好'))
+    dialog.onKey(key('backspace'))
+    dialog.onKey(key('x', 'x'))
+    dialog.onKey(key('enter'))
+    return dialog.result.then((result) => {
+      // The lone-surrogate path would leave half a 好 in the value.
+      expect(result.input).toBe('x')
+    })
+  })
+
+  it('letters type instead of invoking choices, and escape still settles', () => {
+    const dialog = new Dialog(spec({ placeholder: 'sk-…' }))
+    dialog.onKey(key('y', 'y'))
+    dialog.onKey(key('escape'))
+    return dialog.result.then((result) => {
+      expect(result.dismissed).toBe(true)
+      expect(result.input).toBe('y')
+    })
+  })
+})

@@ -23,7 +23,7 @@ import type { Style } from '../kit/cell.ts'
 import type { Painter } from '../kit/painter.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
-import { takeColumns, textWidth } from '../kit/text.ts'
+import { prevClusterStart, takeColumns, textWidth } from '../kit/text.ts'
 import { wrapText } from './transcript.ts'
 
 /** One choice in a dialog. */
@@ -52,6 +52,12 @@ export interface DialogSpec {
   readonly choices: readonly DialogChoice[]
   /** Whether the choices may be picked with a bare letter. */
   readonly letterKeys?: boolean
+  /**
+   * An optional one-line text field, for dialogs that collect a value rather
+   * than a choice (an API key, a name). While present, bare letters type into
+   * the field instead of invoking choices.
+   */
+  readonly input?: { readonly placeholder?: string; readonly initial?: string }
 }
 
 /**
@@ -63,6 +69,8 @@ export interface DialogSpec {
  */
 export interface DialogResult {
   readonly value?: string
+  /** The text field's contents at settle time, when the spec had one. */
+  readonly input?: string
   readonly dismissed: boolean
 }
 
@@ -87,6 +95,10 @@ export class Dialog implements Widget {
   private buttonBoxes: { index: number; start: number; end: number; row: number }[] = []
   /** The row the buttons are drawn on, in the window interior's coordinates. */
   private buttonRow = 0
+  /** The text field's buffer, when the spec has one. */
+  private inputText = ''
+  /** The text field's caret, in code units. */
+  private inputCaret = 0
 
   /**
    * @param spec - Title, question, detail, and choices.
@@ -95,6 +107,8 @@ export class Dialog implements Widget {
   constructor(spec: DialogSpec, signal?: AbortSignal) {
     this.spec = spec
     this.signal = signal
+    this.inputText = spec.input?.initial ?? ''
+    this.inputCaret = this.inputText.length
     const fallback = spec.choices.findIndex(choice => choice.isDefault === true)
     this.selected = fallback >= 0 ? fallback : 0
     this.promise = new Promise<DialogResult>((resolve) => {
@@ -147,6 +161,17 @@ export class Dialog implements Widget {
     for (const line of wrapText(this.spec.question, painter.width)) {
       if (row >= painter.height) return
       painter.text(0, row, line, painter.width, palette.dialogStatic)
+      row++
+    }
+    // The text field, when the spec has one, sits right under the question —
+    // above any detail region, so it is never scrolled away. The block caret
+    // keeps the editing position visible without a hardware cursor.
+    if (this.spec.input !== undefined) {
+      if (this.inputText === '' && this.spec.input.placeholder !== undefined) {
+        painter.text(0, row, ` ${this.spec.input.placeholder}`, painter.width, palette.inputHint)
+      } else {
+        painter.text(0, row, ` ${this.inputText}\u258C`, painter.width, palette.inputBody)
+      }
       row++
     }
     row++
@@ -210,6 +235,30 @@ export class Dialog implements Widget {
    */
   onKey(event: KeyEvent): Consumed {
     const plain = event.key.replace(/^(ctrl|alt|shift|super)\+/u, '')
+    // The text field eats printable keys first: with an input present, letters
+    // type rather than invoke, and left/right/home/end/edit the field rather
+    // than the button row.
+    if (this.spec.input !== undefined) {
+      const ctrl = event.ctrl === true || event.key.startsWith('ctrl+')
+      const alt = event.alt === true || event.key.startsWith('alt+')
+      if (!ctrl && !alt && event.text !== undefined && event.text !== '' && event.text !== '\r' && event.text !== '\n') {
+        this.inputText = this.inputText.slice(0, this.inputCaret) + event.text + this.inputText.slice(this.inputCaret)
+        this.inputCaret += event.text.length
+        return Consumed.Yes
+      }
+      if (plain === 'backspace') {
+        if (this.inputCaret > 0) {
+          // By cluster: half a surrogate pair must never become a lone
+          // surrogate in a value the caller will store.
+          const start = prevClusterStart(this.inputText, this.inputCaret)
+          this.inputText = this.inputText.slice(0, start) + this.inputText.slice(this.inputCaret)
+          this.inputCaret = start
+        }
+        return Consumed.Yes
+      }
+      if (plain === 'home') { this.inputCaret = 0; return Consumed.Yes }
+      if (plain === 'end') { this.inputCaret = this.inputText.length; return Consumed.Yes }
+    }
     switch (plain) {
       case 'left':
         this.selected = (this.selected - 1 + this.spec.choices.length) % this.spec.choices.length
@@ -235,16 +284,18 @@ export class Dialog implements Widget {
         this.choose(this.selected)
         return Consumed.Yes
       case 'escape':
-        this.settle({ dismissed: true })
+        // Dismissal carries the field's contents too: a cancelled dialog that
+        // ate a half-typed value is a small, pointless loss.
+        this.settle({ dismissed: true, ...(this.spec.input === undefined ? {} : { input: this.inputText }) })
         return Consumed.Yes
       case 'y':
-        if (this.spec.letterKeys === true) {
+        if (this.spec.letterKeys === true && this.spec.input === undefined) {
           this.choose(this.spec.choices.findIndex(choice => choice.value === 'allow'))
           return Consumed.Yes
         }
         return Consumed.Yes
       case 'n':
-        if (this.spec.letterKeys === true) {
+        if (this.spec.letterKeys === true && this.spec.input === undefined) {
           this.choose(this.spec.choices.findIndex(choice => choice.value === 'deny'))
           return Consumed.Yes
         }
@@ -289,11 +340,12 @@ export class Dialog implements Widget {
    */
   private choose(index: number): void {
     const choice = this.spec.choices[index]
+    const input = this.spec.input === undefined ? undefined : this.inputText
     if (choice === undefined) {
-      this.settle({ dismissed: true })
+      this.settle({ dismissed: true, ...(input === undefined ? {} : { input }) })
       return
     }
-    this.settle({ value: choice.value, dismissed: false })
+    this.settle({ value: choice.value, dismissed: false, ...(input === undefined ? {} : { input }) })
   }
 }
 
