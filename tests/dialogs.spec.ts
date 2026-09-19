@@ -13,7 +13,7 @@ import { CellBuffer, rect } from '../src/kit/cell.ts'
 import { Painter } from '../src/kit/painter.ts'
 import { Consumed } from '../src/kit/widget.ts'
 import { TURBO_VISION, resolvePalette } from '../src/kit/skin.ts'
-import { Dialog, confirmSpec, dialogTitleStyle } from '../src/views/dialogs.ts'
+import { Dialog, confirmSpec, dialogTitleStyle, type DialogSpec } from '../src/views/dialogs.ts'
 import {
   QUESTION_SENTINELS,
   approvalSpec,

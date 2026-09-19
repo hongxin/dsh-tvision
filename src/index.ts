@@ -29,6 +29,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -149,6 +150,16 @@ export interface MountInput {
     read?(): string | undefined
     save?(id: string): void
     watch?(listener: (next: { skin?: string }) => void): void
+  }
+  /**
+   * The credentials seam: `sync` pushes the resolved key state into the app
+   * (the service's describe is async, so this is push-shaped), and `save`
+   * stores a new key. Both optional — a composition without the credentials
+   * service shows nothing and stores nothing.
+   */
+  readonly credentials: {
+    sync?(state: { configured: boolean; source?: string } | undefined): void
+    save?(key: string): Promise<void>
   }
 }
 
@@ -287,6 +298,12 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
     saveSkin: (id: string): void => {
       input.settings.save?.(id)
     },
+    saveApiKey: (key: string): Promise<void> => {
+      if (input.credentials.save === undefined) {
+        return Promise.reject(new Error('this composition has no credentials service'))
+      }
+      return input.credentials.save(key)
+    },
     quit(): void {
       if (quitting) return
       quitting = true
@@ -350,6 +367,12 @@ export function mount(input: MountInput): () => void {
     skin: resolveSkin(config, input.settings.read?.()),
   })
   attach?.(app)
+  // Credential state flows one way: the seam pushes, the app displays.
+  const pushCredential = (state: { configured: boolean; source?: string } | undefined): void => {
+    app.setCredentialState(state)
+  }
+  input.credentials.sync = pushCredential
+
   // The settings user layer resolves after this effect runs on a cold boot, so
   // the remembered skin can arrive one frame late; watch keeps it honest.
   input.settings.watch?.((next) => {
@@ -546,6 +569,35 @@ function createSettingsSeam(ctx: Context): MountInput['settings'] {
   return seam
 }
 
+/**
+ * The credentials seam, filled when a credentials provider exists. The key's
+ * resolved state (configured, source) is pushed into the app — describe is
+ * async, so no pull-shaped seam could answer per frame — and saves go through
+ * the provider's set, which persists to $DSH_HOME/.credentials.yaml.
+ */
+function createCredentialsSeam(ctx: Context): MountInput['credentials'] {
+  const seam: MountInput['credentials'] = {}
+  const ref = credentialRef('DEEPSEEK_API_KEY')
+  void ctx.inject(['credentials'], () => {
+    const service = ctx.get('credentials') as unknown as {
+      describe: (ref: unknown) => Promise<{ configured: boolean; source?: string; writable: boolean }>
+      set: (ref: unknown, value: string) => Promise<void>
+    }
+    const sync = (): void => {
+      void service.describe(ref)
+        .then(info => seam.sync?.({ configured: info.configured, source: info.source }))
+        .catch(error => ctx.logger.warn(`tvision: could not read credential state: ${String(error)}`))
+    }
+    seam.sync = undefined // filled by mount below
+    seam.save = (key) => service.set(ref, key)
+    // Both the initial read and every change — the provider watches its file
+    // and hot-publishes external edits — land in the same place.
+    sync()
+    ctx.on('credentials/reference-updated', sync)
+  })
+  return seam
+}
+
 export function apply(ctx: Context, config: Config = {}): void {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     // Not a terminal: nothing here can work, and frame-drawing into a pipe is
@@ -564,6 +616,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         terminal,
         jobsSlot: {},
         settings: createSettingsSeam(ctx),
+        credentials: createCredentialsSeam(ctx),
         requestExit: () => {
           // Leave the alternate screen first, then let the tree unwind: a
           // process that exits from inside raw mode leaves the shell broken.

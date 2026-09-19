@@ -32,7 +32,7 @@ import { SessionDocument } from '../session/model.ts'
 import { TranscriptView } from '../views/transcript.ts'
 import { textWidth } from '../kit/text.ts'
 import { Composer, type Completion, type ComposerTheme } from './composer.ts'
-import { Dialog, type DialogSpec } from '../views/dialogs.ts'
+import { Dialog, type DialogResult, type DialogSpec } from '../views/dialogs.ts'
 import { askApproval as askApprovalDialog, askQuestions as askQuestionsDialog } from './questions.ts'
 import { buildSessionRows, describeSessionRow, type SessionRow } from './sessions.ts'
 import { buildJobRows, describeJobRow, type JobRow, type JobSummary } from './jobs.ts'
@@ -78,6 +78,8 @@ export interface AppHost {
   killJob?(id: string): void
   /** Persist a skin choice; absent means preferences are not stored. */
   saveSkin?(id: string): void
+  /** Store an API key; resolves when the credentials service has it. */
+  saveApiKey?(key: string): Promise<void>
   /** Leave the application. */
   quit(): void
   /** Called after the app has released the terminal. */
@@ -735,6 +737,8 @@ export class TvisionApp {
   private readonly sessionCwd = new Map<string, string>()
   /** The file paths behind the Project window's rows. */
   private projectRows: readonly { path: string }[] = []
+  /** The credential state the harness pushed, when it has one. */
+  private credential: { configured: boolean; source?: string } | undefined
 
   /**
    * @param options - Terminal, host, identity, and skin.
@@ -1073,6 +1077,11 @@ export class TvisionApp {
       })
     }
     cells.push({ text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`, priority: 2 })
+    // The unconfigured key outranks the trivia: it is the one cell that says
+    // why nothing works yet.
+    if (this.credential?.configured === false) {
+      cells.push({ text: 'no API key', priority: 5, tone: 'warning' })
+    }
     cells.push({ text: `${this.windows.all().filter(entry => !entry.closed && entry.listed).length} win`, priority: 1 })
     cells.push({ text: 'F10 menu', priority: 0 })
     return cells
@@ -1140,6 +1149,7 @@ export class TvisionApp {
             hint: command.description,
           })),
           { id: 'sep', label: '', separator: true },
+          { id: 'apikey', label: 'API &key…', action: run(() => { void this.promptApiKey() }), hint: 'Store a DeepSeek API key' },
           { id: 'skin', label: 'Cycle &skin', shortcut: 'F9', action: run(() => this.cycleSkin()) },
         ],
       },
@@ -1527,6 +1537,17 @@ export class TvisionApp {
    * @returns The chosen value, or undefined when dismissed.
    */
   async ask(spec: DialogSpec, signal?: AbortSignal): Promise<string | undefined> {
+    return (await this.askResult(spec, signal)).value
+  }
+
+  /**
+   * The full-result variant of {@link ask}, for dialogs with an input field:
+   * the choice and the field's contents both matter to the caller.
+   * @param spec - The question, detail, choices, and optional input.
+   * @param signal - Optional lifetime; aborting dismisses the dialog.
+   * @returns Everything the dialog settled with.
+   */
+  async askResult(spec: DialogSpec, signal?: AbortSignal): Promise<DialogResult> {
     const dialog = new Dialog(spec, signal)
     const id = `dialog-${this.dialogSeq++}`
     const desktop = this.windows.desktop
@@ -1562,8 +1583,7 @@ export class TvisionApp {
     this.windows.requestRender()
     this.frame()
     try {
-      const result = await dialog.result
-      return result.value
+      return await dialog.result
     } finally {
       if (this.openDialog?.id === id) this.openDialog = undefined
       this.windows.close(id)
@@ -1631,6 +1651,37 @@ export class TvisionApp {
       ],
     })
     if (answer === 'kill') this.options.host.killJob?.(job.id)
+  }
+
+  /**
+   * Ask for the API key and store it through the host.
+   *
+   * The key is never echoed after entry — the dialog collects it, the host
+   * stores it, and the status line reports only state.
+   */
+  private async promptApiKey(): Promise<void> {
+    const answer = await this.askResult({
+      title: 'API key',
+      question: 'DeepSeek API key:',
+      detail: [
+        'Stored under $DSH_HOME/.credentials.yaml.',
+        this.credential?.source !== undefined
+          ? `current source: ${this.credential.source}`
+          : 'no key configured yet',
+        '',
+        'Get one at platform.deepseek.com.',
+      ].join('\n'),
+      input: { placeholder: 'sk-…' },
+      choices: [{ value: 'save', label: 'Save' }],
+    })
+    const key = answer.input ?? ''
+    if (answer.value !== 'save' || key.trim() === '') return
+    try {
+      await this.options.host.saveApiKey?.(key.trim())
+      this.notify('API key saved.', 'info', 4000)
+    } catch (error) {
+      this.notify(`Could not save the key: ${describeError(error)}`, 'error')
+    }
   }
 
   /** A new session: clear the transcript and let the host mint one. */
@@ -1783,6 +1834,16 @@ export class TvisionApp {
    * sessions setter: the caller owns the registry subscription.
    * @param jobs - The jobs to show, straight from the registry.
    */
+  /**
+   * Record the harness's view of the API key. `undefined` means no
+   * credentials service in this composition — nothing is shown, exactly as
+   * before the feature existed.
+   */
+  setCredentialState(state: { configured: boolean; source?: string } | undefined): void {
+    this.credential = state
+    this.windows.requestRender()
+  }
+
   setJobs(jobs: readonly JobSummary[]): void {
     this.setListRows(WINDOW_IDS.jobs, buildJobRows(jobs))
     this.setWindowTitle(WINDOW_IDS.jobs, `Jobs — ${jobs.length}`)
