@@ -369,11 +369,16 @@ export function mount(input: MountInput): () => void {
     skin: resolveSkin(config, input.settings.read?.()),
   })
   attach?.(app)
-  // Credential state flows one way: the seam pushes, the app displays.
-  const pushCredential = (state: { configured: boolean; source?: string } | undefined): void => {
-    app.setCredentialState(state)
+  // Credential state flows one way: the seam pushes, the app displays. The
+  // seam may have read the service before this effect ran, so attach the sink
+  // and replay whatever it already knows.
+  const credentialSeam = input.credentials as MountInput['credentials'] & {
+    last?: { configured: boolean; source?: string }
+    push?: (state: { configured: boolean; source?: string } | undefined) => void
   }
-  input.credentials.sync = pushCredential
+  credentialSeam.push = (state) => { app.setCredentialState(state) }
+  if (credentialSeam.last !== undefined) app.setCredentialState(credentialSeam.last)
+  input.credentials.sync = credentialSeam.sync
 
   // The settings user layer resolves after this effect runs on a cold boot, so
   // the remembered skin can arrive one frame late; watch keeps it honest.
@@ -591,20 +596,29 @@ function createSettingsSeam(ctx: Context): MountInput['settings'] {
  * the provider's set, which persists to $DSH_HOME/.credentials.yaml.
  */
 function createCredentialsSeam(ctx: Context): MountInput['credentials'] {
-  const seam: MountInput['credentials'] = {}
+  // The seam caches the latest state: the service may resolve (and describe)
+  // before mount attaches its sink, and that first read is exactly the one
+  // that decides whether the desktop opens with a warning.
+  const seam: MountInput['credentials'] & {
+    last?: { configured: boolean; source?: string }
+    push?: (state: { configured: boolean; source?: string } | undefined) => void
+  } = {}
   const ref = credentialRef('DEEPSEEK_API_KEY')
   void ctx.inject(['credentials'], () => {
     const service = ctx.get('credentials') as unknown as {
       describe: (ref: unknown) => Promise<{ configured: boolean; source?: string; writable: boolean }>
       set: (ref: unknown, value: string) => Promise<void>
     }
+    seam.sync = (state) => {
+      seam.last = state
+      seam.push?.(state)
+    }
+    seam.save = (key) => service.set(ref, key)
     const sync = (): void => {
       void service.describe(ref)
         .then(info => seam.sync?.({ configured: info.configured, source: info.source }))
         .catch(error => ctx.logger.warn(`tvision: could not read credential state: ${String(error)}`))
     }
-    seam.sync = undefined // filled by mount below
-    seam.save = (key) => service.set(ref, key)
     // Both the initial read and every change — the provider watches its file
     // and hot-publishes external edits — land in the same place.
     sync()
