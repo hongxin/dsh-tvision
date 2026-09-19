@@ -36,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import { TvisionApp, WINDOW_IDS, type AppHost } from './app/app.ts'
 import { ProjectIndex } from './app/project.ts'
+import { createProjectWatcher } from './app/project-watch.ts'
 import { DEFAULT_SKIN_ID, findSkin, SKINS, skinOrDefault, type Skin } from './kit/skin.ts'
 import { ProcessTerminal } from './term/process-terminal.ts'
 
@@ -326,6 +327,7 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
     ...({
       attach: (instance: TvisionApp) => { app = instance },
       invalidateContext: () => { cachedContextWindow = undefined },
+      projectRoot: project.indexedRoot,
     } as object),
   }
 }
@@ -426,6 +428,16 @@ export function mount(input: MountInput): () => void {
   void refreshSessions()
   const offCreated = ctx.on('agent/created', () => { void refreshSessions() })
 
+  // 7. The workspace watcher: external edits land in the Project window too.
+  //    It rides the same coalescing refresh the tool trigger uses, so a burst
+  //    of editor saves costs one walk, and its own debounce absorbs the
+  //    write-settle churn chokidar reports per file.
+  const stopWatcher = createProjectWatcher(
+    (handle as unknown as { projectRoot?: string }).projectRoot ?? process.cwd(),
+    () => { void refreshProject() },
+    error => { ctx.logger.warn(`tvision: workspace watcher failed: ${String(error)}`) },
+  )
+
   // 6. Background jobs: a service subscription, not session events — a job
   //    outlives the turn that started it. The callback only runs when a
   //    registry exists, so a composition without one keeps the empty window.
@@ -519,6 +531,9 @@ export function mount(input: MountInput): () => void {
   )
 
   return () => {
+    // Stop the watcher first: an event landing after teardown would schedule
+    // a refresh onto an app that no longer owns a terminal.
+    stopWatcher()
     // Stop the pump first: a tick that lands after the alternate screen is
     // left paints a frame onto the shell the user just got back.
     stopFrameLoop()
