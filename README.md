@@ -81,6 +81,7 @@ Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch director
 | `Ctrl+O` | Expand / collapse tool cards |
 | `Ctrl+R` | Show / hide the agent's reasoning |
 | `Ctrl+Z` | Zoom the focused window |
+| `Ctrl+F` | Search the transcript — `Enter` next hit, `Shift+Enter` previous, `Esc` back where you were |
 | `Ctrl+L` | Redraw the screen |
 
 ### Menus
@@ -117,6 +118,11 @@ Scrolling away from the end stops new output from pulling you back down. `End` r
 | `Backspace` / `Esc` | Edit / clear the filter |
 | `k` | Kill the selected job (asks first) |
 | `Enter` | Resume the session / describe the job |
+
+Without a configured API key the status line says so, and `Tools ▸ API
+key…` collects one into `$DSH_HOME/.credentials.yaml` — the key is never
+echoed back after entry. External edits to the workspace reach the Project
+window on their own now; no tool needs to run first.
 
 ### Mouse
 

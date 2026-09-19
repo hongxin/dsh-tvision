@@ -81,6 +81,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 | `Ctrl+O` | 展开 / 折叠工具卡片 |
 | `Ctrl+R` | 显示 / 隐藏思考过程 |
 | `Ctrl+Z` | 缩放当前窗口 |
+| `Ctrl+F` | 搜索转录——`Enter` 下一个、`Shift+Enter` 上一个、`Esc` 回到原位 |
 | `Ctrl+L` | 重绘屏幕 |
 
 ### 菜单
