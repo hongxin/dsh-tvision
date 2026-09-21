@@ -2,9 +2,10 @@
  * Workspace watcher tests.
  *
  * The real watcher runs against a real temporary tree, the way the index's
- * own tests do — a fake would only pin the fake. The option shape is pinned
- * separately through an injected starter, so the exclusion list and the
- * settle behaviour cannot silently drift from the walk's.
+ * own tests do. The EMFILE that motivated the native rewrite is pinned
+ * structurally — one recursive watcher, not one per directory — and the
+ * error containment is pinned at the layer that actually emits: the native
+ * watcher's own 'error' event.
  */
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,59 +33,66 @@ describe('the real watcher', () => {
     const onChange = vi.fn(() => { index.refresh() })
     const stop = createProjectWatcher(root, onChange)
     try {
-      // Let the initial scan finish first: a file created mid-scan is counted
-      // as initial and (rightly) ignored, which would swallow the event.
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // The recursive watcher needs a moment before it sees events.
+      await new Promise(resolve => setTimeout(resolve, 200))
       writeFileSync(join(root, 'b.ts'), 'two')
       await vi.waitFor(() => {
         expect(index.current?.files.some(file => file.path === 'b.ts')).toBe(true)
       })
     } finally {
-      await stop()
+      stop()
     }
   })
 
-  it('excluded directories raise no events', async () => {
+  it('changes inside excluded directories trigger nothing', async () => {
     mkdirSync(join(root, 'node_modules'))
     const onChange = vi.fn()
     const stop = createProjectWatcher(root, onChange)
     try {
+      // macOS FSEvents is latency-based: the mkdir from before the watcher
+      // started can arrive after. Let the history drain, then measure.
+      await new Promise(resolve => setTimeout(resolve, 700))
+      onChange.mockClear()
       writeFileSync(join(root, 'node_modules', 'pkg.js'), 'junk')
-      // Long enough for a real watcher to have said something if it were
-      // watching the wrong tree; short enough to keep the suite quick.
       await new Promise(resolve => setTimeout(resolve, 600))
       expect(onChange).not.toHaveBeenCalled()
     } finally {
-      await stop()
+      stop()
     }
   })
 })
 
-describe('the option shape', () => {
-  it('watches with exclusions, symlink following, and write settling', () => {
-    const seen: { root: string; options: Record<string, unknown> }[] = []
-    const fake = (root: string, options: Record<string, unknown>): WatchHandle => {
+describe('the watcher shape', () => {
+  it('starts one recursive watcher — the EMFILE fix, pinned', () => {
+    const seen: { root: string; options: { recursive: boolean } }[] = []
+    const fake = (root: string, options: { recursive: boolean }): WatchHandle => {
       seen.push({ root, options })
-      return {
-        on: (event: string, listener: (error: unknown) => void) => {
-          if (event === 'error') listener(new Error('boom'))
-          return fake
-        },
-        close: () => {},
-      }
+      return { on: () => fake, close: () => {} }
     }
+    const stop = createProjectWatcher('/ws', () => {}, undefined, fake)
+    stop()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.options.recursive).toBe(true)
+  })
+
+  it('a native error closes the watcher and is reported, never thrown', () => {
+    const listeners = new Map<string, (arg: unknown) => void>()
+    const closed: boolean[] = []
+    const handle: WatchHandle = {
+      on: (event, listener) => {
+        listeners.set(event, listener as (arg: unknown) => void)
+        return handle
+      },
+      close: () => { closed.push(true) },
+    }
+    const fake = (): WatchHandle => handle
     const onError = vi.fn()
     const stop = createProjectWatcher('/ws', () => {}, onError, fake)
+    // The error arrives on the native watcher itself — the layer that
+    // crashed the desktop before the listener lived here.
+    listeners.get('error')?.(new Error('EMFILE'))
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'EMFILE' }))
+    expect(closed).toHaveLength(1)
     stop()
-    expect(seen[0]?.root).toBe('/ws')
-    expect(seen[0]?.options.ignoreInitial).toBe(true)
-    expect(seen[0]?.options.followSymlinks).toBe(true)
-    // chokidar prunes by calling ignored on each directory as it descends,
-    // so the check that matters is on the directory itself.
-    const ignored = seen[0]?.options.ignored as (path: string) => boolean
-    expect(ignored(join('/ws', 'node_modules'))).toBe(true)
-    expect(ignored(join('/ws', 'src'))).toBe(false)
-    // A watcher error is contained: reported, never thrown.
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'boom' }))
   })
 })

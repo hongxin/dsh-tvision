@@ -23,5 +23,5 @@ export default defineConfig({
   dts: false,
   clean: false,
   fixedExtension: false,
-  external: [/^@deepseek-ai\//u, 'commander', 'get-east-asian-width', 'chokidar'],
+  external: [/^@deepseek-ai\//u, 'commander', 'get-east-asian-width'],
 })
