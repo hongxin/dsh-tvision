@@ -31,26 +31,36 @@ function channels(value: RgbColor): [number, number, number] {
 
 /**
  * The SGR parameters that set one colour slot.
+ *
+ * A colour's number means one of two things depending on where it came from:
+ * a skin's own value is 24-bit RGB (and RGB can be numerically small — the
+ * Borland blue `0x0000A8` is 168 decimal), while `resolveStyle`'s output on a
+ * non-truecolour terminal carries a 256-palette *index*. The `[16, 256)` range
+ * is therefore read as indices or as RGB according to `downgraded`, which the
+ * renderer sets from whether it resolved the style it is emitting. Getting
+ * this wrong one way reinterprets the index as near-black RGB; the other way
+ * paints the whole desktop the cube colour of index 168 — pink.
  * @param color - The colour, or undefined for the terminal default.
  * @param layer - Whether this is the foreground or the background.
+ * @param downgraded - Whether values in `[16, 256)` are palette indices (the
+ * output of `resolveStyle`) rather than 24-bit values that happen to be small.
  * @returns Parameter list without the `ESC [` or `m`.
  */
-function colorParams(color: Color, layer: 'fg' | 'bg'): string {
+function colorParams(color: Color, layer: 'fg' | 'bg', downgraded: boolean): string {
   if (color === undefined) return layer === 'fg' ? '39' : '49'
-  if (color >= 256) {
+  if (downgraded && color >= PALETTE_LIMIT && color < 256) {
+    // It must be emitted as `38;5;N`: the 24-bit form would reinterpret the
+    // index as an RGB value (index 37 became RGB(0,0,37), a near-black), and
+    // the 30-37/90-107 forms below only exist for the sixteen theme-remapped
+    // colours.
+    return `${layer === 'fg' ? 38 : 48};5;${color}`
+  }
+  if (color >= PALETTE_LIMIT) {
     const [r, g, b] = channels(color)
     // Always the explicit 24-bit form. The palette form would be shorter, but it
     // would also let the terminal's theme pick the colour, which is the one
     // thing a skin exists to decide.
     return `${layer === 'fg' ? 38 : 48};2;${r};${g};${b}`
-  }
-  if (color >= PALETTE_LIMIT) {
-    // A 256-palette index, which is what `resolveStyle` downgrades a 24-bit
-    // colour to on a terminal that cannot take truecolour. It must be emitted
-    // as `38;5;N`: the 24-bit form would reinterpret the index as an RGB value
-    // (index 37 became RGB(0,0,37), a near-black), and the 30-37/90-107 forms
-    // below only exist for the sixteen theme-remapped colours.
-    return `${layer === 'fg' ? 38 : 48};5;${color}`
   }
   const index = color as AnsiColor
   // 30-37/40-47 for the base eight, 90-97/100-107 for the bright eight.
@@ -98,13 +108,16 @@ const ATTR_OFF_CODES = ['22', '22', '23', '24', '25', '27', '29'] as const
 /**
  * The complete SGR sequence for a style, written from a clean slate.
  * @param style - The style to encode.
+ * @param downgraded - Whether the style's `[16, 256)` colours are palette
+ * indices (see the colour-space note on `colorParams`); a renderer emitting
+ * resolved styles passes `true`, one emitting raw skin colours passes `false`.
  * @returns An escape sequence ending in `m`, or `''` for a wholly empty style.
  */
-export function styleToSgr(style: Style): string {
+export function styleToSgr(style: Style, downgraded = true): string {
   if (isEmptyStyle(style)) return SGR_RESET
   const { on } = attrParams(style)
-  const fg = colorParams(style.fg, 'fg')
-  const bg = colorParams(style.bg, 'bg')
+  const fg = colorParams(style.fg, 'fg', downgraded)
+  const bg = colorParams(style.bg, 'bg', downgraded)
   // `0` first, so nothing has to be turned off explicitly: a full restate is
   // cheaper to reason about than to optimise, and it is emitted once per style
   // *change*, not once per cell.
@@ -137,14 +150,17 @@ export function isEmptyStyle(style: Style): boolean {
  * correct patch; passing `undefined` yields a full restate.
  * @param from - The style the terminal is currently in.
  * @param to - The style the next cell needs.
+ * @param downgraded - Whether the styles' `[16, 256)` colours are palette
+ * indices (see {@link colorParams}); both styles share one terminal, so one
+ * flag governs the pair.
  * @returns An escape sequence, or `''` when nothing has to change.
  */
-export function stylePatch(from: Style | undefined, to: Style): string {
-  if (from === undefined) return styleToSgr(to)
+export function stylePatch(from: Style | undefined, to: Style, downgraded = true): string {
+  if (from === undefined) return styleToSgr(to, downgraded)
   const { on, active } = attrParams(to)
   const params: string[] = []
-  if (from.fg !== to.fg) params.push(colorParams(to.fg, 'fg'))
-  if (from.bg !== to.bg) params.push(colorParams(to.bg, 'bg'))
+  if (from.fg !== to.fg) params.push(colorParams(to.fg, 'fg', downgraded))
+  if (from.bg !== to.bg) params.push(colorParams(to.bg, 'bg', downgraded))
   // Order matters and is not cosmetic: SGR parameters take effect left to
   // right, and bold and dim share the reset code 22. Emitting `2;22` would set
   // dim and then immediately cancel it, so every "off" must precede every "on".

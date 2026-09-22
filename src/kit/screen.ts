@@ -326,6 +326,12 @@ export class ScreenRenderer {
   /**
    * The escape that moves from the terminal's current style into `target`,
    * updating the tracked state.
+   *
+   * The styles arriving here have been through `resolveStyle`, so what their
+   * `[16, 256)` values mean depends on which way that went: indices when they
+   * were downgraded for a non-truecolour terminal, 24-bit values that happen
+   * to be small when they came through untouched. The flag must agree, or the
+   * Borland blue (`0x0000A8`, decimal 168) leaves as palette index 168 — pink.
    * @param target - The style of the run about to be written.
    * @returns The escape sequence, or `''` when the terminal is already there.
    */
@@ -333,8 +339,8 @@ export class ScreenRenderer {
     const current = this.activeStyle
     if (current !== undefined && styleEquals(current, target)) return ''
     const escape = current === undefined
-      ? (isEmptyStyle(target) ? SGR_RESET : stylePatch(undefined, target))
-      : stylePatch(current, target)
+      ? (isEmptyStyle(target) ? SGR_RESET : stylePatch(undefined, target, !this.truecolor))
+      : stylePatch(current, target, !this.truecolor)
     this.activeStyle = target
     return escape
   }

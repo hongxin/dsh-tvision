@@ -171,6 +171,20 @@ describe('style encoding', () => {
     expect(styleToSgr({ bg: 200 })).toContain('48;5;200')
   })
 
+  it('emits a 24-bit value below 256 as RGB unless the style was downgraded', () => {
+    // The Borland blue 0x0000A8 is 168 decimal — numerically inside the
+    // palette-index range. On a truecolour terminal the raw skin colour must go
+    // out as RGB; emitting index 168 paints the whole desktop cube-pink. Only
+    // resolveStyle's output may use the 5;N form for such values.
+    expect(styleToSgr({ bg: 0x0000A8 }, false)).toContain('48;2;0;0;168')
+    expect(styleToSgr({ fg: 0x0000A8 }, false)).toContain('38;2;0;0;168')
+    expect(stylePatch(undefined, { bg: 0x0000A8 }, false)).toContain('48;2;0;0;168')
+    // Downgraded styles keep the index form — that is what their numbers are.
+    expect(styleToSgr({ bg: 168 }, true)).toContain('48;5;168')
+    // The theme-mapped sixteen stay theme-mapped in both modes.
+    expect(styleToSgr({ fg: 1, bg: 4 }, false)).toBe('\u001B[0;31;44m')
+  })
+
   it('keeps a palette index a palette index', () => {
     // Below the limit the terminal's own theme resolves the colour, which is the
     // whole point of the ansi skin.
