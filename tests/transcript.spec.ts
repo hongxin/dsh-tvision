@@ -557,6 +557,19 @@ describe('TranscriptView scrolling', () => {
     expect(narrow).toBeGreaterThan(wide)
   })
 
+  it('lets prose run past the old sixty-column measure to the window width', () => {
+    // The window is the measure: a wide transcript must not stop its prose at
+    // sixty columns while the code boxes and tool cards beside it run full
+    // width. bodyWidth 98 → the wrap budget is 96.
+    const document = new SessionDocument()
+    document.addUser('word '.repeat(30).trim(), 1)
+    const rows = buildRows(document.all, 100, palette, theme)
+    for (const row of rows) {
+      expect(textWidth(row.text), JSON.stringify(row.text)).toBeLessThanOrEqual(98)
+    }
+    expect(rows.some(row => textWidth(row.text) > 62)).toBe(true)
+  })
+
   it('reuses cached rows for an unchanged document', () => {
     const { view } = build()
     const first = view.rowsFor(40, palette)

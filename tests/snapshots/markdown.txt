@@ -6,20 +6,20 @@
 ║| Agent · 0.0s                                                        ║                           │
 ║  Streaming the parser                                                ║                           │
 ║  Why it was slow                                                     ║                           │
-║  The old code buffered everything — every byte — before it           ║                           │
-║  emitted a token. Now it reads chunk by chunk:                       ║                           │
+║  The old code buffered everything — every byte — before it emitted   ║                           │
+║  a token. Now it reads chunk by chunk:                               ║                           │
 ║  1. read a chunk                                                     ║                           │
 ║  2. drain complete tokens                                            ║                           │
 ║  3. hold partial ones                                                ║                           │
 ║    • a partial word waits                                            ║          Tasks         ─├─┐
 ║    • a partial fence waits too                                       ║  o tasks yet.             │
-║  │ The first token now arrives when the first complete word          ║                           │
-║  │ does,                                                             ║                           │
+║  │ The first token now arrives when the first complete word does,    ║                           │
 ║  │ not when the whole file has been read.                            ║                           │
-║  ────────────────────────────────────────────────────────────        ║                           │
+║  ──────────────────────────────────────────────────────────────────  ║                           │
 ║  ### Details                                                         ║                           │
-║  A buffer-everything approach cannot stream; no yes, gone.           ║                           │
-║  See the parser (src/parser.ts) for the shape.                       ║                           │
+║  A buffer-everything approach cannot stream; no yes, gone. See the   ║                           │
+║  parser (src/parser.ts) for the shape.                               ║                           │
+║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║──────────────────────────────────────────────────────────────────────║                           │

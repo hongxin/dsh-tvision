@@ -648,21 +648,15 @@ function entryRows(
   }
 }
 
-/**
- * The widest column prose is wrapped to, however wide the window is.
+/*
+ * The width prose wraps to: the window is the measure.
  *
- * A reading measure, not a frame limit: a full-width transcript on a wide
- * terminal runs to fifty characters of Chinese per line, which is a wall of
- * text rather than a paragraph. Tool cards, code blocks, and diffs keep the
- * whole interior — their content is shape-bearing and the frames exist to be
- * filled. Sixty columns is the classic comfortable measure, ~30 CJK glyphs.
+ * A fixed reading measure leaves the right of a wide window empty while the
+ * code boxes and tool cards beside the prose run full width — two widths in
+ * one frame. Prose fills the same interior those shapes do, and the reader
+ * controls line length the way a window manager intends: by resizing or
+ * zooming the window.
  */
-const PROSE_MAX_COLUMNS = 60
-
-/** Wrap prose at the measure or the available width, whichever is smaller. */
-function proseWidth(available: number): number {
-  return Math.min(available, PROSE_MAX_COLUMNS)
-}
 
 /**
  * A simple gutter-plus-prose entry.
@@ -691,7 +685,7 @@ function messageRows(
     entryId: entry.id,
     startsEntry: true,
   })
-  for (const line of wrapText(spreadCjkLatin(entry.text ?? ''), proseWidth(width - 2))) {
+  for (const line of wrapText(spreadCjkLatin(entry.text ?? ''), width - 2)) {
     rows.push({ text: `  ${line}`, gutterStyle, style: bodyStyle, entryId: entry.id })
   }
   void palette
@@ -731,7 +725,7 @@ function assistantRows(
     if (piece.kind === 'reasoning') {
       if (!theme.showReasoning) continue
       const inner = width - 4
-      for (const line of wrapText(spreadCjkLatin(piece.text), proseWidth(inner))) {
+      for (const line of wrapText(spreadCjkLatin(piece.text), inner)) {
         rows.push({ text: `  · ${line}`, gutterStyle: palette.reasoning, style: palette.reasoning, entryId: entry.id })
       }
       continue
@@ -749,7 +743,7 @@ function assistantRows(
         codeBoxRows(sub, width, palette, entry.id, rows)
         continue
       }
-      for (const md of markdownRows(sub.text, proseWidth(width - 2), palette.bodyText, palette)) {
+      for (const md of markdownRows(sub.text, width - 2, palette.bodyText, palette)) {
         rows.push({
           text: `  ${md.text}`,
           gutterStyle: palette.assistantLabel,
