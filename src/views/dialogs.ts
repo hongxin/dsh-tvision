@@ -16,7 +16,7 @@
  *   because a leaked promise is a wedged agent turn.
  * - **The default is the safe choice.** Where a decision has a dangerous and a
  *   safe answer, Enter picks the safe one; the mouse may pick either.
- * @module @dsh-tvision/dsh-tvision/views/dialogs
+ * @module dsh-tvision/views/dialogs
  */
 
 import type { Style } from '../kit/cell.ts'

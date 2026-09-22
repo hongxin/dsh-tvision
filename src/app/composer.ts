@@ -12,7 +12,7 @@
  * as the running indicator: while a turn is in flight the sigil is replaced in
  * place by the elapsed time, so the user can see that the agent is working
  * without the cursor moving.
- * @module @dsh-tvision/dsh-tvision/app/composer
+ * @module dsh-tvision/app/composer
  */
 
 import type { Style } from '../kit/cell.ts'

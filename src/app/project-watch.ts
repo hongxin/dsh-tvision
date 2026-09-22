@@ -14,7 +14,7 @@
  * home directory took the desktop down with `EMFILE: too many open files`.
  * Excluded directories are filtered here in the event callback instead: the
  * watcher sees everything, the index hears only what it lists.
- * @module @dsh-tvision/dsh-tvision/app/project-watch
+ * @module dsh-tvision/app/project-watch
  */
 
 import { watch } from 'node:fs'

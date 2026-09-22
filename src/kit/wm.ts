@@ -17,7 +17,7 @@
  *    painter drops the write.
  * 2. Input is dispatched by hit-testing the same rectangles in reverse
  *    z-order. A click can only ever reach the topmost window under the pointer.
- * @module @dsh-tvision/dsh-tvision/kit/wm
+ * @module dsh-tvision/kit/wm
  */
 
 import { CellBuffer, rect as makeRect, type Rect, type Style } from './cell.ts'

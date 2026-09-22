@@ -14,7 +14,7 @@
  *   npm run review:brief                 # the whole thing
  *   npm run review:brief -- --module wm  # one module
  *
- * @module @dsh-tvision/dsh-tvision/scripts/review-brief
+ * @module dsh-tvision/scripts/review-brief
  */
 
 import { readFileSync, readdirSync, statSync } from 'node:fs'

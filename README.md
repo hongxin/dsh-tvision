@@ -1,5 +1,8 @@
 # tvision
 
+[![CI](https://github.com/hongxin/dsh-tvision/actions/workflows/ci.yml/badge.svg)](https://github.com/hongxin/dsh-tvision/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+
 **A character-cell window manager for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) agents.** Overlapping framed windows on a textured desktop, a Borland menu bar, a function-key strip, mouse dragging, and five skins — installed as an ordinary dsh profile bundle, not a fork.
 
 ```
@@ -48,15 +51,20 @@ Type anything and press Enter to replay the script; `F1` lists the keys and `F10
 Requires Node `^22.19 || >=24` and the `dsh` CLI.
 
 ```sh
-dsh plugin --profile tvision add @dsh-tvision/dsh-tvision
+git clone https://github.com/hongxin/dsh-tvision
+cd dsh-tvision && npm install && npm run build
+dsh plugin --profile tvision add "$(pwd)"
 dsh --profile tvision                                    # start in the current directory
 dsh --profile tvision --resume <session-id>              # resume a persisted session
 dsh --profile tvision --skin amber --no-mouse            # start options
 ```
 
+Once the package is published to npm, the clone-and-build steps collapse to
+`dsh plugin --profile tvision add dsh-tvision`.
+
 Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch directory or `$DSH_HOME`. A local or self-hosted endpoint needs no code change — point `DEEPSEEK_BASE_URL` at it, or set `llm-deepseek.baseURL` in `$DSH_HOME/settings.yaml`.
 
-> **Status.** Verified: the desktop mounts against a real `dsh --profile tvision` agent and draws in a real terminal (`python3 scripts/pty-profile.py`), and the standalone demo passes an 18-scenario sweep across sizes and key sequences with zero invariant defects. Not yet verified: a live model turn, and the event fold against recorded real payloads. See [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished).
+> **Status.** Verified: the desktop mounts against a real `dsh --profile tvision` agent and draws in a real terminal (`python3 scripts/pty-profile.py`); the full stack — streaming, reasoning, approvals, tool round trips — runs end to end against a scripted model endpoint (`python3 scripts/pty-wire.py`); the standalone demo passes an 18-scenario real-terminal sweep with zero invariant defects; and live model turns have been run against the real API. The golden corpus is hand-written synthetic content pinned to real event shapes — real transcripts are never committed. See [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished).
 
 ---
 

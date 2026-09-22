@@ -17,7 +17,7 @@
  * - **The original raw-mode state is remembered, not assumed.** dsh may already
  *   be running with a modified terminal, and claiming it was not raw would leave
  *   the parent shell broken.
- * @module @dsh-tvision/dsh-tvision/term/process-terminal
+ * @module dsh-tvision/term/process-terminal
  */
 
 /** Options for {@link ProcessTerminal}. */

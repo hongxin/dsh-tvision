@@ -14,7 +14,7 @@
  * coloured per cell without a write per cell, so within a changed row we merge
  * adjacent cells that share a style into a single write and only emit an SGR
  * patch when the style actually changes.
- * @module @dsh-tvision/dsh-tvision/kit/screen
+ * @module dsh-tvision/kit/screen
  */
 
 import { CellBuffer, PALETTE_LIMIT, styleEquals, type Style } from './cell.ts'

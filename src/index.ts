@@ -20,7 +20,7 @@
  * - **Commands** are invoked as `execute(agent, line, attachments, signal)` —
  *   four arguments, and the signal must be real, because the runtime reads
  *   `signal.aborted` before dispatching.
- * @module @dsh-tvision/dsh-tvision
+ * @module dsh-tvision
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'

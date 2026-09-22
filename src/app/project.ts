@@ -16,7 +16,7 @@
  * Ranking is the part that makes the list useful: a file you edited recently or
  * one near the top of the tree should beat an alphabetically earlier file in a
  * test fixture.
- * @module @dsh-tvision/dsh-tvision/app/project
+ * @module dsh-tvision/app/project
  */
 
 import { readdirSync, realpathSync, statSync } from 'node:fs'

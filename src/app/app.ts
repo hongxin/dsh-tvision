@@ -14,7 +14,7 @@
  * sessions, with the composer pinned to the bottom of the transcript. Every one
  * of those is an ordinary window, so any of them can be moved, resized, zoomed,
  * or closed, and the menu can bring it back.
- * @module @dsh-tvision/dsh-tvision/app/app
+ * @module dsh-tvision/app/app
  */
 
 import type { Rect } from '../kit/cell.ts'

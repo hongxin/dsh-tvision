@@ -1,0 +1,30 @@
+# Typecheck and the unit suite (verification level L0) on every push and PR.
+# The heavier levels — the pty sweep, the real-profile mount, the scripted
+# wire run — need a real terminal and a dsh install; see CLAUDE.md for the
+# ladder and run them locally.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

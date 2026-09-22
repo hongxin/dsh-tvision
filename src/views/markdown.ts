@@ -19,7 +19,7 @@
  *   clusters carrying styles, with the same kinsoku (禁則) and CJK rules the
  *   plain-text wrapper honours — a wide glyph is never split, closing
  *   punctuation never opens a line.
- * @module @dsh-tvision/dsh-tvision/views/markdown
+ * @module dsh-tvision/views/markdown
  */
 
 import type { Style } from '../kit/cell.ts'

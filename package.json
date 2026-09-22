@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-tvision/dsh-tvision",
+  "name": "dsh-tvision",
   "description": "Turbo Vision-style character-cell windowing IDE for DeepSeek Harness agents",
   "version": "0.1.0",
   "type": "module",
@@ -33,10 +33,13 @@
     "LICENSE"
   ],
   "license": "MIT",
+  "author": "Hongxin Zhang (https://github.com/hongxin)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dsh-tvision/dsh-tvision.git"
+    "url": "git+https://github.com/hongxin/dsh-tvision.git"
   },
+  "bugs": "https://github.com/hongxin/dsh-tvision/issues",
+  "homepage": "https://github.com/hongxin/dsh-tvision#readme",
   "keywords": [
     "deepseek-harness",
     "dsh",

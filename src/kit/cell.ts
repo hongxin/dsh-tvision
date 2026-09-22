@@ -5,7 +5,7 @@
  * This module is deliberately free of terminal I/O, widget knowledge, and DSH
  * knowledge. It is the bottom of the stack: `screen.ts` turns a buffer into
  * bytes, `wm.ts` decides what lands in it.
- * @module @dsh-tvision/dsh-tvision/kit/cell
+ * @module dsh-tvision/kit/cell
  */
 
 /** An ANSI palette index, `0`–`15`: the colours a terminal theme remaps. */

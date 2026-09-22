@@ -8,7 +8,7 @@
  * is provided, so the dependent rows never activate and the process exits
  * through the launcher's own exit seam — which is what keeps
  * `dsh --profile tvision --help` from trying to open a terminal.
- * @module @dsh-tvision/dsh-tvision/startup
+ * @module dsh-tvision/startup
  */
 
 import { randomUUID } from 'node:crypto'

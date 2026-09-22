@@ -8,7 +8,7 @@
  * joiners take none, and a wide glyph may never be split across a boundary.
  *
  * Widgets must never call `String.prototype.length` on display text.
- * @module @dsh-tvision/dsh-tvision/kit/text
+ * @module dsh-tvision/kit/text
  */
 
 import { eastAsianWidth } from 'get-east-asian-width'

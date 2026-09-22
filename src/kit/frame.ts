@@ -17,7 +17,7 @@
  *   the line never breaks for it;
  * - the frame casts a two-column, one-row drop shadow onto whatever is behind
  *   it, which is what makes stacked windows read as *stacked*.
- * @module @dsh-tvision/dsh-tvision/kit/frame
+ * @module dsh-tvision/kit/frame
  */
 
 import type { Rect, Style } from '../kit/cell.ts'

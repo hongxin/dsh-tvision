@@ -7,7 +7,7 @@
  * (the same discipline `sessions.ts` follows). A job is born when a tool
  * such as bash runs with `run_in_background`; it outlives the turn that
  * started it, which is exactly why it deserves a window of its own.
- * @module @dsh-tvision/dsh-tvision/app/jobs
+ * @module dsh-tvision/app/jobs
  */
 
 import { formatAge } from './sessions.ts'

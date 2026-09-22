@@ -1,5 +1,8 @@
 # tvision
 
+[![CI](https://github.com/hongxin/dsh-tvision/actions/workflows/ci.yml/badge.svg)](https://github.com/hongxin/dsh-tvision/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
+
 **给 DeepSeek Harness 智能体的字符型窗口管理器。** 带投影的重叠窗口、Borland 式菜单栏、功能键提示条、鼠标拖拽、五套配色皮肤——以普通的 dsh profile bundle 形式安装，不是 fork。
 
 ```
@@ -48,15 +51,19 @@ node lib/demo.js --list-skins
 需要 Node `^22.19 || >=24` 与 `dsh` CLI。
 
 ```sh
-dsh plugin --profile tvision add @dsh-tvision/dsh-tvision
+git clone https://github.com/hongxin/dsh-tvision
+cd dsh-tvision && npm install && npm run build
+dsh plugin --profile tvision add "$(pwd)"
 dsh --profile tvision                                    # 在当前目录开启会话
 dsh --profile tvision --resume <session-id>              # 恢复历史会话
 dsh --profile tvision --skin amber --no-mouse            # 启动选项
 ```
 
+包发布到 npm 后，克隆构建两步收敛为 `dsh plugin --profile tvision add dsh-tvision`。
+
 在环境变量（或启动目录 / `$DSH_HOME` 下的 `.env`）里设置 `DEEPSEEK_API_KEY`。本地或自建端点无需改代码——把 `DEEPSEEK_BASE_URL` 指过去，或在 `$DSH_HOME/settings.yaml` 里设置 `llm-deepseek.baseURL`。
 
-> **状态。** 桌面能挂载、绘制、接收输入、流式渲染对话、弹出审批对话框、索引工作区、列出并恢复会话。一次真实的模型回合尚未在本机端到端跑通；具体哪些接通了、哪些没有，见[设计文档的范围一节](docs/DESIGN.md#6-what-is-not-finished)。
+> **状态。** 已验证：桌面在真实 `dsh --profile tvision` 智能体上挂载并在真实终端绘制（`python3 scripts/pty-profile.py`）；完整链路——流式、reasoning、审批、工具往返——在脚本化模型端点上端到端跑通（`python3 scripts/pty-wire.py`）；独立 demo 通过 18 场景真终端扫描且不变量零缺陷；真实 API 的实弹回合已人工跑过。黄金语料是钉住真实事件形状的手写合成内容——真实转录永不入库。见[设计文档的范围一节](docs/DESIGN.md#6-what-is-not-finished)。
 
 ---
 

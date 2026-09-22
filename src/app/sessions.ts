@@ -10,7 +10,7 @@
  * Titles also cost I/O: reading one means reading a session's log. So the
  * caller fetches them for the visible page only, and a row without one is
  * shown with its id until the title lands rather than blocking the window.
- * @module @dsh-tvision/dsh-tvision/app/sessions
+ * @module dsh-tvision/app/sessions
  */
 
 import { truncate } from '../kit/text.ts'

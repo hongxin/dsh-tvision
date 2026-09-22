@@ -11,7 +11,7 @@
  * then waits for you. Everything it does goes through the same {@link AppHost}
  * the real plugin implements, so the demo exercises the real code path rather
  * than a mock of it.
- * @module @dsh-tvision/dsh-tvision/demo
+ * @module dsh-tvision/demo
  */
 
 import { TvisionApp, type AppHost, type AppTerminal } from './app/app.ts'

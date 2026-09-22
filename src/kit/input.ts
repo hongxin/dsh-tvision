@@ -14,7 +14,7 @@
  * accelerator, an F-key hint strip, and a keybinding table at once. That is a
  * different contract from a chat TUI's "is this string Ctrl+O", so the decoder
  * is owned here and covered by its own tests.
- * @module @dsh-tvision/dsh-tvision/kit/input
+ * @module dsh-tvision/kit/input
  */
 
 /** A press event for a named key. */

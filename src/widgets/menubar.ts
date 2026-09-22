@@ -18,7 +18,7 @@
  * A dropdown is drawn as an overlay above every window by the window manager
  * (see `WindowManager.setOverlay`), because a menu that a window could cover
  * would be worse than no menu.
- * @module @dsh-tvision/dsh-tvision/widgets/menubar
+ * @module dsh-tvision/widgets/menubar
  */
 
 import type { Rect, Style } from '../kit/cell.ts'

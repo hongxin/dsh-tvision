@@ -7,7 +7,7 @@
  * no matter what its caller did). That single invariant is what makes
  * overlapping windows safe: nothing has to be careful, because the painter
  * cannot write outside its own rectangle by construction.
- * @module @dsh-tvision/dsh-tvision/kit/painter
+ * @module dsh-tvision/kit/painter
  */
 
 import { CellBuffer, type Rect, type Style } from './cell.ts'

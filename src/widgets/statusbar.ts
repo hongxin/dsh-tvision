@@ -11,7 +11,7 @@
  * The strip is generated from the keymap rather than hardcoded, so it cannot
  * drift out of step with the keys that actually work — a failure mode that
  * makes an application feel broken in a way that is hard to diagnose.
- * @module @dsh-tvision/dsh-tvision/widgets/statusbar
+ * @module dsh-tvision/widgets/statusbar
  */
 
 import type { Style } from '../kit/cell.ts'

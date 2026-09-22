@@ -26,7 +26,7 @@
  * changes the document on every token, so the cache is rebuilt then — but a
  * repaint caused by a cursor blink, a clock tick, or a window being uncovered
  * costs a single comparison.
- * @module @dsh-tvision/dsh-tvision/views/transcript
+ * @module dsh-tvision/views/transcript
  */
 
 import type { Style } from '../kit/cell.ts'

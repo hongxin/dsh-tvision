@@ -7,7 +7,7 @@
  * *patch* (the escapes needed to turn one style into another), which is what
  * lets the renderer emit two or three parameters for a colour change instead of
  * resetting and restating the whole style per cell.
- * @module @dsh-tvision/dsh-tvision/kit/styles
+ * @module dsh-tvision/kit/styles
  */
 
 import { PALETTE_LIMIT } from './cell.ts'

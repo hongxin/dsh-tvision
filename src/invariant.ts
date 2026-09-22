@@ -4,7 +4,7 @@
  * tvision owns no cross-package invariants: it reads the session log, it never
  * writes it, and it holds no shared registry. The module exists so the loader
  * sees a declared companion rather than an absent one.
- * @module @dsh-tvision/dsh-tvision/invariant
+ * @module dsh-tvision/invariant
  */
 
 import type { Context } from '@deepseek-ai/cordis'

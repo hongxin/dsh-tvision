@@ -28,6 +28,7 @@ import argparse
 import json
 import sys
 import zstandard
+from pathlib import Path
 
 # The event types the fold reads; everything else (titles, requests, splices)
 # is plumbing whose shape the view does not depend on.
@@ -37,7 +38,7 @@ KEPT_TYPES = {
     'tool/call', 'tool/result', 'todo/write', 'compaction/start', 'compaction/end',
 }
 
-HOME = '/Users/hongxin'
+HOME = os.environ.get('HOME', str(Path.home()))
 
 
 def read_lines(path):

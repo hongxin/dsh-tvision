@@ -6,7 +6,7 @@
  * follows is that it knows the *log format* and nothing else — no services, no
  * widgets, no I/O — which is what makes the transcript reproducible from a
  * replay and the tests meaningful.
- * @module @dsh-tvision/dsh-tvision/app/events
+ * @module dsh-tvision/app/events
  */
 
 import type { ContentPiece, SessionDocument } from '../session/model.ts'

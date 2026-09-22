@@ -21,7 +21,7 @@
  *   created without a side table, and a replayed log folds to the same document.
  * - **Nothing here knows about cells.** Widths, wrapping, and glyphs are the
  *   view's business; this module would work with any renderer.
- * @module @dsh-tvision/dsh-tvision/session/model
+ * @module dsh-tvision/session/model
  */
 
 /** Which role produced an entry, used by the view to pick a style and a gutter. */

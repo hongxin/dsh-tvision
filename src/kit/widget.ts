@@ -6,7 +6,7 @@
  * A widget knows its own size preferences and how to react to a click or a
  * key; it never knows where on screen it is, which is what lets the same
  * transcript widget live in a big window, a small window, or a dialog.
- * @module @dsh-tvision/dsh-tvision/kit/widget
+ * @module dsh-tvision/kit/widget
  */
 
 import type { Palette } from './skin.ts'

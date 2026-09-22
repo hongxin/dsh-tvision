@@ -5,7 +5,7 @@
  * A value is registered by name and may change at any time; a subscriber is
  * notified so the display can refresh. This is the same seam the upstream TUI
  * exposes, deliberately, so a plugin written against that one keeps working.
- * @module @dsh-tvision/dsh-tvision/prompt
+ * @module dsh-tvision/prompt
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'

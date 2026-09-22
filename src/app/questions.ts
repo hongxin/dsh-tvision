@@ -13,7 +13,7 @@
  * is no approval channel. That makes this a functional requirement rather than
  * a nicety, and it is why the four outcomes below are the harness's own
  * vocabulary rather than anything invented here.
- * @module @dsh-tvision/dsh-tvision/app/questions
+ * @module dsh-tvision/app/questions
  */
 
 import type { DialogSpec } from '../views/dialogs.ts'

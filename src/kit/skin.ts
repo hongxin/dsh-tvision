@@ -13,7 +13,7 @@
  * All colours are 24-bit. {@link resolveStyle} in `screen.ts` downgrades them
  * to the 256-colour palette for terminals that cannot do better, so a skin
  * author never has to think about it.
- * @module @dsh-tvision/dsh-tvision/kit/skin
+ * @module dsh-tvision/kit/skin
  */
 
 import type { Style } from './cell.ts'
