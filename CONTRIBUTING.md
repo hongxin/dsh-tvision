@@ -41,6 +41,12 @@ to the emulator suite.
   `tests/golden/` are hand-written event shapes with synthetic content; use
   `scripts/golden-extract.py` to diff a fresh local session log against them
   and transcribe shape changes by hand.
+- **Screenshots are regenerated, not retouched.** Run the demo under a pty
+  (`scripts/pty_common.py` at 100×30 with `COLORTERM=truecolor`), replay the
+  capture through `scripts/render-shot.mjs` to get an HTML character grid,
+  and screenshot that in a browser — see the usage note at the top of
+  `render-shot.mjs`. After any visual change, refresh the four under
+  `docs/screenshots/` the same way.
 - **Commit messages say why.** The code already says what.
 
 ## Reporting bugs

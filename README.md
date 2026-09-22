@@ -5,6 +5,14 @@
 
 **A character-cell window manager for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) agents.** Overlapping framed windows on a textured desktop, a Borland menu bar, a function-key strip, mouse dragging, and five skins — installed as an ordinary dsh profile bundle, not a fork.
 
+![The classic Borland blue](docs/screenshots/tvision.png)
+
+The blue your hands remember from Turbo C — and three more looks ship in the same binary:
+
+| Amber CRT | Phosphor | Slate |
+|:---:|:---:|:---:|
+| ![Amber CRT](docs/screenshots/amber.png) | ![Phosphor](docs/screenshots/phosphor.png) | ![Slate](docs/screenshots/slate.png) |
+
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
 ╔═════════════════════════ Conversation ═════════════════════════╗┌───── Project ──────┐
