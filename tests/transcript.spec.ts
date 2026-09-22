@@ -578,6 +578,23 @@ describe('TranscriptView scrolling', () => {
     expect(frame.lines().join('\n')).toContain('line 39')
   })
 
+  it('paints blank spacer rows with the window body background', () => {
+    // An empty style erases the frame's pre-filled background down to the
+    // terminal default, which read as black stripes between entries — the
+    // first thing a user sees. The spacer must carry the body style across
+    // the gutter and the body alike.
+    const document = new SessionDocument()
+    document.addUser('a', 1)
+    document.addUser('b', 2)
+    const view = new TranscriptView(document, theme)
+    const frame = paint(view, 40, 6)
+    // rows: ['> You', '  a', '', '> You', '  b'] — the spacer is buffer row 2.
+    expect(frame.row(2).trimEnd()).toBe('')
+    for (let x = 0; x < 40; x++) {
+      expect(frame.at(x, 2)?.style, `cell ${x}`).toEqual(palette.windowBody)
+    }
+  })
+
   it('shows a remainder indicator when scrolled up', () => {
     const { view } = build()
     paint(view, 40, 10)

@@ -567,7 +567,7 @@ export function buildRows(
   const bodyWidth = Math.max(8, width - theme.gutterWidth)
   let first = true
   for (const entry of entries) {
-    if (!first) rows.push(blankRow(entry.id))
+    if (!first) rows.push(blankRow(entry.id, palette))
     first = false
     // `entryRows` is per-entry pure (the only cross-entry facts — the blank
     // spacers and the first-entry rule — live outside the memo), so a cache
@@ -600,9 +600,15 @@ export function buildRows(
   return rows
 }
 
-/** A blank spacer row attributed to the entry that follows it. */
-function blankRow(entryId: number): TranscriptRow {
-  return { text: '', gutterStyle: {}, style: {}, entryId }
+/**
+ * A blank spacer row attributed to the entry that follows it.
+ *
+ * The spacer carries the window body style for both runs — gutter and body —
+ * because a row with an empty style erases the frame's pre-filled background
+ * down to the terminal default, which reads as a black stripe between entries.
+ */
+function blankRow(entryId: number, palette: ResolvedPalette): TranscriptRow {
+  return { text: '', gutterStyle: palette.windowBody, style: palette.windowBody, entryId }
 }
 
 /**

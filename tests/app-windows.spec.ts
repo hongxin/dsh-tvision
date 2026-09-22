@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { TvisionApp, WINDOW_IDS } from '../src/app/app.ts'
 import type { AppHost } from '../src/app/app.ts'
-import { findSkin } from '../src/kit/skin.ts'
+import { findSkin, resolvePalette, TURBO_VISION } from '../src/kit/skin.ts'
 import { HeadlessTerminal } from './headless-terminal.ts'
 
 /** A host with the window-filling seams wired to supplied data. */
@@ -204,6 +204,31 @@ describe('the Project window', () => {
     view.app.start()
     await view.app.refreshProject()
     expect(view.frame()).toContain('parser.ts')
+  })
+
+  it('paints the detail column on rows that have no detail', async () => {
+    // A reserved-but-unpainted detail column left the frame's window-body
+    // pre-fill showing as a colour block inside an otherwise uniform row.
+    const view = build({
+      indexFiles: async () => ({
+        rows: [{ label: 'parser.ts', detail: 'src' }, { label: 'README.md' }],
+        paths: ['src/parser.ts', 'README.md'],
+        summary: '2 files',
+      }),
+    })
+    view.app.start()
+    await view.app.refreshProject()
+    view.app.windows.focus(WINDOW_IDS.project)
+    const buffer = view.app.windows.paint()
+    const rect = view.app.windows.get(WINDOW_IDS.project)?.rect
+    expect(rect).toBeDefined()
+    if (rect === undefined) return
+    const palette = resolvePalette(TURBO_VISION)
+    // README.md is list row 1 = the window's second body row.
+    const row = rect.y + 2
+    for (let x = rect.x + 1; x < rect.x + rect.width - 1; x++) {
+      expect(buffer.at(x, row)?.style, `cell ${x}`).toEqual(palette.listNormal)
+    }
   })
 
   it('reports the index summary in the title', async () => {

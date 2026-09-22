@@ -912,8 +912,10 @@ export class WindowManager {
   }
 
   /**
-   * Paint the desktop backdrop. A dotted field, which is what Borland shipped
-   * and what makes an empty desktop look intentional rather than broken.
+   * Paint the desktop backdrop: a full field of light-shade cells, which is
+   * what Borland shipped — `TDeskTop::defaultBkgrnd` is `'\xB0'` (░) painted on
+   * every cell, a surface rather than a checkerboard. A window's drop shadow
+   * crossing it is what makes the texture read as depth.
    * @param root - The root painter.
    */
   private paintBackground(root: Painter): void {
@@ -923,10 +925,7 @@ export class WindowManager {
     const pattern = this.unicode ? '░' : '.'
     for (let y = 0; y < desktop.height; y++) {
       for (let x = 0; x < desktop.width; x++) {
-        // A checker of dots rather than a solid fill: it reads as a surface and
-        // still shows the shadow of a window passing over it.
-        const dotted = (x + y) % 2 === 0
-        root.set(desktop.x + x, desktop.y + y, dotted ? pattern : ' ', style)
+        root.set(desktop.x + x, desktop.y + y, pattern, style)
       }
     }
   }

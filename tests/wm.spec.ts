@@ -499,6 +499,18 @@ describe('painting', () => {
     expect(frame.row(0).trimEnd()).toBe('')
   })
 
+  it('fills the desktop with shade cells on every column, not a checker', () => {
+    // TV 2.0's `TDeskTop::defaultBkgrnd` is '\xB0' painted on every cell — a
+    // surface. The first desktop row (row 1) sits above the window at row 2,
+    // clear of its shadow, so all forty cells must be shade.
+    const manager = makeManager(40, 12)
+    openWindow(manager, 'a', new SpyWidget(), rect(2, 2, 20, 6))
+    const frame = manager.paint()
+    expect(frame.row(1)).toBe('░'.repeat(40))
+    expect(frame.at(0, 1)?.char).toBe('░')
+    expect(frame.at(1, 1)?.char).toBe('░')
+  })
+
   it('gives the widget the interior rectangle, not the whole window', () => {
     const manager = makeManager(40, 12)
     const widget = new SpyWidget()

@@ -545,7 +545,9 @@ class ListWindow implements Widget {
     if (filtered) painter.text(0, 0, this.queryLine(rows), painter.width, palette.reasoning)
     // The detail column is measured from the right and the label takes what is
     // left of it, so the two can never overlap: a label drawn to the window's
-    // full width would run straight through the detail text beside it.
+    // full width would run straight through the detail text beside it. Rows
+    // without a detail still claim the column — an unpainted cell would leave
+    // the frame's window-body pre-fill showing as a colour block mid-row.
     const detailWidth = this.detailColumnWidth(painter.width, rows)
     const labelWidth = Math.max(0, painter.width - MARKER_WIDTH - detailWidth)
     for (let row = filtered ? 1 : 0; row < painter.height; row++) {
@@ -557,8 +559,8 @@ class ListWindow implements Widget {
         : palette.listNormal
       painter.text(0, row, ` ${item.marker ?? ' '} `, MARKER_WIDTH, style)
       painter.text(MARKER_WIDTH, row, item.label, labelWidth, style)
-      if (detailWidth > 0 && item.detail !== undefined) {
-        painter.text(painter.width - detailWidth, row, item.detail, detailWidth, style)
+      if (detailWidth > 0) {
+        painter.text(painter.width - detailWidth, row, item.detail ?? '', detailWidth, style)
       }
     }
   }
