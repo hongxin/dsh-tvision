@@ -108,10 +108,10 @@ describe('inline parsing', () => {
     expect(parseInline('~~gone~~', base)[0]?.style.strike).toBe(true)
   })
 
-  it('links render text, and the url only when it differs', () => {
+  it('links render text plainly, and the url only when it differs', () => {
     expect(parseInline('[DeepSeek](https://deepseek.com)', base))
-      .toEqual([{ text: 'DeepSeek (https://deepseek.com)', style: { ...base, underline: true } }])
-    expect(parseInline('[x](x)', base)).toEqual([{ text: 'x', style: { ...base, underline: true } }])
+      .toEqual([{ text: 'DeepSeek (https://deepseek.com)', style: base }])
+    expect(parseInline('[x](x)', base)).toEqual([{ text: 'x', style: base }])
   })
 
   it('code spans are data: no CJK seam inside', () => {

@@ -306,8 +306,10 @@ export function parseInline(text: string, base: Style): MdSeg[] {
       const label = link[1] ?? ''
       const url = link[2] ?? ''
       flush(base)
+      // The shown URL in parentheses is the affordance; an underline on top
+      // of it is visual noise across a whole paragraph.
       const shown = label === url || url === '' ? label : `${label} (${url})`
-      segments.push({ text: shown, style: { ...base, underline: true } })
+      segments.push({ text: shown, style: base })
       cursor += link[0].length
       continue
     }
