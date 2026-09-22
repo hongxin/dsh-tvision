@@ -34,7 +34,7 @@ import type { Painter } from '../kit/painter.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
-import { prevClusterStart, spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
+import { NO_LINE_END, NO_LINE_START, prevClusterStart, spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
 import { formatDuration } from '../widgets/statusbar.ts'
 import type { ContentPiece, Entry, SessionDocument } from '../session/model.ts'
 
@@ -899,17 +899,7 @@ export function prettyJson(args: string): string {
   }
 }
 
-/**
- * Punctuation that must not begin a line (kinsoku shori, 禁则处理).
- *
- * Chinese typesetting treats these as bound to the text before them; a line
- * starting with a comma or a full stop reads as broken to anyone who reads
- * Chinese fluently, and CJK prose is most of what a DeepSeek transcript holds.
- */
-const NO_LINE_START = new Set([...'，。、！？；：）］」』》〉·…—～％』'])
 
-/** Brackets that must not be stranded at the end of a line. */
-const NO_LINE_END = new Set([...'（［「『《〈‘“'])
 
 /**
  * Cut `rest` to `width` columns without violating the kinsoku rules.

@@ -144,6 +144,20 @@ export function spreadCjkLatin(text: string): string {
 }
 
 /**
+ * Punctuation that must not begin a line (kinsoku shori, 禁則處理).
+ *
+ * Chinese typesetting treats these as bound to the text before them; a line
+ * starting with a comma or a full stop reads as broken to anyone who reads
+ * Chinese fluently, and CJK prose is most of what a DeepSeek transcript
+ * holds. Exported because both the plain-text wrapper and the markdown
+ * wrapper cut by these rules.
+ */
+export const NO_LINE_START = new Set([...'，。、！？；：）］」』》〉·…—～％』'])
+
+/** Brackets that must not be stranded at the end of a line. */
+export const NO_LINE_END = new Set([...'（［「『《〈‘“'])
+
+/**
  * The string index where the cluster immediately before `index` begins.
  *
  * The unit of editing is the cluster, not the code unit: a caret that steps by
