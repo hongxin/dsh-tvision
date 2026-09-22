@@ -7,11 +7,11 @@
 
 ![The classic Borland blue](docs/screenshots/tvision.png)
 
-The blue your hands remember from Turbo C — and three more looks ship in the same binary:
+The blue your hands remember from Turbo C — and four more looks ship in the same binary:
 
-| Amber CRT | Phosphor | Slate |
-|:---:|:---:|:---:|
-| ![Amber CRT](docs/screenshots/amber.png) | ![Phosphor](docs/screenshots/phosphor.png) | ![Slate](docs/screenshots/slate.png) |
+| Amber CRT | Phosphor | Slate | ANSI green |
+|:---:|:---:|:---:|:---:|
+| ![Amber CRT](docs/screenshots/amber.png) | ![Phosphor](docs/screenshots/phosphor.png) | ![Slate](docs/screenshots/slate.png) | ![ANSI green](docs/screenshots/ansi.png) |
 
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
@@ -154,11 +154,11 @@ Drag a title bar to move a window · drag the bright bottom-right corner to resi
 | `phosphor` | P1 green CRT — one hue, brightness carries the hierarchy |
 | `amber` | P3 amber — warmer, easier for long sessions |
 | `slate` | Modern dark — the window manager without the costume |
-| `ansi` | Your terminal's own sixteen colours, inherited rather than imposed |
+| `ansi` | The WordPerfect dark green, in your terminal's own sixteen colours |
 
 Each skin is a complete set of ~55 semantic roles rather than a palette swap, so any skin that renders one widget legibly renders them all.
 
-The installed default is `ansi` — your terminal's own colours; `--skin tvision` (or `F9`) gets the Borland blue. The standalone demo keeps `tvision` as its showcase.
+The installed default is `ansi` — the restful dark green; `--skin tvision` (or `F9`) gets the Borland blue. The standalone demo keeps `tvision` as its showcase.
 
 ---
 
