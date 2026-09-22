@@ -32,6 +32,14 @@ const TURNS = [
     usage: { prompt_tokens: 120, completion_tokens: 48, total_tokens: 168 },
   },
   {
+    // A markdown reply, so L3 exercises the renderer end to end: heading,
+    // bold/italic/code spans, a list, and a quote.
+    match: 'wire-markdown',
+    reasoning: 'The user asked for markdown. Emit every construct the transcript renders.',
+    content: '## The streaming fix\n\nThe parser now reads **chunk by chunk** — *every* `drain(buffer)` call emits complete tokens.\n\n1. read a chunk\n2. drain complete tokens\n3. hold a partial fence\n\n> A fence that straddles a boundary is the hard part.\n',
+    usage: { prompt_tokens: 190, completion_tokens: 60, total_tokens: 250 },
+  },
+  {
     // A background bash job: returns immediately with a jobId, leaving the
     // Jobs window holding a live row the harness's registry drives.
     match: 'wire-job',

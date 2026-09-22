@@ -45,6 +45,12 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
+    # Markdown turn first: its constructs must land on the real screen.
+    ('md-prompt', b'wire-markdown\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
     # Background-job turn, then open View ▸ Jobs through the menu bar: F10,
     # right to View, and the &Jobs accelerator.
     ('job-prompt', b'wire-job\r'),
@@ -94,7 +100,7 @@ def replay(capture, columns, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsh-home', default=None)
-    parser.add_argument('--seconds', type=float, default=60.0)
+    parser.add_argument('--seconds', type=float, default=75.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
     args = parser.parse_args()
 
@@ -138,7 +144,16 @@ def main():
         # is not evidence the prose never rendered.
         checks.append(('the reasoning rendered as dimmed rows', '· The user asked for the scripted' in text))
         checks.append(('the cjk reply rendered with the seam', '本地 mock 端点的回复' in text and 'wire-test' in text))
-        checks.append(('the tool card settled with its output', 'wire-tool-ok' in screen and '~ bash' in screen))
+        # The tool card has scrolled off the final screen in a four-turn run;
+        # its settled bytes are in the stream. Markdown's final state is judged
+        # on the screen — the stream legitimately holds a half-streamed '**'
+        # frame before the closing partner arrives (the streaming rule).
+        checks.append(('the tool card settled with its output', 'wire-tool-ok' in text and '~ bash' in text))
+        # Style runs split the byte stream (SGR between the quote bar and its
+        # text), so markdown's judgement runs on the replayed screen, where the
+        # content is contiguous. The markdown turn sits third of four, close
+        # enough to the end that scroll position cannot hide it.
+        checks.append(('markdown rendered as structure, not markers', 'chunk by chunk' in screen and '│ A fence' in screen and '**' not in screen))
         checks.append(('the jobs window holds the background job', 'sleep 5' in screen and '▸' in screen))
         counts = {seq: text.count(seq) for seq in TEARDOWN}
         checks.append(('every terminal mode restored exactly once', all(count == 1 for count in counts.values())))
