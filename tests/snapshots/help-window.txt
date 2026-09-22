@@ -1,7 +1,7 @@
   File  View  Agent  Tools  Window  Help                                               dsh tvision
-┌┤                           Conversation                           ─├─┐┌┤       Project        ─├─┐
+┌──────────────────────────── Conversation ────────────────────────────┐┌──────── Project ─────────┐
 │                                                                      │                           │
-│                  ╔╡               Help — keys and mouse                ═╞ ≡  ▲                   │
+│                  ╔═[■]══════════════ Help — keys and mouse ═══════════════[↑]═╗                  │
 │                  ║Help — keys and mouse                                       ║                  │
 │                  ║                                                            ║                  │
 │                  ║tvision is a character-cell window manager for DeepSeek Har…║                  │
@@ -11,20 +11,20 @@
 │                  ║F3         open session       F8   tasks window             ║                  │
 │                  ║F4         tool cards         F9   cycle skin               ║                  │
 │                  ║F5         focus composer     F10  menu bar                 ║                  │
-│                  ║                                                            ║  asks         ─├─┐
+│                  ║                                                            ║  Tasks ──────────┐
 │                  ║Ctrl+Q  quit            Ctrl+C  cancel the turn             ║                  │
 │                  ║Ctrl+O  expand tools    Ctrl+R  show reasoning              ║                  │
 │                  ║Ctrl+Z  zoom window     Ctrl+L  redraw                      ║                  │
 │                  ║                                                            ║                  │
-│                  ║Mouse: drag a title bar to move a window, drag the bottom-r…║                  │
-│                  ║grip (⋮) to resize it, click ≡ to close it, ▲ to zoom it, a…║                  │
-│                  ║double-click a title bar to zoom. The wheel scrolls whateve…║                  │
-│                  ║pointer is over, including the function-key strip.          ║                  │
-│                  ║                                                            ║                  │
-│                  ║Menus: press F10 and use ←/→ to walk t ↓ 8 more · ↑↓ scroll ║                  │
-│                  ╚═══════════════════════════════════════════════════════════⋮╝                  │
-│                                                                                  ───────────────⋮┘
+│                  ║Mouse: drag a title bar to move a window, drag the bright   ║                  │
+│                  ║bottom-right corner to resize it, click [■] to close a wind…║                  │
+│                  ║[↑] to zoom it (↓ restores), and double-click a title bar to║                  │
+│                  ║zoom. The wheel scrolls whatever the pointer is over, inclu…║                  │
+│                  ║the function-key strip.                                     ║                  │
+│                  ║                                       ↓ 9 more · ↑↓ scroll ║                  │
+│                  ╚════════════════════════════════════════════════════════════╝                  │
+│                                                                                  ────────────────┘
 │                                                                      │
-└─────────────────────────────────────────────────────────────────────⋮┘  ░░░░░░░░░░░░░░░░░░░░░░░░░░
+└──────────────────────────────────────────────────────────────────────┘  ░░░░░░░░░░░░░░░░░░░░░░░░░░
                           │ F10 menu │ 4 win │ ↑0 ↓0 │ ░░░░░░ 0% │ deepseek-official/deepseek-flash
 F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next       F7 Project

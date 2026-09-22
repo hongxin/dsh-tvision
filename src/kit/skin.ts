@@ -52,9 +52,9 @@ export interface Palette {
   windowTitleActive: Pair
   /** Window interior, default. */
   windowBody: Pair
-  /** The `≡` system box and `▲` zoom box on a frame. */
+  /** The `■` close glyph and `↑`/`↓` zoom glyph on a frame's boxes. */
   windowIcon: Pair
-  /** The resize grip in a frame corner. */
+  /** The brightened bottom-right corner pair that marks a resize grip. */
   windowGrip: Pair
   /** Scrollbar trough. */
   scrollBar: Pair
@@ -242,7 +242,7 @@ export const TURBO_VISION: Skin = {
     windowTitleActive: { fg: 0xFFFFFF, bg: 0x00AAAA },
     windowBody: { fg: 0xAAAAAA, bg: 0x0000A8 },
     windowIcon: { fg: 0x0000A8, bg: 0x00AAAA },
-    windowGrip: { fg: 0x00AAAA, bg: 0x0000A8 },
+    windowGrip: { fg: 0xFFFFFF, bg: 0x0000A8 },
     scrollBar: { fg: 0x00AAAA, bg: 0x0000A8 },
     scrollThumb: { fg: 0x0000A8, bg: 0x00AAAA },
     menuBar: { fg: 0xAAAAAA, bg: 0x00AAAA },
@@ -311,7 +311,7 @@ export const PHOSPHOR: Skin = {
     windowTitleActive: { fg: 0x001A0A, bg: 0x66FF99 },
     windowBody: { fg: 0x33FF66, bg: 0x001A0A },
     windowIcon: { fg: 0x001A0A, bg: 0x66FF99 },
-    windowGrip: { fg: 0x22AA44, bg: 0x001A0A },
+    windowGrip: { fg: 0xCCFFDD, bg: 0x001A0A },
     scrollBar: { fg: 0x22AA44, bg: 0x001A0A },
     scrollThumb: { fg: 0x001A0A, bg: 0x66FF99 },
     menuBar: { fg: 0x001A0A, bg: 0x33FF66 },
@@ -379,7 +379,7 @@ export const AMBER: Skin = {
     windowTitleActive: { fg: 0x1A0E00, bg: 0xFFD070 },
     windowBody: { fg: 0xFFB000, bg: 0x1A0E00 },
     windowIcon: { fg: 0x1A0E00, bg: 0xFFD070 },
-    windowGrip: { fg: 0xAA7000, bg: 0x1A0E00 },
+    windowGrip: { fg: 0xFFE9B8, bg: 0x1A0E00 },
     scrollBar: { fg: 0xAA7000, bg: 0x1A0E00 },
     scrollThumb: { fg: 0x1A0E00, bg: 0xFFD070 },
     menuBar: { fg: 0x1A0E00, bg: 0xFFB000 },
@@ -446,7 +446,7 @@ export const SLATE: Skin = {
     windowTitleActive: { fg: 0xE6EDF3, bg: 0x1F6FEB },
     windowBody: { fg: 0xC8CCD4, bg: 0x15171C },
     windowIcon: { fg: 0x15171C, bg: 0x58A6FF },
-    windowGrip: { fg: 0x3A4150, bg: 0x15171C },
+    windowGrip: { fg: 0xB3D4FF, bg: 0x15171C },
     scrollBar: { fg: 0x3A4150, bg: 0x15171C },
     scrollThumb: { fg: 0x15171C, bg: 0x58A6FF },
     menuBar: { fg: 0xC8CCD4, bg: 0x232833 },
@@ -515,7 +515,7 @@ export const ANSI: Skin = {
     windowTitleActive: { fg: 15, bg: 6 },
     windowBody: { fg: 7, bg: 4 },
     windowIcon: { fg: 4, bg: 6 },
-    windowGrip: { fg: 6, bg: 4 },
+    windowGrip: { fg: 15, bg: 4 },
     scrollBar: { fg: 6, bg: 4 },
     scrollThumb: { fg: 4, bg: 6 },
     menuBar: { fg: 7, bg: 6 },

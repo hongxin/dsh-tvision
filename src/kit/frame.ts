@@ -7,11 +7,16 @@
  *
  * - an inactive frame is single-line and dim, an active frame is double-line
  *   and bright — the border itself tells you where the keyboard is going;
- * - the title bar is a solid bar with the title centred, and `≡` / `▲` boxes
- *   sit at its right end;
+ * - the title sits centred *on* the top frame line with one space of line on
+ *   each side, the way `TFrame::draw` placed it — no flanking glyphs, the
+ *   line simply continues to the corners;
+ * - the system and zoom boxes are bracketed glyphs on the line: `[■]` clear at
+ *   the left (column 2), `[↑]`/`[↓]` zoom at the right (width-5), and neither
+ *   ever touches a corner;
+ * - the resize grip is the bottom-right corner itself, `═╝`/`─┘` brightened —
+ *   the line never breaks for it;
  * - the frame casts a two-column, one-row drop shadow onto whatever is behind
- *   it, which is what makes stacked windows read as *stacked*;
- * - the bottom-right corner carries a `⋮` grip, and dragging it resizes.
+ *   it, which is what makes stacked windows read as *stacked*.
  * @module @dsh-tvision/dsh-tvision/kit/frame
  */
 
@@ -19,7 +24,7 @@ import type { Rect, Style } from '../kit/cell.ts'
 import { containsPoint } from '../kit/cell.ts'
 import type { Palette } from '../kit/skin.ts'
 import { Painter, SINGLE_BOX, DOUBLE_BOX } from '../kit/painter.ts'
-import { padCenter, takeColumns } from '../kit/text.ts'
+import { takeColumns, textWidth } from '../kit/text.ts'
 
 /** Which part of a frame the pointer is over, for hit-testing. */
 export type FramePart =
@@ -38,14 +43,12 @@ export type FramePart =
 /** Width of the scrollbar column, when a window shows one. */
 export const SCROLLBAR_WIDTH = 1
 
-/** The glyph on the close/system box. */
-export const SYSTEM_GLYPH = '≡'
+/** The glyph on the close/system box, `■` inside brackets. */
+export const SYSTEM_GLYPH = '■'
 /** The glyph on the zoom (maximise) box. */
-export const ZOOM_GLYPH = '▲'
+export const ZOOM_GLYPH = '↑'
 /** The glyph on the restore box of a zoomed window. */
-export const RESTORE_GLYPH = '▼'
-/** The resize grip drawn in the frame's bottom-right corner. */
-export const GRIP_GLYPH = '⋮'
+export const RESTORE_GLYPH = '↓'
 
 /** How a window's chrome should be drawn this frame. */
 export interface FrameOptions {
@@ -121,21 +124,22 @@ export function frameHitTest(
   const right = rect.width - 1
   const bottom = rect.height - 1
   if (localY === 0) {
-    // The boxes are painted as three-cell groups — ` ≡ ` ending at right-3 and
-    // ` ▲ ` ending at the corner — and a hit test that disagrees with the
-    // painter is worse than no hit test: clicking the drawn glyph must be the
-    // action the glyph announces, not the one two cells over. Below ten columns
-    // the painter drops the boxes, so the hit test must too.
+    // The boxes are painted as bracketed three-cell groups — `[■]` on columns
+    // 2-4 and `[↑]`/`[↓]` on width-5..width-3 — and a hit test that disagrees
+    // with the painter is worse than no hit test: clicking the drawn glyph
+    // must be the action the glyph announces, not the one two cells over.
+    // Below ten columns the painter drops the boxes, so the hit test must too.
     if (options.closable && rect.width >= 10) {
-      if (localX >= right - 2) return 'zoom'
-      if (localX >= right - 5) return 'system'
+      if (localX >= rect.width - 5 && localX <= rect.width - 3) return 'zoom'
+      if (localX >= 2 && localX <= 4) return 'system'
     }
     return 'title'
   }
   if (localY === bottom) {
-    // The grip glyph is drawn one cell inside the corner (the corner itself is
-    // the frame's own ╝/┘), so the hit test has to agree with the painter.
-    if (options.resizable && localX === right - 1) return 'grip'
+    // The grip is the brightened corner pair — the last two cells of the
+    // bottom line — so both cells hit; a frame two cells wide draws no grip
+    // (there is no line left), and the test must not claim one either.
+    if (options.resizable && rect.width >= 3 && localX >= right - 1) return 'grip'
     return 'border'
   }
   if (localX === 0 || localX === right) {
@@ -204,37 +208,45 @@ export function drawFrame(painter: Painter, options: FrameOptions): void {
     active ? DOUBLE_BOX : SINGLE_BOX,
   )
 
-  // 4. Title bar.
+  // 4. Title bar: the title sits centred on the frame line itself, one cell of
+  //    line on each side — `TFrame::draw`'s placement. The line runs unbroken
+  //    to the corners; the boxes are bracketed glyphs on the line, never
+  //    overwrites of a corner.
   if (rect.width >= 4) {
     const titleStyle: Style = active ? palette.windowTitleActive : palette.windowTitle
-    const boxStyle: Style = active ? palette.windowIcon : palette.windowTitle
-    const capStyle: Style = active ? palette.windowTitleActive : palette.windowTitle
-    let rightCap = 2
-    if (options.closable && rect.width >= 10) rightCap = 6
-    const titleWidth = Math.max(0, rect.width - rightCap - 2)
-    // Caps are the single-line corners when inactive and the double-line ones
-    // when active; they have to match the border's weight or the bar looks
-    // pasted on.
-    const leftCap = active ? '╡' : '┤'
-    const rightCapGlyph = active ? '╞' : '├'
+    const iconStyle: Style = active ? palette.windowIcon : palette.windowTitle
+    const boxes = options.closable && rect.width >= 10
+    // TV truncates the title to width-10, then gives the boxes six more cells.
+    const maxTitle = Math.max(0, rect.width - 10 - (boxes ? 6 : 0))
+    const shown = takeColumns(options.title, maxTitle)
+    const titleWidth = textWidth(shown)
     if (titleWidth > 0) {
-      painter.text(localX + 1, localY, leftCap, 1, capStyle)
-      painter.text(
-        localX + 2, localY,
-        padCenter(takeColumns(options.title, titleWidth - 2), titleWidth - 2),
-        titleWidth - 2, titleStyle,
-      )
-      painter.text(localX + 1 + titleWidth, localY, rightCapGlyph, 1, capStyle)
+      const centre = (rect.width - titleWidth) >> 1
+      // A space in the frame's style breaks the line on both sides of the
+      // title; the floor division leaves the odd cell on the right.
+      painter.set(localX + centre - 1, localY, ' ', frameStyle)
+      painter.text(localX + centre, localY, shown, titleWidth, titleStyle)
+      painter.set(localX + centre + titleWidth, localY, ' ', frameStyle)
     }
-    if (options.closable && rect.width >= 10) {
-      painter.text(localX + rect.width - 6, localY, ` ${SYSTEM_GLYPH} `, 3, boxStyle)
-      painter.text(localX + rect.width - 3, localY, ` ${options.zoomed ? RESTORE_GLYPH : ZOOM_GLYPH} `, 3, boxStyle)
+    if (boxes) {
+      // `[■]` clear at column 2, `[↑]`/`[↓]` zoom ending three cells short of
+      // the corner. Brackets take the line's style; the glyph is the box.
+      painter.set(localX + 2, localY, '[', frameStyle)
+      painter.set(localX + 3, localY, SYSTEM_GLYPH, iconStyle)
+      painter.set(localX + 4, localY, ']', frameStyle)
+      const zoomGlyphX = localX + rect.width - 4
+      painter.set(zoomGlyphX - 1, localY, '[', frameStyle)
+      painter.set(zoomGlyphX, localY, options.zoomed ? RESTORE_GLYPH : ZOOM_GLYPH, iconStyle)
+      painter.set(zoomGlyphX + 1, localY, ']', frameStyle)
     }
   }
 
-  // 5. Resize grip.
+  // 5. Resize grip: the corner pair itself, brightened. The bottom line keeps
+  //    its glyphs — TV's drag icon was the last `─┘` re-coloured, not replaced.
   if (options.resizable && rect.width >= 3 && rect.height >= 3) {
-    painter.set(localX + rect.width - 2, localY + rect.height - 1, GRIP_GLYPH, frameStyle)
+    const gripStyle: Style = active ? palette.windowGrip : frameStyle
+    painter.set(localX + rect.width - 2, localY + rect.height - 1, active ? '═' : '─', gripStyle)
+    painter.set(localX + rect.width - 1, localY + rect.height - 1, active ? '╝' : '┘', gripStyle)
   }
 
   // 6. Separator rule between stacked content regions.

@@ -4,7 +4,7 @@
 
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
-╔╡                        Conversation                        ═╞═╗┌┤    Project     ─├─┐
+╔═════════════════════════ Conversation ═════════════════════════╗┌───── Project ──────┐
 ║> You                                                            ║  o src/parser.ts   │
 ║  why is the first token so slow?                                ║  o src/stream.ts   │
 ║                                                                 ║  o README.md       │
@@ -13,12 +13,12 @@
 ║  anything, which is why the first token never arrives until     ║                    │
 ║  the whole file is read.                                        ║                    │
 ║                                                                 ║                    │
-║~ bash  npm test -- parser                                       ║┌┤     Tasks      ─├─┐
+║~ bash  npm test -- parser                                       ║┌────── Tasks ───────┐
 ║  ok ▸                                                           ║  ✓ Find why it is  │
 ║                                                                 ║  ▸ Make the parser │
 ║─────────────────────────────────────────────────────────────────║  · Update the test │
 ║dsh> refactor it so it streams                                   ║                    │
-╚═════════════════════════════════════════════════════════════════╝  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+╚═════════════════════════════════════════════════════════════════╝  ░░░░░░░░░░░░░░░░░░░
              │ F10 menu │ 3 win │ ████░░ 62% │ ↑12.4k ↓3.1k │ deepseek-flash
 F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7 Project
 ```
@@ -121,7 +121,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 
 ### 鼠标
 
-拖标题栏移动窗口 · 拖右下角 `⋮` 缩放 · 点 `≡` 关闭 · 点 `▲` 或双击标题最大化 · 滚轮滚动指针底下的任何东西，包括功能键提示条。
+拖标题栏移动窗口 · 拖右下角亮色边角缩放 · 点 `[■]` 关闭 · 点 `[↑]` 或双击标题最大化 · 滚轮滚动指针底下的任何东西，包括功能键提示条。
 
 ---
 

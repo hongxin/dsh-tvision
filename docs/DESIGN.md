@@ -30,7 +30,7 @@ character grid can carry a *window manager*:
 | A function-key strip | The ten most common actions are permanently visible *and* directly invocable. The legend is also the keymap. |
 | Modal dialogs that lock the desktop | A question that requires an answer should stop the world, not float politely. |
 | Mouse dragging and resizing | Needed for the window system to feel real rather than painted on. |
-| A `≡` system box, a `▲` zoom box, a `⋮` resize grip | The affordances are *drawn*, so nothing has to be learned from a manual. |
+| A `[■]` system box, a `[↑]` zoom box, a brightened corner grip | The affordances are *drawn*, so nothing has to be learned from a manual. |
 | A status line below the desktop | Persistent state — model, tokens, pressure — without stealing transcript rows. |
 
 The active frame is double-line and the inactive ones are single-line. That one
@@ -82,7 +82,7 @@ this interface for a compiler and a debugger; an agent is both.
 
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
-╔╡                        Conversation                        ═╞═╗┌┤    Project     ─├─┐
+╔═════════════════════════ Conversation ═════════════════════════╗┌───── Project ──────┐
 ║> You                                                            ║  o src/parser.ts   │
 ║  why is the first token so slow?                                ║  o src/stream.ts   │
 ║                                                                 ║  o README.md       │
@@ -91,12 +91,12 @@ this interface for a compiler and a debugger; an agent is both.
 ║  anything, which is why the first token never arrives until     ║                    │
 ║  the whole file is read.                                        ║                    │
 ║                                                                 ║                    │
-║~ bash  npm test -- parser                                       ║┌┤     Tasks      ─├─┐
+║~ bash  npm test -- parser                                       ║┌────── Tasks ───────┐
 ║  ok ▸                                                           ║  ✓ Find why it is  │
 ║                                                                 ║  ▸ Make the parser │
 ║─────────────────────────────────────────────────────────────────║  · Update the test │
 ║dsh> refactor it so it streams                                   ║                    │
-╚═════════════════════════════════════════════════════════════════╝  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+╚═════════════════════════════════════════════════════════════════╝  ░░░░░░░░░░░░░░░░░░░
              │ F10 menu │ 3 win │ ████░░ 62% │ ↑12.4k ↓3.1k │ deepseek-flash
 F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7 Project
 ```
@@ -140,8 +140,9 @@ Every action is reachable three ways, and all three are first-class:
 1. **Function keys** — `F1`–`F10`, always visible in the strip.
 2. **Menus** — `F10` then arrows, or `Alt`+the underlined letter. While a menu is
    open, `←`/`→` browse the whole bar without closing the list.
-3. **Mouse** — click a title to raise, drag it to move, drag the `⋮` grip to
-   resize, click `≡` to close, click `▲` or double-click the title to zoom, and
+3. **Mouse** — click a title to raise, drag it to move, drag the brightened
+   bottom-right corner to resize, click `[■]` to close, click `[↑]` or
+   double-click the title to zoom, and
    wheel-scroll whatever the pointer is over.
 
 ### The skins

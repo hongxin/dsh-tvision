@@ -4,7 +4,7 @@
 
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
-╔╡                        Conversation                        ═╞═╗┌┤    Project     ─├─┐
+╔═════════════════════════ Conversation ═════════════════════════╗┌───── Project ──────┐
 ║> You                                                            ║  o src/parser.ts   │
 ║  why is the first token so slow?                                ║  o src/stream.ts   │
 ║                                                                 ║  o README.md       │
@@ -13,12 +13,12 @@
 ║  anything, which is why the first token never arrives until     ║                    │
 ║  the whole file is read.                                        ║                    │
 ║                                                                 ║                    │
-║~ bash  npm test -- parser                                       ║┌┤     Tasks      ─├─┐
+║~ bash  npm test -- parser                                       ║┌────── Tasks ───────┐
 ║  ok ▸                                                           ║  ✓ Find why it is  │
 ║                                                                 ║  ▸ Make the parser │
 ║─────────────────────────────────────────────────────────────────║  · Update the test │
 ║dsh> refactor it so it streams                                   ║                    │
-╚═════════════════════════════════════════════════════════════════╝  ░ ░ ░ ░ ░ ░ ░ ░ ░ ░
+╚═════════════════════════════════════════════════════════════════╝  ░░░░░░░░░░░░░░░░░░░
              │ F10 menu │ 3 win │ ████░░ 62% │ ↑12.4k ↓3.1k │ deepseek-flash
 F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7 Project
 ```
@@ -126,7 +126,7 @@ window on their own now; no tool needs to run first.
 
 ### Mouse
 
-Drag a title bar to move a window · drag the `⋮` grip to resize · click `≡` to close · click `▲` or double-click a title to zoom · wheel-scroll whatever the pointer is over, including the function-key strip.
+Drag a title bar to move a window · drag the bright bottom-right corner to resize · click `[■]` to close · click `[↑]` or double-click a title to zoom · wheel-scroll whatever the pointer is over, including the function-key strip.
 
 ---
 

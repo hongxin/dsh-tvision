@@ -1,5 +1,5 @@
   File  View  Agent  Tools  Window  Help                                               dsh tvision
-╔╡                           Conversation                           ═╞═╗┌┤       Project        ─├─┐
+╔════════════════════════════ Conversation ════════════════════════════╗┌──────── Project ─────────┐
 ║> You                                                                 ║  o project files indexed …│
 ║  why is the first token so slow?                                     ║                           │
 ║                                                                      ║                           │
@@ -11,7 +11,7 @@
 ║  ✓ emit tokens early                                                 ║                           │
 ║  · keep the old test passing                                         ║                           │
 ║  │ A fence that straddles a chunk boundary is the hard part.         ║                           │
-║  ──────────────────────────────────────────────────────────────────  ║          Tasks         ─├─┐
+║  ──────────────────────────────────────────────────────────────────  ║  ──────── Tasks ──────────┐
 ║  ### See also                                                        ║  ✓ Find why the first tok…│
 ║                                                                      ║  ▸ Make the parser emit p…│
 ║~ bash  npm test -- parser                                            ║  · Update the streaming t…│
@@ -23,8 +23,8 @@
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║──────────────────────────────────────────────────────────────────────║                           │
-║                                                                      ║  ────────────────────────⋮┘
+║                                                                      ║  ─────────────────────────┘
 ║dsh> Type a message · / for commands · F1 help · F10 menu             ║
-╚═════════════════════════════════════════════════════════════════════⋮╝  ░░░░░░░░░░░░░░░░░░░░░░░░░░
+╚══════════════════════════════════════════════════════════════════════╝  ░░░░░░░░░░░░░░░░░░░░░░░░░░
                           │ F10 menu │ 3 win │ ↑0 ↓0 │ ░░░░░░ 0% │ deepseek-official/deepseek-flash
 F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next       F7 Project

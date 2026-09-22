@@ -236,12 +236,19 @@ describe('resizing', () => {
   it('resizes from the bottom-right grip', () => {
     const manager = makeManager()
     openWindow(manager, 'a', new SpyWidget(), rect(5, 3, 20, 8))
-    // The grip sits one cell inside the bottom-right corner.
+    // The grip is the brightened corner pair — either cell drags.
     manager.handle(press(5 + 20 - 2, 3 + 8 - 1))
     expect(manager.dragging).toBe(true)
     manager.handle(dragAt(5 + 20 - 2 + 6, 3 + 8 - 1 + 3))
     expect(manager.get('a')?.rect.width).toBe(26)
     expect(manager.get('a')?.rect.height).toBe(11)
+  })
+
+  it('resizes from the corner cell of the grip too', () => {
+    const manager = makeManager()
+    openWindow(manager, 'a', new SpyWidget(), rect(5, 3, 20, 8))
+    manager.handle(press(5 + 20 - 1, 3 + 8 - 1))
+    expect(manager.dragging).toBe(true)
   })
 
   it('enforces a minimum size', () => {
@@ -270,20 +277,20 @@ describe('system and zoom boxes', () => {
   it('closes the window from the system box', () => {
     const manager = makeManager()
     openWindow(manager, 'a', new SpyWidget(), rect(5, 3, 30, 10))
-    // The painted ≡ glyph sits at right-4, inside the box's three cells.
-    manager.handle(press(5 + 30 - 5, 3))
+    // The painted ■ glyph sits at column 3, inside the box's three cells.
+    manager.handle(press(5 + 3, 3))
     expect(manager.isOpen('a')).toBe(false)
   })
 
   it('zooms from the zoom box and restores on a second press', () => {
     const manager = makeManager()
     openWindow(manager, 'a', new SpyWidget(), rect(5, 3, 30, 10))
-    // The zoom box is the rightmost cell of the title bar.
-    manager.handle(press(5 + 30 - 1, 3))
+    // The zoom glyph is the cell ending three short of the corner.
+    manager.handle(press(5 + 30 - 4, 3))
     expect(manager.get('a')?.rect).toEqual(manager.desktop)
     expect(manager.get('a')?.zoomed).toBe(true)
-    // After zooming, the zoom box has moved to the desktop's own right edge.
-    manager.handle(press(manager.desktop.width - 1, manager.desktop.y))
+    // After zooming, the box has moved to the desktop's own right edge.
+    manager.handle(press(manager.desktop.width - 4, manager.desktop.y))
     expect(manager.get('a')?.rect).toEqual(rect(5, 3, 30, 10))
     expect(manager.get('a')?.zoomed).toBe(false)
   })
@@ -449,11 +456,24 @@ describe('frame hit testing', () => {
 
   it('classifies the title bar, boxes, borders, grip, and interior', () => {
     expect(frameHitTest(options, 10, 2)).toBe('title')
-    expect(frameHitTest(options, 2 + 20 - 1, 2)).toBe('zoom')
-    expect(frameHitTest(options, 2 + 20 - 5, 2)).toBe('system')
+    // The zoom box spans width-5..width-3 and the system box columns 2-4,
+    // bracket cells included — the whole painted group must hit.
+    expect(frameHitTest(options, 2 + 20 - 4, 2)).toBe('zoom')
+    expect(frameHitTest(options, 2 + 20 - 5, 2)).toBe('zoom')
+    expect(frameHitTest(options, 2 + 20 - 3, 2)).toBe('zoom')
+    expect(frameHitTest(options, 2 + 20 - 6, 2)).toBe('title')
+    expect(frameHitTest(options, 2 + 3, 2)).toBe('system')
+    expect(frameHitTest(options, 2 + 2, 2)).toBe('system')
+    expect(frameHitTest(options, 2 + 4, 2)).toBe('system')
+    expect(frameHitTest(options, 2 + 1, 2)).toBe('title')
+    expect(frameHitTest(options, 2 + 5, 2)).toBe('title')
     expect(frameHitTest(options, 2, 5)).toBe('border')
     expect(frameHitTest(options, 2 + 19, 5)).toBe('border')
+    // The grip is the brightened corner pair: both the last horizontal cell
+    // and the corner itself drag.
     expect(frameHitTest(options, 2 + 19 - 1, 2 + 7)).toBe('grip')
+    expect(frameHitTest(options, 2 + 19, 2 + 7)).toBe('grip')
+    expect(frameHitTest(options, 2 + 19 - 2, 2 + 7)).toBe('border')
     expect(frameHitTest(options, 10, 5)).toBe('inside')
     expect(frameHitTest(options, 0, 0)).toBe('outside')
   })
@@ -639,14 +659,103 @@ describe('chrome hit zones agree with the paint', () => {
     const glyphs = { system: -1, zoom: -1 }
     for (let column = 5; column < 35; column++) {
       const char = titleRow[column]
-      if (char === '\u2261') glyphs.system = column
-      if (char === '\u25b2') glyphs.zoom = column
+      if (char === '\u25a0') glyphs.system = column
+      if (char === '\u2191') glyphs.zoom = column
     }
     expect(glyphs.system).toBeGreaterThanOrEqual(0)
     expect(glyphs.zoom).toBeGreaterThanOrEqual(0)
     const options = { rect: rect(5, 3, 30, 10), closable: true, resizable: true, scrollbar: undefined }
     expect(frameHitTest(options, glyphs.system, 3)).toBe('system')
     expect(frameHitTest(options, glyphs.zoom, 3)).toBe('zoom')
+  })
+})
+
+describe('title bar syntax (TV 2.0)', () => {
+  /** A painted manager with one window, so the frame is on the screen. */
+  function painted(options: {
+    title: string
+    width?: number
+    closable?: boolean
+    resizable?: boolean
+  }): { row: string; grip: { char: string; style: unknown }[] } {
+    const width = options.width ?? 30
+    const manager = makeManager(60, 12)
+    manager.open({
+      id: 'a', title: options.title, rect: rect(5, 3, width, 8), widget: new SpyWidget(),
+      closable: options.closable ?? false, resizable: options.resizable ?? false,
+    })
+    const frame = manager.paint()
+    const cornerX = 5 + width - 1
+    const cornerY = 3 + 8 - 1
+    return {
+      row: frame.row(3).slice(5, 5 + width),
+      grip: [
+        frame.at(cornerX - 1, cornerY)!,
+        frame.at(cornerX, cornerY)!,
+      ].map(cell => ({ char: cell.char, style: cell.style })),
+    }
+  }
+
+  it('centres the title on the line with the boxes clear of the corners', () => {
+    // (30 - 12) >> 1 = 9: the title occupies columns 9-20, one line cell on
+    // each side, `═` everywhere else, `[■]` at columns 2-4 and `[↑]` ending
+    // three cells short of the corner.
+    expect(painted({ title: 'Conversation', closable: true }).row)
+      .toBe('╔═[■]═══ Conversation ═══[↑]═╗')
+  })
+
+  it('shows the restore glyph once the window is zoomed', () => {
+    const manager = makeManager(60, 12)
+    manager.open({
+      id: 'a', title: 'Conversation', rect: rect(5, 3, 30, 8), widget: new SpyWidget(),
+      closable: true, resizable: true,
+    })
+    manager.toggleZoom('a')
+    // The zoomed window covers the desktop; its box now carries ↓.
+    const row = manager.paint().row(manager.desktop.y)
+    expect(row).toContain('[↓]')
+    expect(row).not.toContain('[↑]')
+  })
+
+  it('runs the line to the corners when there are no boxes', () => {
+    expect(painted({ title: 'Conversation' }).row)
+      .toBe('╔═══════ Conversation ═══════╗')
+  })
+
+  it('uses the single-line grammar for an inactive window', () => {
+    const manager = makeManager(60, 12)
+    manager.open({ id: 'a', title: 'Conversation', rect: rect(5, 3, 30, 8), widget: new SpyWidget() })
+    manager.open({ id: 'b', title: 'B', rect: rect(10, 5, 20, 6), widget: new SpyWidget() })
+    expect(manager.paint().row(3).slice(5, 35)).toBe('┌─────── Conversation ───────┐')
+  })
+
+  it('truncates a long title without ever touching the corners', () => {
+    const row = painted({ title: 'T'.repeat(40), closable: true }).row
+    // Fourteen T's survive (width-16); the row keeps its corner glyphs.
+    expect(row).toBe('╔═[■]══ TTTTTTTTTTTTTT ══[↑]═╗')
+  })
+
+  it('draws a plain line when the window is too narrow for a title', () => {
+    expect(painted({ title: 'Conversation', width: 9 }).row).toBe('╔═══════╗')
+  })
+
+  it('brightens the corner pair as the resize grip, glyphs unchanged', () => {
+    const palette = resolvePalette(TURBO_VISION)
+    const { grip } = painted({ title: 'a', resizable: true })
+    // The bottom line keeps its own glyphs; only the colour says "drag me".
+    expect(grip.map(cell => cell.char)).toEqual(['═', '╝'])
+    expect(grip[0]?.style).toEqual(palette.windowGrip)
+    expect(grip[1]?.style).toEqual(palette.windowGrip)
+  })
+
+  it('measures a wide-glyph title by columns, not code points', () => {
+    // 会话 is four columns wide: (30 - 4) >> 1 = 13, so eleven line cells
+    // flank each side of the spaced title. Wide glyphs make the row's
+    // character count shorter than its column count, so match the window's
+    // slice by content rather than by length.
+    const manager = makeManager(60, 12)
+    manager.open({ id: 'a', title: '会话', rect: rect(5, 3, 30, 8), widget: new SpyWidget() })
+    expect(manager.paint().row(3)).toContain('╔═══════════ 会话 ═══════════╗')
   })
 })
 
@@ -659,12 +768,14 @@ describe('closing a modal window', () => {
       closable: true, floating: true,
     })
     manager.setModal('dialog')
-    // The system box click that used to wedge the desktop.
-    manager.handle(press(10 + 20 - 5, 5))
+    // The system box click that used to wedge the desktop — now at the left
+    // of the title line, on the ■ glyph.
+    manager.handle(press(10 + 3, 5))
     expect(manager.isOpen('dialog')).toBe(false)
     expect(manager.modalWindowId).toBeUndefined()
-    // The mouse reaches another window again…
-    manager.handle(press(6, 2))
+    // The mouse reaches another window again — pressed mid-title, clear of
+    // base's own newly-leftward system box.
+    manager.handle(press(2 + 20, 2))
     expect(manager.activeWindowId).toBe('base')
     // …and so does the window cycle.
     manager.cycle(1)

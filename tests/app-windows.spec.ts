@@ -314,10 +314,11 @@ describe('closing a dialog window by its system box', () => {
     })
     app.frame()
     // The dialog window is floating and centered; close it the way a user does,
-    // through the painted system box.
+    // through the painted system box — the ■ glyph three cells in from the
+    // left corner (SGR columns are 1-based).
     const dialog = app.windows.all().find(window => window.title === 'Approval required')
     if (dialog === undefined) throw new Error('the dialog window never opened')
-    app.feed(`\u001B[<0;${dialog.rect.x + dialog.rect.width - 4};${dialog.rect.y + 1}M`)
+    app.feed(`\u001B[<0;${dialog.rect.x + 4};${dialog.rect.y + 1}M`)
     await expect(asked).resolves.toBeUndefined()
     // And the desktop it leaves behind still takes input.
     app.windows.focus(WINDOW_IDS.transcript)

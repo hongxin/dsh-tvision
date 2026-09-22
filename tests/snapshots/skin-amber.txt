@@ -1,5 +1,5 @@
   File  View  Agent  Tools  Window  Help                                     dsh tvision
-╔╡                                    Conversation                                    ═╞═╗
+╔═════════════════════════════════════ Conversation ═════════════════════════════════════╗
 ║> You                                                                                   ║
 ║  the same desktop, a different phosphor                                                ║
 ║                                                                                        ║
@@ -15,6 +15,6 @@
 ║────────────────────────────────────────────────────────────────────────────────────────║
 ║                                                                                        ║
 ║dsh> Type a message · / for commands · F1 help · F10 menu                               ║
-╚═══════════════════════════════════════════════════════════════════════════════════════⋮╝
+╚════════════════════════════════════════════════════════════════════════════════════════╝
                 │ F10 menu │ 1 win │ ↑0 ↓0 │ ░░░░░░ 0% │ deepseek-official/deepseek-flash
 F1 Help       F2 New        F3 Open       F4 Tools      F5 Focus      F6 Next
