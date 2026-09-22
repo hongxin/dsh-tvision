@@ -812,3 +812,54 @@ describe('incremental search', () => {
     expect(view.searchStatus().total).toBe(2)
   })
 })
+
+describe('markdown in the transcript', () => {
+  it('assistant prose renders blocks and carries styled segments', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.settleAssistant({ turn: 0, step: 0 }, [
+      { kind: 'text', text: 'The fix:\n\n- **stream** by chunk\n- hold `partials`\n\n> quoted wisdom' },
+    ], 2)
+    const rows = buildRows(document.all, 70, palette, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    const texts = rows.map(row => row.text)
+    expect(texts).toContain('  • stream by chunk')
+    expect(texts.some(text => text.includes('hold') && text.includes('partials'))).toBe(true)
+    expect(texts.some(text => text.startsWith('  │ quoted wisdom'))).toBe(true)
+    // The bold item carries segments; the row text is still plain for search.
+    const boldRow = rows.find(row => row.text.includes('stream by chunk'))
+    expect(boldRow?.segments?.some(seg => seg.style.bold === true && seg.text === 'stream')).toBe(true)
+    // text carries the two-column gutter; segments describe the body after it.
+    expect(boldRow?.text).toBe(`  ${boldRow?.segments?.map(seg => seg.text).join('') ?? ''}`)
+  })
+
+  it('a streamed fence gets its box before settle — the gap fix', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.streamChunk({ turn: 0, step: 0 }, {
+      kind: 'text',
+      text: 'Here is the fix:\n\n```ts\nfor await (const c of src) yield* drain(c)\n```\n\nDone.\n',
+    }, 2)
+    const rows = buildRows(document.all, 70, palette, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    const joined = rows.map(row => row.text).join('\n')
+    expect(joined).toContain('┌ ts ')
+    expect(joined).toContain('│ for await')
+    expect(joined).toContain('└')
+    expect(joined).toContain('Done.')
+    expect(joined).not.toContain('```')
+  })
+
+  it('search still matches rendered markdown text', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.settleAssistant({ turn: 0, step: 0 }, [
+      { kind: 'text', text: 'The **parser** buffers everything' },
+    ], 2)
+    const view = new TranscriptView(document, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    view.draw(new Painter(new CellBuffer(60, 5), rect(0, 0, 60, 5)), { palette, focused: true, requestRender: () => {} })
+    view.beginSearch()
+    view.searchKey({ type: 'key', key: 'p', text: 'p' })
+    view.searchKey({ type: 'key', key: 'a', text: 'a' })
+    view.searchKey({ type: 'key', key: 'r', text: 'r' })
+    expect(view.searchStatus().total).toBe(1)
+  })
+})

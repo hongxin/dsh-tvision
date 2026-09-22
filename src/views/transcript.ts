@@ -35,6 +35,8 @@ import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.
 import { Consumed } from '../kit/widget.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
 import { NO_LINE_END, NO_LINE_START, prevClusterStart, spreadCjkLatin, takeColumns, textWidth } from '../kit/text.ts'
+import { markdownRows, type MdSeg } from './markdown.ts'
+import { splitFencedCode } from '../session/model.ts'
 import { formatDuration } from '../widgets/statusbar.ts'
 import type { ContentPiece, Entry, SessionDocument } from '../session/model.ts'
 
@@ -46,6 +48,13 @@ export interface TranscriptRow {
   readonly gutterStyle: Style
   /** Style for the body. */
   readonly style: Style
+  /**
+   * Styled runs for the body, when the row was built by the markdown
+   * renderer. Absent means the whole body takes {@link style} — the plain
+   * path every other row still uses. `text` is always the runs joined, so
+   * search and snapshots cannot tell the difference.
+   */
+  readonly segments?: readonly MdSeg[]
   /** The entry this row came from, for hit testing and for "jump to here". */
   readonly entryId: number
   /** True for a row that begins an entry, which gets a blank row before it. */
@@ -391,7 +400,7 @@ export class TranscriptView implements Widget {
         ? this.searchHits.indexOf(this.scrollTop + row)
         : -1
       const style = hitIndex < 0
-        ? source.style
+        ? undefined
         : hitIndex === this.searchCursor ? palette.searchHit : palette.searchHitDim
       this.paintRow(painter, row, source, painter.width, style)
     }
@@ -410,13 +419,27 @@ export class TranscriptView implements Widget {
    * @param source - The row to paint.
    * @param width - Available columns.
    */
-  private paintRow(painter: Painter, row: number, source: TranscriptRow, width: number, bodyStyle?: Style): void {
+  private paintRow(painter: Painter, row: number, source: TranscriptRow, width: number, hitStyle?: Style): void {
     const gutterWidth = Math.min(this.theme.gutterWidth, width)
     const gutter = takeColumns(source.text, gutterWidth)
     painter.text(0, row, gutter, gutterWidth, source.gutterStyle)
+    // A search hit flattens the row to one style — finding beats typography.
+    // Otherwise a segmented row paints run by run; the wrapper guarantees no
+    // run splits a wide glyph, so advancing by measured width is exact.
+    if (hitStyle === undefined && source.segments !== undefined) {
+      let column = gutterWidth
+      for (const segment of source.segments) {
+        const segmentWidth = textWidth(segment.text)
+        if (segmentWidth > 0) {
+          painter.text(column, row, segment.text, segmentWidth, segment.style)
+        }
+        column += segmentWidth
+      }
+      painter.text(column, row, '', Math.max(0, width - column), source.style)
+      return
+    }
     const body = source.text.slice(gutter.length)
-    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), bodyStyle ?? source.style)
-    void width
+    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), hitStyle ?? source.style)
   }
 
   /**
@@ -708,33 +731,69 @@ function assistantRows(
       continue
     }
     if (piece.kind === 'code') {
-      const inner = width - 5
-      const label = piece.language === undefined ? ' code ' : ` ${piece.language} `
-      rows.push({
-        text: `  ┌${label}${'─'.repeat(Math.max(0, inner - textWidth(label)))}┐`,
-        gutterStyle: palette.code,
-        style: palette.diffMeta,
-        entryId: entry.id,
-      })
-      for (const line of piece.text.replace(/\n$/u, '').split('\n')) {
-        for (const wrapped of wrapText(line, inner)) {
-          rows.push({ text: `  │ ${wrapped}`, gutterStyle: palette.code, style: palette.code, entryId: entry.id })
-        }
-      }
-      rows.push({
-        text: `  └${'─'.repeat(inner)}┘`,
-        gutterStyle: palette.code,
-        style: palette.diffMeta,
-        entryId: entry.id,
-      })
+      codeBoxRows(piece, width, palette, entry.id, rows)
       continue
     }
-    for (const line of wrapText(spreadCjkLatin(piece.text), proseWidth(width - 2))) {
-      rows.push({ text: `  ${line}`, gutterStyle: palette.assistantLabel, style: palette.bodyText, entryId: entry.id })
+    // Text is markdown — and on the streaming path this is the FIRST place
+    // fences are split (chunks arrive raw; only the settle path pre-splits),
+    // so a fence the model is still typing gets its box here, not literal
+    // backticks in the prose.
+    for (const sub of splitFencedCode(piece.text)) {
+      if (sub.kind === 'code') {
+        codeBoxRows(sub, width, palette, entry.id, rows)
+        continue
+      }
+      for (const md of markdownRows(sub.text, proseWidth(width - 2), palette.bodyText, palette)) {
+        rows.push({
+          text: `  ${md.text}`,
+          gutterStyle: palette.assistantLabel,
+          style: palette.bodyText,
+          // The two-space prefix in `text` is the gutter; the segments
+          // describe the body only, which paintRow starts after the gutter.
+          ...(md.segments === undefined ? {} : { segments: md.segments }),
+          entryId: entry.id,
+        })
+      }
     }
   }
   void expanded
   return rows
+}
+
+/**
+ * The framed code box rows for one code piece.
+ * @param piece - The code piece (text, optional language).
+ * @param width - Body width in columns.
+ * @param palette - The palette.
+ * @param entryId - The owning entry, for hit testing.
+ * @param rows - The row list to append to.
+ */
+function codeBoxRows(
+  piece: { text: string; language?: string },
+  width: number,
+  palette: ResolvedPalette,
+  entryId: number,
+  rows: TranscriptRow[],
+): void {
+  const inner = width - 5
+  const label = piece.language === undefined ? ' code ' : ` ${piece.language} `
+  rows.push({
+    text: `  ┌${label}${'─'.repeat(Math.max(0, inner - textWidth(label)))}┐`,
+    gutterStyle: palette.code,
+    style: palette.diffMeta,
+    entryId,
+  })
+  for (const line of piece.text.replace(/\n$/u, '').split('\n')) {
+    for (const wrapped of wrapText(line, inner)) {
+      rows.push({ text: `  │ ${wrapped}`, gutterStyle: palette.code, style: palette.code, entryId })
+    }
+  }
+  rows.push({
+    text: `  └${'─'.repeat(inner)}┘`,
+    gutterStyle: palette.code,
+    style: palette.diffMeta,
+    entryId,
+  })
 }
 
 /**

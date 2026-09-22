@@ -6,18 +6,18 @@
 ║| Agent · 1.4s                                                        ║                           │
 ║  The parser buffers the whole document before it emits               ║                           │
 ║  anything.                                                           ║                           │
+║  Here is the fix — stream by chunk, drain(buffer), and a             ║                           │
+║  list:                                                               ║                           │
+║  • read chunks as they arrive                                        ║                           │
+║  • hold a partial fence in the buffer                                ║                           │
+║  ✓ emit tokens early                                                 ║                           │
+║  · keep the old test passing                                         ║          Tasks         ─├─┐
+║  │ A fence that straddles a chunk boundary is the hard part.         ║  ✓ Find why the first tok…│
+║  ────────────────────────────────────────────────────────────        ║  ▸ Make the parser emit p…│
+║  ### See also                                                        ║  · Update the streaming t…│
 ║                                                                      ║                           │
 ║~ bash  npm test -- parser                                            ║                           │
 ║  ok ▸                                                                ║                           │
-║                                                                      ║                           │
-║                                                                      ║                           │
-║                                                                      ║          Tasks         ─├─┐
-║                                                                      ║  ✓ Find why the first tok…│
-║                                                                      ║  ▸ Make the parser emit p…│
-║                                                                      ║  · Update the streaming t…│
-║                                                                      ║                           │
-║                                                                      ║                           │
-║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │

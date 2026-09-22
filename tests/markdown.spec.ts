@@ -14,7 +14,6 @@ import { splitUnits, textWidth } from '../src/kit/text.ts'
 const palette = resolvePalette(TURBO_VISION)
 const base = palette.bodyText
 const rowsOf = (text: string, width = 60): string[] => markdownRows(text, width, base, palette).map(row => row.text)
-const segsOf = (text: string, width = 60) => markdownRows(text, width, base, palette).flatMap(row => row.segments)
 
 describe('block parsing', () => {
   it('headings strip hashes at h1/h2 and keep them from h3', () => {

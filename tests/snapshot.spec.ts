@@ -127,7 +127,7 @@ describe('desktop snapshots', () => {
     view.app.document.beginAssistant({ turn: 0, step: 0 }, 10)
     view.app.document.streamChunk(
       { turn: 0, step: 0 },
-      { kind: 'text', text: 'The parser buffers the whole document before it emits anything.' },
+      { kind: 'text', text: 'The parser buffers the whole document before it emits anything.\n\nHere is the fix — **stream by chunk**, `drain(buffer)`, and a list:\n\n- read chunks as they arrive\n- hold a partial fence in the buffer\n- [x] emit tokens early\n- [ ] keep the old test passing\n\n> A fence that straddles a chunk boundary is the hard part.\n\n---\n\n### See also\n' },
       20,
     )
     view.app.document.endStep({ turn: 0, step: 0 }, 1400)
@@ -261,6 +261,20 @@ describe('desktop snapshots', () => {
     })
     view.app.document.finishToolCall('c1', { text: '通过 3 个测试', isError: false })
     expectSnapshot('cjk', await view.frame())
+  })
+
+  it('renders markdown prose with every block type', async () => {
+    const view = scene()
+    view.app.start()
+    view.app.document.addUser('explain the fix', 0)
+    view.app.document.beginAssistant({ turn: 0, step: 0 }, 10)
+    view.app.document.streamChunk(
+      { turn: 0, step: 0 },
+      { kind: 'text', text: '# Streaming the parser\n\n## Why it was slow\n\nThe old code buffered **everything** — *every* byte — before it emitted a `token`. Now it reads chunk by chunk:\n\n1. read a chunk\n2. drain complete tokens\n3. hold partial ones\n   - a partial word waits\n   - a partial fence waits too\n\n> The first token now arrives when the first complete word does,\n> not when the whole file has been read.\n\n---\n\n### Details\n\nA ~~buffer-everything~~ approach cannot stream; ~~no~~ yes, ~~gone~~. See [the parser](src/parser.ts) for the shape.\n' },
+      20,
+    )
+    view.app.document.endStep({ turn: 0, step: 0 }, 30)
+    expectSnapshot('markdown', await view.frame())
   })
 
   it('renders the window menu listing every window', async () => {

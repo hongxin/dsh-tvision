@@ -136,7 +136,7 @@ export function parseBlocks(text: string): Block[] {
       continue
     }
     if (isListMarker(line)) {
-      const [items, next] = parseList(lines, index, 0)
+      const [items, next] = parseList(lines, index, '')
       blocks.push({ kind: 'list', items })
       index = next
       continue
@@ -175,9 +175,8 @@ function isListMarker(line: string): boolean {
  * @param depth - The nesting level, for two-space indent accounting.
  * @returns The items and the index of the first line after the list.
  */
-function parseList(lines: string[], index: number, depth: number): [ListItem[], number] {
+function parseList(lines: string[], index: number, indent: string): [ListItem[], number] {
   const items: ListItem[] = []
-  const indent = '  '.repeat(depth)
   while (index < lines.length) {
     const line = lines[index] ?? ''
     if (line.trim() === '') {
@@ -196,7 +195,7 @@ function parseList(lines: string[], index: number, depth: number): [ListItem[], 
     const ordered = /^(\d{1,3}\.)\s(\S.*)$/u.exec(rest)
     if (marker === null && ordered === null) {
       // Continuation of the previous item, or the end of this list.
-      if (rest.startsWith('  ') && items.length > 0) {
+      if (rest.startsWith(' ') && items.length > 0) {
         const item = items[items.length - 1]
         if (item !== undefined) item.lines.push(rest.trim())
         index++
@@ -223,17 +222,19 @@ function parseList(lines: string[], index: number, depth: number): [ListItem[], 
     }
     items.push(item)
     index++
-    // Nested list: the next line is indented exactly one level deeper.
-    while (index < lines.length) {
+    // Nested list: the next line is indented deeper than this level — by
+    // however much the writer chose (two spaces under a bullet, three under
+    // `1. `); the nested run's own indent becomes its level's indent.
+    {
       const nextLine = lines[index] ?? ''
-      if (nextLine.trim() === '') break
-      if (!nextLine.startsWith(`${indent}  `)) break
-      if (!isListMarker(nextLine.slice(indent.length + 2))) break
-      const [children, next] = parseList(lines, index, depth + 1)
-      const target = items[items.length - 1]
-      if (target !== undefined) target.children = children
-      index = next
-      break
+      const nestedIndent = /^[ ]+/u.exec(nextLine)?.[0] ?? ''
+      if (nextLine.trim() !== '' && nestedIndent.length > indent.length
+        && isListMarker(nextLine.slice(nestedIndent.length))) {
+        const [children, next] = parseList(lines, index, nestedIndent)
+        const target = items[items.length - 1]
+        if (target !== undefined) target.children = children
+        index = next
+      }
     }
   }
   return [items, index]
