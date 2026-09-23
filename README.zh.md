@@ -5,7 +5,7 @@
 
 **给 DeepSeek Harness 智能体的字符型窗口管理器。** 带投影的重叠窗口、Borland 式菜单栏、功能键提示条、鼠标拖拽、五套配色皮肤——以普通的 dsh profile bundle 形式安装，不是 fork。
 
-![经典 Borland 蓝](docs/screenshots/tvision.png)
+![tvision 动图——菜单栏、一次智能体回合、五套皮肤](docs/screenshots/demo.gif)
 
 你的手在 Turbo C 年代记住的那抹蓝——同一个二进制里还带着另外四副面孔：
 
