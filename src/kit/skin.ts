@@ -574,7 +574,7 @@ export const SKINS: readonly Skin[] = Object.freeze([TURBO_VISION, PHOSPHOR, AMB
  * colours, inherited rather than imposed. The Turbo Vision blue remains the
  * demo's showcase and `--skin tvision` away.
  */
-export const DEFAULT_SKIN_ID = ANSI.id
+export const DEFAULT_SKIN_ID = TURBO_VISION.id
 
 /**
  * Look up a skin by id.
@@ -592,7 +592,7 @@ export function findSkin(id: string): Skin | undefined {
  * @returns The requested skin, or the default ({@link ANSI}).
  */
 export function skinOrDefault(id: string | undefined): Skin {
-  if (id === undefined) return ANSI
-  return findSkin(id) ?? ANSI
+  if (id === undefined) return TURBO_VISION
+  return findSkin(id) ?? TURBO_VISION
 }
 

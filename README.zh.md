@@ -152,7 +152,7 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 
 每套皮肤是完整的约 55 个语义角色，而不是换一组颜色：因此在某套皮肤下能看清的控件，在其他皮肤下同样能看清。
 
-安装后的默认皮肤是 `ansi`——墨绿护眼；`--skin tvision`（或 `F9`）回到 Borland 蓝。独立的 demo 仍以 tvision 蓝作为招牌。
+安装后的默认皮肤是 `tvision`——Borland 蓝正是招牌；`--skin ansi`（或 `F9`）换到墨绿护眼。独立的 demo 同以 tvision 蓝作为招牌。
 
 ---
 
