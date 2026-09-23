@@ -9,9 +9,9 @@
 
 你的手在 Turbo C 年代记住的那抹蓝——同一个二进制里还带着另外四副面孔：
 
-| 琥珀 CRT | 磷光绿 | 石板灰 | ANSI 墨绿 |
+| 琥珀 CRT | 磷光绿 | 石板灰 | ANSI（One Dark 风） |
 |:---:|:---:|:---:|:---:|
-| ![琥珀 CRT](docs/screenshots/amber.png) | ![磷光绿](docs/screenshots/phosphor.png) | ![石板灰](docs/screenshots/slate.png) | ![ANSI 墨绿](docs/screenshots/ansi.png) |
+| ![琥珀 CRT](docs/screenshots/amber.png) | ![磷光绿](docs/screenshots/phosphor.png) | ![石板灰](docs/screenshots/slate.png) | ![ANSI，One Dark 风](docs/screenshots/ansi.png) |
 
 ```
   File  View  Agent  Tools  Window  Help                        dsh tvision
@@ -148,11 +148,11 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 | `phosphor` | P1 绿色 CRT——单一色相，层级全靠亮度 |
 | `amber` | P3 琥珀——更暖，长时间看更舒服 |
 | `slate` | 现代深色——只要窗口管理器，不要怀旧戏服 |
-| `ansi` | WordPerfect 式墨绿护眼，走终端自带的十六色 |
+| `ansi` | One Dark 式编辑器配色，走终端自带的十六色 |
 
 每套皮肤是完整的约 55 个语义角色，而不是换一组颜色：因此在某套皮肤下能看清的控件，在其他皮肤下同样能看清。
 
-安装后的默认皮肤是 `tvision`——Borland 蓝正是招牌；`--skin ansi`（或 `F9`）换到墨绿护眼。独立的 demo 同以 tvision 蓝作为招牌。
+安装后的默认皮肤是 `tvision`——Borland 蓝正是招牌；`--skin ansi`（或 `F9`）换成跟随终端主题的 One Dark 风。独立的 demo 同以 tvision 蓝作为招牌。
 
 ---
 

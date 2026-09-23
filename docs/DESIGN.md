@@ -156,7 +156,7 @@ roles, so a skin that renders one widget legibly renders them all.
 | `phosphor` | Phosphor | P1 green CRT — one hue, brightness carries the hierarchy. |
 | `amber` | Amber | P3 amber — warmer, easier for long sessions. |
 | `slate` | Slate | Modern dark. The window manager without the costume. |
-| `ansi` | ANSI | The WordPerfect dark green, in your terminal's own sixteen colours. |
+| `ansi` | ANSI | A One-Dark-style editor palette in your terminal's own sixteen colours. |
 
 ---
 
