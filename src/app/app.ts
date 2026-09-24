@@ -980,7 +980,12 @@ export class TvisionApp {
       return
     }
     if (id === WINDOW_IDS.sessions) {
-      void this.resumeSession(this.sessionRows[index])
+      // The list may be filtered, and the keyboard passes the selection's
+      // index *into the filtered rows* — read the row through the widget,
+      // which knows what is on screen, never the unfiltered array.
+      const widget = this.lists.get(id)
+      const row = (widget?.visibleRows() ?? [])[widget?.selection() ?? 0] as SessionRow | undefined
+      if (row !== undefined) void this.resumeSession(row)
       return
     }
     if (id === WINDOW_IDS.jobs) {
@@ -1812,10 +1817,12 @@ export class TvisionApp {
     })
     this.setListRows(
       WINDOW_IDS.sessions,
+      // The rows keep their `id` and `resumable`, so activating one can read
+      // the row the widget shows instead of indexing this array — which a
+      // filter would desynchronise.
       this.sessionRows.map(row => ({
+        ...row,
         label: row.resumable ? row.label : `${row.label} (not resumable)`,
-        ...(row.detail === '' ? {} : { detail: row.detail }),
-        marker: row.marker,
         // The whole row is searchable: a title, a workspace path, or the raw id
         // are all things a person remembers about the session they want.
         filter: `${row.label} ${row.detail} ${row.id}`,

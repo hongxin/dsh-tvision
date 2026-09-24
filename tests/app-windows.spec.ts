@@ -133,6 +133,22 @@ describe('resuming a session', () => {
     expect(resume).toHaveBeenCalledWith('main-session-aaaa1111', '/home/dev/one')
   })
 
+  it('resumes the row the filter left on screen, not the one at its index', async () => {
+    const resume = vi.fn(async () => { throw new Error('rejected for the test') })
+    const view = build({ resume })
+    view.app.start()
+    view.app.setSessions(fixtureSessions(), '/home/dev')
+    view.app.openWindow(WINDOW_IDS.sessions)
+    // Filtering to the oldest session puts it alone on screen while its index
+    // into the unfiltered array stays 2 — Enter used to resume whatever sat at
+    // index 0 instead.
+    view.app.feed('aaaa1111')
+    view.app.feed('\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(resume).toHaveBeenCalledTimes(1)
+    expect(resume).toHaveBeenCalledWith('main-session-aaaa1111', '/home/dev/one')
+  })
+
   it('explains rather than resuming a row that has nothing to load', async () => {
     const resume = vi.fn(async () => { throw new Error('should not be called') })
     const view = build({ resume })
