@@ -86,8 +86,7 @@
     "@deepseek-ai/schemastery": "^3.18.2",
     "commander": "^14.0.0",
     "diff": "^9.0.0",
-    "get-east-asian-width": "1.6.0",
-    "marked": "18.0.5"
+    "get-east-asian-width": "1.6.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
