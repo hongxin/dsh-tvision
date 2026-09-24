@@ -220,6 +220,29 @@ describe('desktop snapshots', () => {
     expectSnapshot('composer-completions', await view.frame())
   })
 
+  it('renders the Breakpoints window', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    view.app.setBreakpoints([
+      { pattern: 'bash(rm *)', action: 'ask', enabled: true },
+      { pattern: 'fs(src/*)', action: 'deny', enabled: true },
+      { pattern: 'bash', action: 'ask', enabled: false },
+    ])
+    view.app.openWindow(WINDOW_IDS.breakpoints)
+    expectSnapshot('breakpoints-window', await view.frame())
+  })
+
+  it('renders a breakpoint dialog', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    view.app.setBreakpoints([{ pattern: 'bash(rm *)', action: 'ask', enabled: true }])
+    const pending = view.app.checkBreakpoint({ name: 'bash', arguments: { command: 'rm -rf build && make' } })
+    await view.frame()
+    expectSnapshot('breakpoint-dialog', await view.frame())
+    view.feed('n')
+    await pending
+  })
+
   it('renders a narrow terminal without a side column', async () => {
     const view = scene(72, 22)
     view.app.start()

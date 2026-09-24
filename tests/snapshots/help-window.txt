@@ -15,13 +15,13 @@
 │                  ║Ctrl+Q  quit            Ctrl+C  cancel the turn             ║                  │
 │                  ║Ctrl+O  expand tools    Ctrl+R  show reasoning              ║                  │
 │                  ║Ctrl+Z  zoom window     Ctrl+L  redraw                      ║                  │
+│                  ║Ctrl+B  breakpoints     /breakpoint <pattern> adds one      ║                  │
 │                  ║                                                            ║                  │
 │                  ║Mouse: drag a title bar to move a window, drag the bright   ║                  │
 │                  ║bottom-right corner to resize it, click [■] to close a wind…║                  │
 │                  ║[↑] to zoom it (↓ restores), and double-click a title bar to║                  │
 │                  ║zoom. The wheel scrolls whatever the pointer is over, inclu…║                  │
-│                  ║the function-key strip.                                     ║                  │
-│                  ║                                       ↓ 9 more · ↑↓ scroll ║                  │
+│                  ║the function-key strip.               ↓ 10 more · ↑↓ scroll ║                  │
 │                  ╚════════════════════════════════════════════════════════════╝                  │
 │                                                                                  ────────────────┘
 │                                                                      │

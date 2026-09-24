@@ -29,13 +29,23 @@ import { ScreenRenderer, detectTruecolor, type CursorState } from '../kit/screen
 import { MenuBarBase, type Menu } from '../widgets/menubar.ts'
 import { StatusBar, formatDuration, formatTokens, pressureBar } from '../widgets/statusbar.ts'
 import { SessionDocument } from '../session/model.ts'
-import { TranscriptView } from '../views/transcript.ts'
+import { TranscriptView, summarizeArgs } from '../views/transcript.ts'
 import { textWidth } from '../kit/text.ts'
 import { Composer, type Completion, type ComposerTheme } from './composer.ts'
 import { Dialog, type DialogResult, type DialogSpec } from '../views/dialogs.ts'
-import { askApproval as askApprovalDialog, askQuestions as askQuestionsDialog } from './questions.ts'
+import {
+  askApproval as askApprovalDialog,
+  askBreakpoint as askBreakpointDialog,
+  askQuestions as askQuestionsDialog,
+} from './questions.ts'
 import { buildSessionRows, describeSessionRow, type SessionRow } from './sessions.ts'
 import { buildJobRows, describeJobRow, type JobRow, type JobSummary } from './jobs.ts'
+import {
+  matchBreakpoint,
+  parseBreakpointPattern,
+  type BreakpointRule,
+  type ToolCallLike,
+} from './breakpoints.ts'
 
 /** The terminal surface the app writes to. */
 export interface AppTerminal {
@@ -76,8 +86,11 @@ export interface AppHost {
   contextWindow?(): number
   /** Ask the jobs registry to stop a background job. */
   killJob?(id: string): void
-  /** Persist a skin choice; absent means preferences are not stored. */
-  saveSkin?(id: string): void
+  /**
+   * Persist a preference patch — only the keys being changed. Absent means
+   * preferences are not stored.
+   */
+  saveSettings?(patch: { skin?: string; breakpoints?: BreakpointRule[] }): void
   /** Store an API key; resolves when the credentials service has it. */
   saveApiKey?(key: string): Promise<void>
   /** Leave the application. */
@@ -227,6 +240,7 @@ export const WINDOW_IDS = {
   tasks: 'tasks',
   sessions: 'sessions',
   jobs: 'jobs',
+  breakpoints: 'breakpoints',
   help: 'help',
   about: 'about',
 } as const
@@ -735,6 +749,16 @@ export class TvisionApp {
   private openDialog: { id: string; dialog: Dialog } | undefined
   /** The session rows last set, so a row's identity survives the list widget. */
   private sessionRows: readonly SessionRow[] = []
+  private breakpointRules: readonly BreakpointRule[] = []
+  /** Patterns granted "always this session"; session-scoped by construction. */
+  private readonly breakpointGrants = new Set<string>()
+  /** Session-only hit counts, so the window can show a rule is not theoretical. */
+  private readonly breakpointHits = new Map<string, number>()
+  /**
+   * One breakpoint dialog at a time — later asks queue behind earlier ones
+   * rather than preempting them out from under the reader.
+   */
+  private breakpointAsks: Promise<unknown> = Promise.resolve()
   /** The workspace each listed session ran in, for the resume handoff. */
   private readonly sessionCwd = new Map<string, string>()
   /** The file paths behind the Project window's rows. */
@@ -815,7 +839,7 @@ export class TvisionApp {
     this.skin = skin
     this.windows.setSkin(skin)
     this.windows.requestRender()
-    this.options.host.saveSkin?.(skin.id)
+    this.options.host.saveSettings?.({ skin: skin.id })
   }
 
   /** The line the composer prints as its sigil, including the running timer. */
@@ -928,6 +952,18 @@ export class TvisionApp {
       listed: true,
     })
     this.windows.close(WINDOW_IDS.jobs)
+    this.windows.open({
+      id: WINDOW_IDS.breakpoints,
+      title: 'Breakpoints — 0',
+      rect: { x: 6, y: 5, width: 46, height: 10 },
+      widget: this.listWindow(
+        WINDOW_IDS.breakpoints,
+        () => this.breakpointRows(),
+        'No breakpoints. Type  /breakpoint <pattern>  to add one.',
+      ),
+      listed: true,
+    })
+    this.windows.close(WINDOW_IDS.breakpoints)
     this.windows.focus(WINDOW_IDS.transcript)
   }
 
@@ -969,6 +1005,21 @@ export class TvisionApp {
   }
 
   /**
+   * The Breakpoints window's rows, derived on demand: enabled state in the
+   * marker, the pattern as the label, action/grant/hits in the detail column.
+   */
+  private breakpointRows(): ListRow[] {
+    return this.breakpointRules.map(rule => ({
+      label: rule.pattern,
+      marker: rule.enabled ? '✓' : '·',
+      detail: [
+        this.breakpointGrants.has(rule.pattern) ? 'always' : rule.action,
+        `${this.breakpointHits.get(rule.pattern) ?? 0} hits`,
+      ].join(' · '),
+    }))
+  }
+
+  /**
    * Activate a list row.
    * @param id - The window id.
    * @param index - The row index.
@@ -992,6 +1043,13 @@ export class TvisionApp {
       const widget = this.lists.get(id)
       const row = (widget?.visibleRows() ?? [])[widget?.selection() ?? 0] as JobRow | undefined
       this.notify(describeJobRow(row))
+      return
+    }
+    if (id === WINDOW_IDS.breakpoints) {
+      // This window is not filterable, so the index is the same in the widget
+      // and in the rules; Enter enables or disables the rule under the cursor.
+      const rule = this.breakpointRules[index]
+      if (rule !== undefined) this.toggleBreakpoint(rule.pattern)
       return
     }
     if (id === WINDOW_IDS.project) {
@@ -1149,6 +1207,9 @@ export class TvisionApp {
         id: 'tools',
         label: '&Tools',
         items: () => [
+          { id: 'breakpoints', label: '&Breakpoints…', shortcut: 'Ctrl+B', action: run(() => { this.toggleWindow(WINDOW_IDS.breakpoints) }), hint: 'Hold matching tools before they run' },
+          { id: 'addbreak', label: 'Add &breakpoint…', action: run(() => { this.composer.insert('/breakpoint '); this.windows.focus(WINDOW_IDS.transcript) }), hint: 'Type the pattern in the composer' },
+          { id: 'sep', label: '', separator: true },
           ...(this.options.host.commands?.() ?? []).map(command => ({
             id: `cmd-${command.name}`,
             label: `&/${command.name}`,
@@ -1239,6 +1300,12 @@ export class TvisionApp {
       void this.killSelectedJob()
       return true
     }
+    // `d` on the focused Breakpoints window deletes the selected rule — also
+    // after a confirmation, because deleting a stop is weakening a guard.
+    if (key === 'd' && this.windows.activeWindowId === WINDOW_IDS.breakpoints) {
+      void this.deleteSelectedBreakpoint()
+      return true
+    }
     if (ctrl) {
       switch (key) {
         case 'q':
@@ -1266,6 +1333,9 @@ export class TvisionApp {
           return true
         case 'r':
           this.toggleReasoning()
+          return true
+        case 'b':
+          this.toggleWindow(WINDOW_IDS.breakpoints)
           return true
         default:
           return false
@@ -1388,6 +1458,15 @@ export class TvisionApp {
   private async submit(text: string): Promise<void> {
     const trimmed = text.trim()
     this.history.push(trimmed)
+    // Breakpoints are the desktop's own command, so it is handled here — above
+    // the host's slash dispatch, which a host without `runCommand` would fall
+    // through and send the rule text to the model as an ordinary turn.
+    if (trimmed === '/breakpoint' || trimmed.startsWith('/breakpoint ')) {
+      this.document.addUser(trimmed, Date.now(), { local: true })
+      this.runBreakpointCommand(trimmed.slice('/breakpoint'.length).trim())
+      this.windows.requestRender()
+      return
+    }
     if (trimmed.startsWith('/') && this.options.host.runCommand !== undefined) {
       this.document.addUser(trimmed, Date.now(), { local: true })
       this.windows.requestRender()
@@ -1411,6 +1490,27 @@ export class TvisionApp {
   }
 
   /**
+   * Run `/breakpoint`'s argument: nothing opens the window, a pattern adds a
+   * rule, and a trailing `--deny` makes the rule refuse outright.
+   * @param args - Everything after the command word.
+   */
+  private runBreakpointCommand(args: string): void {
+    if (args === '') {
+      this.toggleWindow(WINDOW_IDS.breakpoints)
+      this.notify('Usage: /breakpoint <pattern> [--deny]  · e.g. bash(rm *)', 'info')
+      return
+    }
+    let action: 'ask' | 'deny' = 'ask'
+    let pattern = args
+    if (pattern.endsWith('--deny')) {
+      action = 'deny'
+      pattern = pattern.slice(0, -'--deny'.length).trim()
+    }
+    const error = this.addBreakpoint(pattern, action)
+    if (error !== undefined) this.notify(error, 'error')
+  }
+
+  /**
    * The composer's completion source: commands after `/`, files after `@`.
    * @param token - The token under the caret.
    * @returns Completions for it.
@@ -1418,7 +1518,9 @@ export class TvisionApp {
   private complete(token: string): readonly Completion[] {
     if (token.startsWith('/')) {
       const prefix = token.slice(1).toLowerCase()
-      return (this.options.host.commands?.() ?? [])
+      const commands = [...(this.options.host.commands?.() ?? []),
+        { name: 'breakpoint', description: 'hold a tool before it runs: bash(rm *)' }]
+      return commands
         .filter(command => command.name.toLowerCase().startsWith(prefix))
         .map(command => ({
           insert: `/${command.name} `,
@@ -1451,6 +1553,7 @@ export class TvisionApp {
       'Ctrl+Q  quit            Ctrl+C  cancel the turn',
       'Ctrl+O  expand tools    Ctrl+R  show reasoning',
       'Ctrl+Z  zoom window     Ctrl+L  redraw',
+      'Ctrl+B  breakpoints     /breakpoint <pattern> adds one',
       '',
       'Mouse: drag a title bar to move a window, drag the bright',
       'bottom-right corner to resize it, click [■] to close a window,',
@@ -1662,6 +1765,31 @@ export class TvisionApp {
   }
 
   /**
+   * Confirm and delete the rule selected in the Breakpoints window.
+   */
+  private async deleteSelectedBreakpoint(): Promise<void> {
+    const widget = this.lists.get(WINDOW_IDS.breakpoints)
+    const rule = this.breakpointRules[widget?.selection() ?? 0]
+    if (rule === undefined) return
+    const answer = await this.ask({
+      title: 'Delete breakpoint',
+      question: `Remove ${rule.pattern}?`,
+      detail: [
+        'Removing a breakpoint stops matching calls from being held.',
+        'The rule is gone from the settings file; re-add it with',
+        '/breakpoint if you want it back.',
+      ].join('\n'),
+      choices: [
+        { value: 'delete', label: 'Delete', dangerous: true },
+        { value: 'cancel', label: 'Cancel', isDefault: true },
+      ],
+    })
+    if (answer !== 'delete') return
+    this.setBreakpoints(this.breakpointRules.filter(candidate => candidate.pattern !== rule.pattern))
+    this.notify(`Breakpoint removed: ${rule.pattern}`, 'info')
+  }
+
+  /**
    * Ask for the API key and store it through the host.
    *
    * The key is never echoed after entry — the dialog collects it, the host
@@ -1857,6 +1985,87 @@ export class TvisionApp {
   setJobs(jobs: readonly JobSummary[]): void {
     this.setListRows(WINDOW_IDS.jobs, buildJobRows(jobs))
     this.setWindowTitle(WINDOW_IDS.jobs, `Jobs — ${jobs.length}`)
+  }
+
+  /** The breakpoint rules, in match order — for the window, tests, and the bridge. */
+  get breakpoints(): readonly BreakpointRule[] {
+    return this.breakpointRules
+  }
+
+  /**
+   * Replace the rule set, the seam the settings watch drives; also the path
+   * the window's own edits take, so both stay in one order.
+   * @param rules - The rules, first-wins.
+   */
+  setBreakpoints(rules: readonly BreakpointRule[]): void {
+    this.breakpointRules = rules
+    // A grant dies with the rule it belonged to — there is nothing left to
+    // match it against, and a rule re-added later should ask again.
+    const patterns = new Set(rules.map(rule => rule.pattern))
+    for (const pattern of this.breakpointGrants) {
+      if (!patterns.has(pattern)) this.breakpointGrants.delete(pattern)
+    }
+    this.options.host.saveSettings?.({ breakpoints: rules.map(rule => ({ ...rule })) })
+    this.setWindowTitle(WINDOW_IDS.breakpoints, `Breakpoints — ${rules.length}`)
+    this.windows.requestRender()
+  }
+
+  /**
+   * Add a rule from its typed form, as `/breakpoint` submits it.
+   * @param pattern - The pattern as typed.
+   * @param action - Whether matching calls ask or are denied outright.
+   * @returns An error to show, or undefined on success.
+   */
+  addBreakpoint(pattern: string, action: 'ask' | 'deny'): string | undefined {
+    if (parseBreakpointPattern(pattern) === undefined) {
+      return `Cannot read "${pattern}" — expected tool or tool(glob), e.g. bash(rm *)`
+    }
+    if (this.breakpointRules.some(rule => rule.pattern === pattern)) {
+      return `There is already a rule for ${pattern}`
+    }
+    this.setBreakpoints([...this.breakpointRules, { pattern, action, enabled: true }])
+    this.notify(`Breakpoint set: ${pattern} (${action})`, 'info')
+    return undefined
+  }
+
+  /** Enable or disable the selected rule — Enter in the Breakpoints window. */
+  private toggleBreakpoint(pattern: string): void {
+    this.setBreakpoints(this.breakpointRules.map(rule =>
+      rule.pattern === pattern ? { ...rule, enabled: !rule.enabled } : rule))
+  }
+
+  /**
+   * The pre-execute seam: what a pending call does. 'allow' means *delegate* —
+   * this call passes the breakpoint, and any later gate still gets its turn;
+   * 'deny' refuses it here.
+   * @param call - The call the waterfall is holding.
+   * @returns The decision for the bridge to translate.
+   */
+  async checkBreakpoint(call: ToolCallLike & { signal?: AbortSignal }): Promise<'allow' | 'deny'> {
+    const match = matchBreakpoint(this.breakpointRules, this.breakpointGrants, call)
+    if (match === undefined) return 'allow'
+    const { pattern } = match.rule
+    this.breakpointHits.set(pattern, (this.breakpointHits.get(pattern) ?? 0) + 1)
+    this.windows.requestRender()
+    if (match.kind === 'grant') return 'allow'
+    if (match.rule.action === 'deny') return 'deny'
+    // One breakpoint dialog at a time: a burst of parallel matches queues
+    // rather than preempting, so no call is denied merely because another was
+    // asking when it arrived.
+    const answer = await new Promise<'allow' | 'always' | 'deny'>(resolve => {
+      this.breakpointAsks = this.breakpointAsks
+        .then(async () => {
+          resolve(await askBreakpointDialog(this, {
+            toolName: call.name,
+            label: summarizeArgs(call.arguments),
+            pattern,
+            signal: call.signal,
+          }))
+        })
+        .catch(() => resolve('deny'))
+    })
+    if (answer === 'always') this.breakpointGrants.add(pattern)
+    return answer === 'deny' ? 'deny' : 'allow'
   }
 
   /**

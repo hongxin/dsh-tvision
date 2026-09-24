@@ -296,8 +296,10 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       }
       jobsSlot.kill(id, agent)
     },
-    saveSkin: (id: string): void => {
-      input.settings.save?.(id)
+    saveSettings: (patch: { skin?: string; breakpoints?: { pattern: string; action: 'ask' | 'deny'; enabled: boolean }[] }): void => {
+      // Breakpoint persistence arrives with the settings schema extension;
+      // until then the skin is the only stored preference.
+      if (patch.skin !== undefined) input.settings.save?.(patch.skin)
     },
     saveApiKey: (key: string): Promise<void> => {
       if (input.credentials.save === undefined) {

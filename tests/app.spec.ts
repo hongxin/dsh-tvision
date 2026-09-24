@@ -448,7 +448,7 @@ describe('global keys', () => {
 
   it('cycles the skin on F9 and reports the choice to the host', async () => {
     const saved: string[] = []
-    const { app } = build({ saveSkin: (id) => { saved.push(id) } })
+    const { app } = build({ saveSettings: (patch) => { if (patch.skin !== undefined) saved.push(patch.skin) } })
     app.start()
     app.feed('\u001B[20~')
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -459,7 +459,7 @@ describe('global keys', () => {
 
   it('setSkin persists through the same hook', () => {
     const saved: string[] = []
-    const { app } = build({ saveSkin: (id) => { saved.push(id) } })
+    const { app } = build({ saveSettings: (patch) => { if (patch.skin !== undefined) saved.push(patch.skin) } })
     app.start()
     app.setSkin(findSkin('amber')!)
     expect(saved).toEqual(['amber'])

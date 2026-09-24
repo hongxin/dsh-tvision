@@ -122,6 +122,77 @@ export async function askApproval(host: AskHost, request: ApprovalAsk): Promise<
   return 'cancelled'
 }
 
+/** A call a breakpoint rule stopped, as the desktop asks about it. */
+export interface BreakpointAsk {
+  readonly toolName: string
+  /** The call's one-line label — the same text the transcript card shows. */
+  readonly label: string
+  /** The rule's pattern, as typed. */
+  readonly pattern: string
+  readonly signal?: AbortSignal
+}
+
+/**
+ * Build the breakpoint dialog.
+ * @param request - The call, its label, and the rule that stopped it.
+ * @returns The dialog specification.
+ */
+export function breakpointSpec(request: BreakpointAsk): DialogSpec {
+  return {
+    title: 'Breakpoint',
+    question: `${request.toolName} stopped by ${request.pattern}`,
+    detail: [
+      'A rule you set stopped this call before it ran.',
+      '',
+      `tool: ${request.toolName}`,
+      ...(request.label === '' ? [] : ['', `call: ${request.label}`]),
+      '',
+      'Y runs this one call; the rule asks again next time.',
+      'a also covers every later call matching this rule, this session.',
+      'n, Escape, or closing this window refuses the call, and the model is',
+      'told it was denied.',
+    ].join('\n'),
+    letterKeys: true,
+    choices: [
+      {
+        value: 'allow',
+        label: 'Run once',
+        detail: 'Run this call; the rule asks again next time.',
+      },
+      {
+        value: 'always',
+        label: 'Always this session',
+        detail: 'Run it and stop asking for this rule this session.',
+        letter: 'a',
+      },
+      {
+        value: 'deny',
+        label: 'Deny',
+        detail: 'Refuse; the model is told the call was denied.',
+        dangerous: true,
+      },
+    ],
+  }
+}
+
+/**
+ * Ask for a breakpoint decision.
+ * @param host - The application's modal hook.
+ * @param request - The call, its label, and the rule that stopped it.
+ * @returns The decision: run once, grant the session, or refuse.
+ */
+export async function askBreakpoint(
+  host: AskHost,
+  request: BreakpointAsk,
+): Promise<'allow' | 'always' | 'deny'> {
+  // Dismissal and abort both refuse: a breakpoint is a stop the user asked
+  // for, so the call must not slip through because its dialog went away.
+  const value = await host.ask(breakpointSpec(request), request.signal)
+  if (value === 'allow') return 'allow'
+  if (value === 'always') return 'always'
+  return 'deny'
+}
+
 /**
  * Build the dialog for one question.
  *
