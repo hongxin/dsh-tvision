@@ -59,6 +59,27 @@ describe('charWidth', () => {
   })
 })
 
+describe('the emoji-width line', () => {
+  // A bare BMP presentation symbol is one cell everywhere that matters —
+  // xterm.js, Terminal.app, iTerm2's default — and counting it two shifted
+  // every cell after it (a table with a \u2604 column lost its alignment).
+  // VS16 is the explicit request for the wide face; the supplementary
+  // pictographs are wide wherever they render at all; CJK heritage stays two.
+  it('bare BMP emoji-presentation symbols are one column', () => {
+    for (const glyph of ['\u2604', '\u231A', '\u26A1', '\u2705', '\u2757', '\u274C']) {
+      expect(clusterWidth(glyph), glyph).toBe(1)
+    }
+  })
+
+  it('VS16 asks for the wide face; SMP pictographs and CJK stay wide', () => {
+    expect(clusterWidth('\u2604\uFE0F')).toBe(2)
+    expect(clusterWidth('\u2764\uFE0F')).toBe(2)
+    expect(clusterWidth('\u{1F60A}')).toBe(2)
+    expect(clusterWidth('\uFF5E')).toBe(2)
+    expect(clusterWidth('\u660E')).toBe(2)
+  })
+})
+
 describe('clusterWidth', () => {
   it('measures a flag as one two-column glyph, not two singles', () => {
     expect(clusterWidth('🇯🇵')).toBe(2)

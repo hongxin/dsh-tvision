@@ -63,9 +63,36 @@ export function charWidth(char: string): number {
   // Unicode's own East Asian Width tables decide it, and they already classify
   // the emoji blocks as Wide. Ambiguous-width characters are held at 1 (see the
   // note above). The library validates that it was handed a code point.
-  if (eastAsianWidth(codePoint, { ambiguousAsWide: false }) === 2) return 2
+  if (eastAsianWidth(codePoint, { ambiguousAsWide: false }) === 2) {
+    // …but Wide means two different things. The CJK heritage (ideographs,
+    // kana, fullwidth forms) is universally two cells. The Unicode-9 emoji
+    // reclassification of assorted BMP symbols (☔ ⌚ ⚡ ✅ …) is not: real
+    // terminals — xterm.js, Terminal.app, iTerm2's default — hold those at
+    // ONE cell unless an explicit VS16 asks for the wide emoji face, which
+    // the cluster rule below catches. Counting them two shifted every cell
+    // after one, which is how a table with a ☔ column lost its alignment
+    // while every pure-CJK row stayed true. The supplementary pictographs
+    // (U+1F300…) stay two: colour emoji render wide everywhere that renders
+    // them at all.
+    return EMOJI_WIDE_BMP.has(codePoint) ? 1 : 2
+  }
   return 1
 }
+
+/**
+ * The BMP symbols whose East Asian Width is Wide only by the emoji
+ * reclassification — scattered ranges from Unicode's EastAsianWidth.txt,
+ * everything Wide in the BMP that is not CJK heritage.
+ */
+const EMOJI_WIDE_BMP: ReadonlySet<number> = new Set<number>([
+  0x231A, 0x231B, 0x23E9, 0x23EA, 0x23EB, 0x23EC, 0x23F0, 0x23F3,
+  0x25FD, 0x25FE, 0x2614, 0x2615, 0x2648, 0x2649, 0x264A, 0x264B, 0x264C,
+  0x264D, 0x264E, 0x264F, 0x2650, 0x2651, 0x2652, 0x2653, 0x267F, 0x2693,
+  0x26A1, 0x26AA, 0x26AB, 0x26BD, 0x26BE, 0x26C4, 0x26C5, 0x26CE, 0x26D4,
+  0x26EA, 0x26F2, 0x26F3, 0x26F5, 0x26FA, 0x26FD, 0x2705, 0x270A, 0x270B,
+  0x2728, 0x274C, 0x274E, 0x2753, 0x2754, 0x2755, 0x2757, 0x2795, 0x2796,
+  0x2797, 0x27B0, 0x27BF, 0x2B1B, 0x2B1C, 0x2B50, 0x2B55,
+])
 
 /**
  * The number of columns one grapheme cluster occupies.

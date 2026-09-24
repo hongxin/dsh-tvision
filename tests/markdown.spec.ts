@@ -99,6 +99,17 @@ describe('block parsing', () => {
     expect(rowsOf('| a | b |')).toEqual(['| a | b |'])
   })
 
+  it('a bare emoji in a cell costs one column, not two — the \u2604 case', () => {
+    // The weather-table bug: rows with a bare BMP emoji drifted one cell
+    // left of rows without one, because the emoji measured two columns
+    // while the terminal rendered one.
+    const rows = rowsOf('| sky | k |\n|---|---|\n| \u2604rain | a |\n| overcast | bb |')
+    expect(rows[2]).toBe('\u2604rain    │ a ')
+    expect(rows[3]).toBe('overcast │ bb')
+    // Both rows' separators sit at the same column: 8+3+2.
+    expect(rows[2]?.indexOf('\u2502')).toBe(rows[3]?.indexOf('\u2502'))
+  })
+
   it('CJK cells measure two columns each', () => {
     const rows = rowsOf('| 模块 | 职责 |\n|---|---|\n| kit | 底座 |')
     expect(rows[0]).toBe('模块 │ 职责')
