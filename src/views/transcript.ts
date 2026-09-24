@@ -920,21 +920,27 @@ function piecesFromEntry(entry: Entry): ContentPiece[] {
  *
  * A coding agent's calls are overwhelmingly shaped `{command}`, `{path}`,
  * `{query}`, or `{pattern}`, so looking for those first produces a useful
- * summary almost always; the full JSON is one expansion away.
- * @param args - The raw argument JSON, or undefined.
+ * summary almost always; the full JSON is one expansion away. The session log
+ * delivers arguments as a JSON string; the pre-execute waterfall delivers them
+ * already parsed — both go through here, so every consumer (the transcript
+ * card, the breakpoint matcher) agrees on what a call's label says.
+ * @param args - The arguments: parsed JSON, the raw JSON text, or undefined.
  * @returns A short label.
  */
-export function summarizeArgs(args: string | undefined): string {
+export function summarizeArgs(args: unknown): string {
   if (args === undefined || args === '') return ''
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(args)
-  } catch {
-    /* c8 ignore next -- a non-JSON argument string is shown as-is. */
-    return takeColumns(args.replace(/\s+/gu, ' '), 60)
+  if (typeof args === 'string') {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(args)
+    } catch {
+      /* c8 ignore next -- a non-JSON argument string is shown as-is. */
+      return takeColumns(args.replace(/\s+/gu, ' '), 60)
+    }
+    return summarizeArgs(parsed)
   }
-  if (parsed === null || typeof parsed !== 'object') return takeColumns(String(parsed), 60)
-  const record = parsed as Record<string, unknown>
+  if (args === null || typeof args !== 'object') return takeColumns(String(args), 60)
+  const record = args as Record<string, unknown>
   for (const key of ['command', 'path', 'file_path', 'query', 'pattern', 'url', 'prompt', 'name']) {
     const value = record[key]
     if (typeof value === 'string' && value !== '') return takeColumns(value.replace(/\s+/gu, ' '), 60)

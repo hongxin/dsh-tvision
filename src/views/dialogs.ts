@@ -38,6 +38,12 @@ export interface DialogChoice {
   readonly isDefault?: boolean
   /** Whether this choice is dangerous, and so painted as a warning. */
   readonly dangerous?: boolean
+  /**
+   * The bare letter that picks this choice while `letterKeys` is on — for a
+   * vocabulary wider than the built-in y/n (an "always", say). Searched after
+   * the built-ins, so y and n keep their meaning unless a choice claims them.
+   */
+  readonly letter?: string
 }
 
 /** What a dialog needs to draw and resolve. */
@@ -289,21 +295,30 @@ export class Dialog implements Widget {
         this.settle({ dismissed: true, ...(this.spec.input === undefined ? {} : { input: this.inputText }) })
         return Consumed.Yes
       case 'y':
-        if (this.spec.letterKeys === true && this.spec.input === undefined) {
-          this.choose(this.spec.choices.findIndex(choice => choice.value === 'allow'))
-          return Consumed.Yes
-        }
-        return Consumed.Yes
       case 'n':
         if (this.spec.letterKeys === true && this.spec.input === undefined) {
-          this.choose(this.spec.choices.findIndex(choice => choice.value === 'deny'))
+          // The built-ins: y allows and n denies, by value, though a choice
+          // carrying this key as its explicit letter outranks them. When
+          // neither matches the key is simply swallowed — choosing nothing
+          // beats dismissing a dialog the key never named.
+          const value = event.key === 'y' ? 'allow' : 'deny'
+          const byValue = this.spec.choices.findIndex(choice => choice.value === value)
+          const byLetter = this.spec.choices.findIndex(choice => choice.letter === event.key)
+          if (byLetter >= 0) this.choose(byLetter)
+          else if (byValue >= 0) this.choose(byValue)
           return Consumed.Yes
         }
         return Consumed.Yes
-      default:
-        // A dialog owns the keyboard: any other key is swallowed rather than
-        // leaking into the composer behind it.
+      default: {
+        // Any other key with a letter bound to it picks that choice; the rest
+        // are swallowed — a dialog owns the keyboard, and a stray key leaking
+        // into the composer behind it would be worse than a no-op.
+        if (this.spec.letterKeys === true && this.spec.input === undefined) {
+          const index = this.spec.choices.findIndex(choice => choice.letter === event.key)
+          if (index >= 0) this.choose(index)
+        }
         return Consumed.Yes
+      }
     }
   }
 
