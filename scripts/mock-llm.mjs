@@ -21,6 +21,10 @@
 import { createServer } from 'node:http'
 
 const PORT = Number(process.env.PORT ?? 8931)
+// Cosmetic slow-motion for recordings: adds this many ms to every streamed
+// chunk, so a screen capture sampling at ~4 fps actually catches the stream.
+// Zero by default — the wire rung keeps its real timing.
+const SLOW = Number(process.env.MOCK_SLOW_MS ?? 0)
 
 /** One scripted reply, streamed chunk by chunk with realistic delays. */
 const TURNS = [
@@ -105,7 +109,7 @@ async function streamTurn(turn, res, model) {
   if (turn.reasoning !== undefined) {
     for (const piece of chunk(turn.reasoning, 24)) {
       delta({ reasoning_content: piece })
-      await sleep(15)
+      await sleep(15 + SLOW)
     }
   }
   if (turn.toolCall !== undefined) {
@@ -114,13 +118,13 @@ async function streamTurn(turn, res, model) {
     delta({ tool_calls: [{ index: 0, id: turn.toolCall.id, type: 'function', function: { name: turn.toolCall.name, arguments: '' } }] })
     for (const piece of chunk(turn.toolCall.arguments, 20)) {
       delta({ tool_calls: [{ index: 0, function: { arguments: piece } }] })
-      await sleep(10)
+      await sleep(10 + SLOW)
     }
   }
   if (turn.content !== undefined) {
     for (const piece of chunk(turn.content, 12)) {
       delta({ content: piece })
-      await sleep(12)
+      await sleep(12 + SLOW)
     }
   }
   delta({ content: '' })

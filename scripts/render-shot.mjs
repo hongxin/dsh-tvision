@@ -61,15 +61,31 @@ const lines = []
 for (let y = 0; y < term.rows; y++) {
   const line = term.buffer.active.getLine(y)
   const runs = []
-  let text = ''
+  let buf = ''
+  // Plain glyphs flow as text and align because every one of them advances
+  // exactly one cell in the menlo stack. A double-width glyph does not — the
+  // browser's fallback CJK font advances 1em where the grid reserves 2ch — so
+  // it is emitted as a fixed-width 2ch box instead, and the row keeps its
+  // columns: without this, every wide glyph drags the rest of its row (the
+  // window border included) out of alignment.
+  let parts = []
   let style = null
   const flush = () => {
-    if (text !== '' && style !== null) runs.push({ text, style })
-    text = ''
+    if (style !== null && (parts.length !== 0 || buf !== '')) {
+      parts.push(htmlEsc(buf))
+      runs.push({ html: parts.join(''), style })
+    }
+    buf = ''
+    parts = []
   }
   for (let x = 0; x < term.cols; x++) {
     const cell = line?.getCell(x)
+    // The trailer of a double-width pair: its two columns are already inside
+    // the wide glyph's 2ch box. Emitting its placeholder space as well would
+    // add a phantom column per CJK glyph and push the row past its window.
+    if (cell !== undefined && cell.getWidth() === 0) continue
     const chars = cell === undefined || cell.getChars() === '' ? ' ' : cell.getChars()
+    const wide = cell !== undefined && cell.getWidth() === 2
     let fg = color(cell, true)
     let bg = color(cell, false)
     if (cell?.isInverse() !== 0 && cell !== undefined) [fg, bg] = [bg, fg]
@@ -81,13 +97,17 @@ for (let y = 0; y < term.rows; y++) {
       strike: cell !== undefined && cell.isStrikethrough() !== 0,
       dim: cell !== undefined && cell.isDim() !== 0,
     }
-    if (style !== null && JSON.stringify(style) === JSON.stringify(next)) {
-      text += chars
-      continue
+    const same = style !== null && JSON.stringify(style) === JSON.stringify(next)
+    if (!same) {
+      flush()
+      style = next
     }
-    flush()
-    style = next
-    text = chars
+    if (wide) {
+      parts.push(htmlEsc(buf), `<i class="w">${htmlEsc(chars)}</i>`)
+      buf = ''
+    } else {
+      buf += chars
+    }
   }
   flush()
   const spans = runs.map(run => {
@@ -97,7 +117,7 @@ for (let y = 0; y < term.rows; y++) {
       + (run.style.underline ? ';text-decoration:underline' : '')
       + (run.style.strike ? ';text-decoration:line-through' : '')
       + (run.style.dim ? ';opacity:.55' : '')
-    return `<span style="${css}">${htmlEsc(run.text)}</span>`
+    return `<span style="${css}">${run.html}</span>`
   }).join('')
   lines.push(spans)
 }
@@ -108,7 +128,8 @@ const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
            border-radius:10px; box-shadow:0 18px 50px rgba(0,0,0,.55); }
   .titlebar { display:flex; gap:8px; padding:0 4px 12px 2px; }
   .dot { width:12px; height:12px; border-radius:50%; }
-  pre { margin:0; font:15px/1.32 Menlo,'SF Mono','Cascadia Mono',monospace;
+  .w { display:inline-block; width:2ch; text-align:center; font-style:normal; }
+  pre { margin:0; font:15px/1 Menlo,'SF Mono','Cascadia Mono',monospace;
         letter-spacing:0; white-space:pre; }
 </style></head><body><div class="frame" id="term">
   <div class="titlebar"><div class="dot" style="background:#ff5f57"></div>
