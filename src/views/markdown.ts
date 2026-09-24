@@ -25,7 +25,7 @@
 
 import type { Style } from '../kit/cell.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
-import { NO_LINE_END, NO_LINE_START, splitUnits, spreadCjkLatin, textWidth } from '../kit/text.ts'
+import { NO_LINE_END, NO_LINE_START, splitUnits, spreadCjkLatin, textWidth, truncate } from '../kit/text.ts'
 
 /** One styled run of text; consecutive runs with equal style are merged. */
 export interface MdSeg {
@@ -77,7 +77,21 @@ type Block =
   | { kind: 'hr' }
   | { kind: 'quote'; lines: string[] }
   | { kind: 'list'; items: ListItem[] }
+  | { kind: 'table'; header: string[]; align: TableAlign[]; rows: string[][] }
   | { kind: 'paragraph'; text: string }
+
+/** A table column's alignment, read off the delimiter row GFM-style. */
+type TableAlign = 'left' | 'center' | 'right'
+
+/**
+ * The widest a single table column may grow before its cells truncate.
+ * Without a cap one long cell stretches every column's padding until the
+ * table no longer fits and the whole thing collapses to stacked cards.
+ */
+const TABLE_CELL_CAP = 24
+
+/** The rendered width of the column separator, ` │ `. */
+const TABLE_GAP = 3
 
 /** One list item: its marker (rendered), its content lines, and children. */
 interface ListItem {
@@ -93,10 +107,11 @@ interface ListItem {
 /**
  * Split markdown source into blocks.
  *
- * Deliberately small: paragraphs, headings, rules, quotes, and lists (with
- * nesting by two-space indent and task items). Tables are not attempted — a
- * pipe row falls through as paragraph text, which is the honest fallback at a
- * sixty-column measure.
+ * Deliberately small: paragraphs, headings, rules, quotes, lists (with
+ * nesting by two-space indent and task items), and GFM tables. A pipe row
+ * without its delimiter is not a table yet and stays paragraph text, which
+ * is also the streaming rule: the header renders as prose until the
+ * delimiter arrives.
  * @param text - The markdown source.
  * @returns Blocks in document order.
  */
@@ -147,12 +162,18 @@ export function parseBlocks(text: string): Block[] {
       index = next
       continue
     }
+    const table = parseTable(lines, index)
+    if (table !== undefined) {
+      blocks.push(table.block)
+      index = table.next
+      continue
+    }
     // Paragraph: until a blank line or the start of another block.
     const paragraph: string[] = [line]
     index++
     while (index < lines.length) {
       const current = lines[index] ?? ''
-      if (current.trim() === '' || isBlockStart(current)) break
+      if (current.trim() === '' || isBlockStart(current) || isTableStart(lines, index)) break
       paragraph.push(current)
       index++
     }
@@ -172,6 +193,63 @@ function isBlockStart(line: string): boolean {
 /** Whether a line opens a list item at any of the accepted indents. */
 function isListMarker(line: string): boolean {
   return /^(-|\*|\+)\s\S/u.test(line) || /^\d{1,3}\.\s\S/u.test(line)
+}
+
+/** Split one table row into cells; outer pipes optional, `\|` is v1-out. */
+function splitTableRow(line: string): string[] {
+  let body = line.trim()
+  if (body.startsWith('|')) body = body.slice(1)
+  if (body.endsWith('|')) body = body.slice(0, -1)
+  return body.split('|').map(cell => cell.trim())
+}
+
+/** Read one delimiter cell's alignment; undefined when it is not a delimiter. */
+function delimiterAlign(cell: string): TableAlign | undefined {
+  if (!/^:?-+:?$/u.test(cell) || !cell.includes('-')) return undefined
+  if (cell.startsWith(':') && cell.endsWith(':')) return 'center'
+  if (cell.endsWith(':')) return 'right'
+  return 'left'
+}
+
+/** Whether the line pair at `index` opens a table (header row + delimiter). */
+function isTableStart(lines: readonly string[], index: number): boolean {
+  return parseTable(lines, index) !== undefined
+}
+
+/**
+ * Parse a GFM table starting at `index`: a header pipe-row, a delimiter row
+ * (`---`, `:---`, `---:`, `:---:` per cell), then consecutive pipe-rows.
+ * The column counts must agree; anything else is not a table and stays
+ * paragraph text, which keeps half-streamed tables honest — the header
+ * renders as prose until its delimiter arrives.
+ * @param lines - The document lines.
+ * @param index - The candidate header row.
+ * @returns The block and the index of the first line after the table.
+ */
+function parseTable(lines: readonly string[], index: number): { block: Block; next: number } | undefined {
+  const headerLine = lines[index] ?? ''
+  if (!headerLine.includes('|')) return undefined
+  const delimiterLine = lines[index + 1] ?? ''
+  if (!delimiterLine.includes('|') || !delimiterLine.includes('-')) return undefined
+  const header = splitTableRow(headerLine)
+  const delimiter = splitTableRow(delimiterLine)
+  if (header.length !== delimiter.length || header.length === 0) return undefined
+  const align: TableAlign[] = []
+  for (const cell of delimiter) {
+    const alignment = delimiterAlign(cell)
+    if (alignment === undefined) return undefined
+    align.push(alignment)
+  }
+  const rows: string[][] = []
+  let cursor = index + 2
+  while (cursor < lines.length) {
+    const line = lines[cursor] ?? ''
+    if (line.trim() === '' || !line.includes('|')) break
+    const cells = splitTableRow(line)
+    rows.push(cells.slice(0, header.length))
+    cursor++
+  }
+  return { block: { kind: 'table', header, align, rows }, next: cursor }
 }
 
 /**
@@ -401,6 +479,8 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
     }
     case 'paragraph':
       return wrapSegments(parseInline(block.text, base, palette.code), width).map(toRow)
+    case 'table':
+      return tableRows(block, width, base, palette)
     case 'list':
       return listRows(block.items, width, base, palette, 0)
     /* c8 ignore next 2 -- the union is exhaustive. */
@@ -445,6 +525,141 @@ function listRows(
       }
     }
     if (item.children.length > 0) rows.push(...listRows(item.children, width, base, palette, depth + 1))
+  }
+  return rows
+}
+
+/* ------------------------------------------------------------------ */
+/* Tables                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Render a table: columns truly aligned, or stacked when they cannot fit.
+ *
+ * This is the one place the transcript buys real tabular reading — a model's
+ * comparison of five options against three criteria carries meaning only
+ * when the columns line up. The strategy follows what terminal renderers
+ * (Claude Code among them) converged on: measure every column to its widest
+ * cell, pad each cell to that width respecting the delimiter row's
+ * alignment, and separate columns with a dim `│`. When the aligned grid is
+ * wider than the measure, the table does not wrap into mush — it stacks:
+ * one card per record, `header: value` down the screen, which preserves the
+ * pairing the table was asserting in the first place.
+ */
+function tableRows(
+  block: { header: string[]; align: TableAlign[]; rows: string[][] },
+  width: number,
+  base: Style,
+  palette: ResolvedPalette,
+): MdRow[] {
+  // Cells truncate to the cap on the source text, then parse inline, so a
+  // cell may still carry bold or a code colour — measured after parsing,
+  // because links expand (`label` → `label (url)`) and the seam dressing
+  // adds thin spaces.
+  const parseCell = (cell: string, style: Style): MdSeg[] =>
+    parseInline(truncate(cell, TABLE_CELL_CAP, '…'), style, palette.code)
+  const headerSegs = block.header.map(cell => parseCell(cell, { ...base, bold: true }))
+  const rowSegs = block.rows.map(row =>
+    block.header.map((_name, column) => parseCell(row[column] ?? '', base)))
+  const columnWidths = block.header.map((_name, column) => {
+    let widest = textWidth(segsText(headerSegs[column] ?? []))
+    for (const row of rowSegs) widest = Math.max(widest, textWidth(segsText(row[column] ?? [])))
+    return widest
+  })
+  const alignedWidth = columnWidths.reduce((sum, w) => sum + w, 0) + TABLE_GAP * (block.header.length - 1)
+  return alignedWidth <= width
+    ? alignedTableRows(headerSegs, rowSegs, block.align, columnWidths, base)
+    : stackedTableRows(headerSegs, rowSegs, base, width)
+}
+
+/** The joined plain text of a segment list, as a row's `text` will read it. */
+function segsText(segments: readonly MdSeg[]): string {
+  return segments.map(segment => segment.text).join('')
+}
+
+/**
+ * Pad a cell's segments to the column width. Padding lands on the first or
+ * last segment (or both, for centre) so the row's plain text still measures
+ * exactly the column arithmetic. An empty cell pads to blank spaces in the
+ * given style.
+ */
+function padCell(segments: readonly MdSeg[], width: number, align: TableAlign, fill: Style): MdSeg[] {
+  const pad = Math.max(0, width - textWidth(segsText(segments)))
+  if (segments.length === 0) return [{ text: ' '.repeat(width), style: fill }]
+  const out = [...segments]
+  if (pad === 0) return out
+  const lead = align === 'right' ? pad : align === 'center' ? Math.floor(pad / 2) : 0
+  const trail = pad - lead
+  if (lead > 0) {
+    const first = out[0]!
+    out[0] = { text: `${' '.repeat(lead)}${first.text}`, style: first.style }
+  }
+  if (trail > 0) {
+    const last = out[out.length - 1]!
+    out[out.length - 1] = { text: `${last.text}${' '.repeat(trail)}`, style: last.style }
+  }
+  return out
+}
+
+/** The aligned grid: header, a dim rule, then rows with dim separators. */
+function alignedTableRows(
+  headerSegs: MdSeg[][],
+  rowSegs: readonly MdSeg[][][],
+  align: readonly TableAlign[],
+  columnWidths: readonly number[],
+  base: Style,
+): MdRow[] {
+  const rows: MdRow[] = []
+  const dim = { ...base, dim: true }
+  const separator: MdSeg = { text: ' │ ', style: dim }
+  const joinCells = (cells: readonly MdSeg[][]): MdRow => {
+    const segments: MdSeg[] = []
+    cells.forEach((cell, column) => {
+      if (column > 0) segments.push(separator)
+      segments.push(...padCell(cell, columnWidths[column] ?? 0, align[column] ?? 'left', base))
+    })
+    return toRow(mergeSegs(segments))
+  }
+  rows.push(joinCells(headerSegs))
+  // The rule under the header: column dashes joined at the crossings.
+  const ruleSegs: MdSeg[] = []
+  columnWidths.forEach((w, column) => {
+    if (column > 0) ruleSegs.push({ text: '─┼─', style: dim })
+    ruleSegs.push({ text: '─'.repeat(w), style: dim })
+  })
+  rows.push(toRow(mergeSegs(ruleSegs)))
+  for (const row of rowSegs) rows.push(joinCells(row))
+  return rows
+}
+
+/** The stacked cards: one `header: value` block per record. */
+function stackedTableRows(
+  headerSegs: MdSeg[][],
+  rowSegs: readonly MdSeg[][][],
+  base: Style,
+  width: number,
+): MdRow[] {
+  const rows: MdRow[] = []
+  const blank: MdRow = { text: '', segments: [{ text: '', style: base }] }
+  // The name column is the headers', not the values': cards align on the
+  // field names, and a wide value must not indent every label.
+  const nameWidth = Math.max(1, ...headerSegs.map(names => textWidth(segsText(names))))
+  for (const [record, row] of rowSegs.entries()) {
+    if (record > 0) rows.push(blank)
+    headerSegs.forEach((nameSegs, column) => {
+      const name = padCell(nameSegs, nameWidth, 'right', base)
+      const label: MdSeg = { text: ': ', style: { ...base, dim: true } }
+      const used = nameWidth + 2
+      const room = Math.max(1, width - used)
+      const wrapped = wrapSegments(row[column] ?? [], room)
+      wrapped.forEach((line, index) => {
+        const segments = [
+          ...(index === 0 ? [...name, label] : [{ text: ' '.repeat(used), style: base }]),
+          ...line,
+        ]
+        rows.push(toRow(mergeSegs(segments)))
+      })
+    })
   }
   return rows
 }

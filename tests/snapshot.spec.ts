@@ -293,7 +293,7 @@ describe('desktop snapshots', () => {
     view.app.document.beginAssistant({ turn: 0, step: 0 }, 10)
     view.app.document.streamChunk(
       { turn: 0, step: 0 },
-      { kind: 'text', text: '# Streaming the parser\n\n## Why it was slow\n\nThe old code buffered **everything** — *every* byte — before it emitted a `token`. Now it reads chunk by chunk:\n\n1. read a chunk\n2. drain complete tokens\n3. hold partial ones\n   - a partial word waits\n   - a partial fence waits too\n\n> The first token now arrives when the first complete word does,\n> not when the whole file has been read.\n\n---\n\n### Details\n\nA ~~buffer-everything~~ approach cannot stream; ~~no~~ yes, ~~gone~~. See [the parser](src/parser.ts) for the shape.\n' },
+      { kind: 'text', text: '# Streaming the parser\n\n## Why it was slow\n\nThe old code buffered **everything** — *every* byte — before it emitted a `token`. Now it reads chunk by chunk:\n\n1. read a chunk\n2. drain complete tokens\n3. hold partial ones\n   - a partial word waits\n   - a partial fence waits too\n\n> The first token now arrives when the first complete word does,\n> not when the whole file has been read.\n\n---\n\n### Details\n\nA ~~buffer-everything~~ approach cannot stream; ~~no~~ yes, ~~gone~~. See [the parser](src/parser.ts) for the shape.\n\n| stage | does | cost |\n|---|---|---:|\n| read | one chunk | 1 |\n| drain | complete tokens | 2 |\n| hold | a partial fence | 3 |\n' },
       20,
     )
     view.app.document.endStep({ turn: 0, step: 0 }, 30)

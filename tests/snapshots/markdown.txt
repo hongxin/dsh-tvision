@@ -1,8 +1,6 @@
   File  View  Agent  Tools  Window  Help                                               dsh tvision
 ╔════════════════════════════ Conversation ════════════════════════════╗┌──────── Project ─────────┐
-║> You                                                                 ║  o project files indexed …│
-║  explain the fix                                                     ║                           │
-║                                                                      ║                           │
+║                                                                      ║  o project files indexed …│
 ║| Agent · 0.0s                                                        ║                           │
 ║  Streaming the parser                                                ║                           │
 ║  Why it was slow                                                     ║                           │
@@ -11,17 +9,19 @@
 ║  1. read a chunk                                                     ║                           │
 ║  2. drain complete tokens                                            ║                           │
 ║  3. hold partial ones                                                ║                           │
-║    • a partial word waits                                            ║  ──────── Tasks ──────────┐
-║    • a partial fence waits too                                       ║  o tasks yet.             │
-║  │ The first token now arrives when the first complete word does,    ║                           │
-║  │ not when the whole file has been read.                            ║                           │
+║    • a partial word waits                                            ║                           │
+║    • a partial fence waits too                                       ║                           │
+║  │ The first token now arrives when the first complete word does,    ║  ──────── Tasks ──────────┐
+║  │ not when the whole file has been read.                            ║  o tasks yet.             │
 ║  ──────────────────────────────────────────────────────────────────  ║                           │
 ║  ### Details                                                         ║                           │
 ║  A buffer-everything approach cannot stream; no yes, gone. See the   ║                           │
 ║  parser (src/parser.ts) for the shape.                               ║                           │
-║                                                                      ║                           │
-║                                                                      ║                           │
-║                                                                      ║                           │
+║  stage │ does            │ cost                                      ║                           │
+║  ──────┼─────────────────┼─────                                      ║                           │
+║  read  │ one chunk       │    1                                      ║                           │
+║  drain │ complete tokens │    2                                      ║                           │
+║  hold  │ a partial fence │    3                                      ║                           │
 ║──────────────────────────────────────────────────────────────────────║                           │
 ║                                                                      ║  ─────────────────────────┘
 ║dsh> Type a message · / for commands · F1 help · F10 menu             ║

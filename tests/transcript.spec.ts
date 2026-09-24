@@ -862,6 +862,30 @@ describe('markdown in the transcript', () => {
     expect(boldRow?.text).toBe(`  ${boldRow?.segments?.map(seg => seg.text).join('') ?? ''}`)
   })
 
+  it('a table renders with aligned columns inside the transcript', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.settleAssistant({ turn: 0, step: 0 }, [
+      { kind: 'text', text: 'The layers:\n\n| layer | job |\n|---|---|\n| kit | the substrate |\n| app | the desktop |' },
+    ], 2)
+    const rows = buildRows(document.all, 70, palette, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    const texts = rows.map(row => row.text)
+    // The header and both data rows share one column arithmetic: the pipes
+    // land at the same offset on every row.
+    expect(texts).toContain('  layer │ job          ')
+    expect(texts).toContain('  kit   │ the substrate')
+    expect(texts).toContain('  app   │ the desktop  ')
+    // Every row fits the body measure, padded cells included.
+    for (const row of rows) {
+      if (row.text.includes('│')) expect(textWidth(row.text)).toBeLessThanOrEqual(70)
+    }
+    // The header row is bold and the separator dim.
+    const header = rows.find(row => row.text.includes('layer │'))
+    expect(header?.segments?.some(seg => seg.style.bold === true && seg.text.includes('layer'))).toBe(true)
+    const rule = rows.find(row => row.text.includes('──'))
+    expect(rule?.segments?.every(seg => seg.style.dim === true)).toBe(true)
+  })
+
   it('a streamed fence gets its box before settle — the gap fix', () => {
     const document = new SessionDocument()
     document.beginAssistant({ turn: 0, step: 0 }, 1)

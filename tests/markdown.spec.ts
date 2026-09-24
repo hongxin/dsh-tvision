@@ -61,8 +61,49 @@ describe('block parsing', () => {
     expect(ordered[1]?.startsWith('   ')).toBe(true)
   })
 
-  it('a pipe row falls through as plain paragraph text', () => {
-    expect(rowsOf('| a | b |\n|---|---|')).toEqual(['| a | b | |---|---|'])
+  it('a pipe row without its delimiter stays paragraph text', () => {
+    expect(rowsOf('a | b')).toEqual(['a | b'])
+  })
+
+  it('a table renders with truly aligned columns', () => {
+    const rows = rowsOf('| module | role |\n|---|---|\n| kit | the substrate |\n| app | the desktop |')
+    expect(rows).toEqual([
+      'module │ role         ',
+      '───────┼──────────────',
+      'kit    │ the substrate',
+      'app    │ the desktop  ',
+    ])
+    // The delimiter row's alignment is honoured: right pads left, centre splits.
+    const aligned = rowsOf('| count | name |\n|---:|:---:|\n| 7 | x |')
+    expect(aligned[2]).toBe('    7 │  x  ')
+  })
+
+  it('a table stacks field-per-record when the measure cannot hold it', () => {
+    // Aligned this wants 6+3+9 = 18 columns; 17 cannot hold it, so the
+    // pairing survives as one card per record instead of wrapping into mush.
+    const rows = rowsOf('| module | role |\n|---|---|\n| kit | substrate |', 17)
+    expect(rows).toEqual(['module: kit', '  role: substrate'])
+  })
+
+  it('cells truncate at the cap and may carry inline styling', () => {
+    const rows = markdownRows(
+      '| name | notes |\n|---|---|\n| `x` | a-very-long-cell-that-will-not-fit |',
+      60, base, palette,
+    )
+    const data = rows[2]?.text ?? ''
+    expect(data).toContain('…')
+    expect(data).toContain('x')
+  })
+
+  it('a header without its delimiter yet renders as prose (streaming rule)', () => {
+    expect(rowsOf('| a | b |')).toEqual(['| a | b |'])
+  })
+
+  it('CJK cells measure two columns each', () => {
+    const rows = rowsOf('| 模块 | 职责 |\n|---|---|\n| kit | 底座 |')
+    expect(rows[0]).toBe('模块 │ 职责')
+    // 'kit' pads to the header's four columns.
+    expect(rows[2]).toBe('kit  │ 底座')
   })
 
   it('leading and trailing blank lines collapse', () => {
