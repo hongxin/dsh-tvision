@@ -7,8 +7,9 @@
  * rendering the markers literally (`**bold**` with its asterisks) reads as
  * broken. This module turns a text piece into styled rows, following the
  * conventions terminal renderers converged on (pi's TUI, glamour, Claude
- * Code): structure is expressed with attributes — bold, underline, reverse —
- * because attributes survive every skin, and colour is spent almost nowhere.
+ * Code): structure is expressed with attributes — bold, underline — because
+ * attributes survive every skin, and colour is spent where it says something
+ * (an inline code span wears the palette's code colour, not an inverse bar).
  *
  * Two properties are load-bearing:
  *
@@ -30,6 +31,11 @@ import { NO_LINE_END, NO_LINE_START, splitUnits, spreadCjkLatin, textWidth } fro
 export interface MdSeg {
   readonly text: string
   readonly style: Style
+  /**
+   * Marks a run whose characters are data — an inline code span — and which
+   * must therefore reach the screen verbatim: no CJK/Latin seam dressing.
+   */
+  readonly verbatim?: true
 }
 
 /** One visual row: the plain text (search and snapshots read this) and runs. */
@@ -248,14 +254,17 @@ function parseList(lines: string[], index: number, indent: string): [ListItem[],
  * Parse inline markdown into styled segments.
  *
  * Recognises `**bold**`, `*italic*` / `_italic_` (word-bounded), `` `code` ``
- * (reverse video), `~~strike~~` (strictly spaced or word-bound content), and
- * `[text](url)`. Every construct requires its closing partner to have
- * arrived, so a half-streamed marker renders literally.
+ * (the code colour, no background — a colour reads as emphasis, an inverse
+ * bar reads as a highlighter swung at every mention), `~~strike~~` (strictly
+ * spaced or word-bound content), and `[text](url)`. Every construct requires
+ * its closing partner to have arrived, so a half-streamed marker renders
+ * literally.
  * @param text - The source line, markers included.
  * @param base - The style segments compose over.
+ * @param code - The palette's code style; its foreground colour is adopted.
  * @returns Styled segments covering the whole line.
  */
-export function parseInline(text: string, base: Style): MdSeg[] {
+export function parseInline(text: string, base: Style, code: Style): MdSeg[] {
   const segments: MdSeg[] = []
   // The scanning cursor over the raw source; plain text between constructs
   // accumulates in `pending`.
@@ -274,8 +283,10 @@ export function parseInline(text: string, base: Style): MdSeg[] {
       const close = rest.indexOf('`', 1)
       if (close > 0) {
         flush(base)
-        // Code characters are data: no CJK seam, no further parsing.
-        segments.push({ text: rest.slice(1, close), style: { ...base, inverse: true } })
+        // Code characters are data: no CJK seam, no further parsing. Only
+        // the foreground changes — the background stays the body's, so the
+        // span reads as a colour and not as a block of highlighter.
+        segments.push({ text: rest.slice(1, close), style: { ...base, fg: code.fg }, verbatim: true })
         cursor += close + 1
         continue
       }
@@ -285,7 +296,7 @@ export function parseInline(text: string, base: Style): MdSeg[] {
       const span = matchSpan(rest, '**')
       if (span !== undefined) {
         flush(base)
-        segments.push(...parseInline(span, { ...base, bold: true }))
+        segments.push(...parseInline(span, { ...base, bold: true }, code))
         cursor += span.length + 4
         continue
       }
@@ -296,7 +307,7 @@ export function parseInline(text: string, base: Style): MdSeg[] {
       const span = matchSpan(rest, '~~')
       if (span !== undefined && !/^~+$/u.test(span.trim()) && span.trim() !== '') {
         flush(base)
-        segments.push(...parseInline(span, { ...base, strike: true }))
+        segments.push(...parseInline(span, { ...base, strike: true }, code))
         cursor += span.length + 4
         continue
       }
@@ -318,7 +329,7 @@ export function parseInline(text: string, base: Style): MdSeg[] {
       const span = matchSpan(rest, marker, source[cursor - 1])
       if (span !== undefined) {
         flush(base)
-        segments.push(...parseInline(span, { ...base, italic: true }))
+        segments.push(...parseInline(span, { ...base, italic: true }, code))
         cursor += span.length + 2
         continue
       }
@@ -327,9 +338,10 @@ export function parseInline(text: string, base: Style): MdSeg[] {
     cursor += 1
   }
   flush(base)
-  // The CJK/Latin seam is display dressing; apply it to non-code runs only.
+  // The CJK/Latin seam is display dressing; code runs are data and keep their
+  // characters exactly as the model wrote them.
   return segments.map(segment =>
-    segment.style.inverse === true
+    segment.verbatim === true
       ? segment
       : { ...segment, text: spreadCjkLatin(segment.text) }
   )
@@ -369,7 +381,7 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
         ? { ...base, bold: true, underline: true }
         : { ...base, bold: true }
       const source = block.level >= 3 ? `${'#'.repeat(block.level)} ${block.text}` : block.text
-      return wrapSegments(parseInline(source, style), width).map(toRow)
+      return wrapSegments(parseInline(source, style, palette.code), width).map(toRow)
     }
     case 'hr':
       return [{ text: '─'.repeat(width), segments: [{ text: '─'.repeat(width), style: base }] }]
@@ -377,7 +389,7 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
       const quoteStyle = { ...palette.reasoning, italic: true }
       const rows: MdRow[] = []
       for (const line of block.lines) {
-        const inner = wrapSegments(parseInline(line, quoteStyle), Math.max(1, width - 2))
+        const inner = wrapSegments(parseInline(line, quoteStyle, palette.code), Math.max(1, width - 2))
         for (const line2 of inner) {
           rows.push({
             text: `│ ${line2.map(seg => seg.text).join('')}`,
@@ -388,7 +400,7 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
       return rows
     }
     case 'paragraph':
-      return wrapSegments(parseInline(block.text, base), width).map(toRow)
+      return wrapSegments(parseInline(block.text, base, palette.code), width).map(toRow)
     case 'list':
       return listRows(block.items, width, base, palette, 0)
     /* c8 ignore next 2 -- the union is exhaustive. */
@@ -419,7 +431,7 @@ function listRows(
     // first logical line carries the marker, every later visual row hangs by
     // the marker's width so content stays aligned.
     for (const [lineIndex, line] of item.lines.entries()) {
-      const wrapped = wrapSegments(parseInline(line, base), room)
+      const wrapped = wrapSegments(parseInline(line, base, palette.code), room)
       for (const [wrapIndex, segs] of wrapped.entries()) {
         const carriesMarker = lineIndex === 0 && wrapIndex === 0
         const prefixText = carriesMarker ? `${indent}${item.marker}` : `${indent}${hang}`

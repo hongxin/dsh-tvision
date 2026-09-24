@@ -13,6 +13,7 @@ import { splitUnits, textWidth } from '../src/kit/text.ts'
 
 const palette = resolvePalette(TURBO_VISION)
 const base = palette.bodyText
+const code = palette.code
 const rowsOf = (text: string, width = 60): string[] => markdownRows(text, width, base, palette).map(row => row.text)
 
 describe('block parsing', () => {
@@ -71,53 +72,55 @@ describe('block parsing', () => {
 
 describe('inline parsing', () => {
   it('bold, italic, code, and strike compose over the base', () => {
-    const segments = parseInline('**b** *i* `c` ~~s~~', base)
+    const segments = parseInline('**b** *i* `c` ~~s~~', base, code)
     const byFlag = segments.map(segment => ({
       bold: segment.style.bold === true,
       italic: segment.style.italic === true,
-      inverse: segment.style.inverse === true,
+      code: segment.style.fg === code.fg,
       strike: segment.style.strike === true,
+      inverse: segment.style.inverse === true,
     }))
-    expect(byFlag).toContainEqual({ bold: true, italic: false, inverse: false, strike: false })
-    expect(byFlag).toContainEqual({ bold: false, italic: true, inverse: false, strike: false })
-    expect(byFlag).toContainEqual({ bold: false, italic: false, inverse: true, strike: false })
-    expect(byFlag).toContainEqual({ bold: false, italic: false, inverse: false, strike: true })
+    expect(byFlag).toContainEqual({ bold: true, italic: false, code: false, strike: false, inverse: false })
+    expect(byFlag).toContainEqual({ bold: false, italic: true, code: false, strike: false, inverse: false })
+    expect(byFlag).toContainEqual({ bold: false, italic: false, code: true, strike: false, inverse: false })
+    expect(byFlag).toContainEqual({ bold: false, italic: false, code: false, strike: true, inverse: false })
   })
 
   it('nesting composes: bold containing italic and code', () => {
-    const segments = parseInline('**b *i* `c`**', base)
+    const segments = parseInline('**b *i* `c`**', base, code)
     expect(segments.some(s => s.style.bold === true && s.style.italic === true)).toBe(true)
-    expect(segments.some(s => s.style.bold === true && s.style.inverse === true)).toBe(true)
+    expect(segments.some(s => s.style.bold === true && s.style.fg === code.fg)).toBe(true)
   })
 
   it('unclosed markers render literally — the streaming rule', () => {
-    expect(parseInline('**oops', base)).toEqual([{ text: '**oops', style: base }])
-    expect(parseInline('a `unclosed', base).map(s => s.text).join('')).toBe('a `unclosed')
-    expect(parseInline('[t](u', base)).toEqual([{ text: '[t](u', style: base }])
+    expect(parseInline('**oops', base, code)).toEqual([{ text: '**oops', style: base }])
+    expect(parseInline('a `unclosed', base, code).map(s => s.text).join('')).toBe('a `unclosed')
+    expect(parseInline('[t](u', base, code)).toEqual([{ text: '[t](u', style: base }])
   })
 
   it('mid-expression asterisks and underscores stay literal', () => {
-    expect(parseInline('a * b * c', base)).toEqual([{ text: 'a * b * c', style: base }])
-    expect(parseInline('snake_case_word', base)).toEqual([{ text: 'snake_case_word', style: base }])
+    expect(parseInline('a * b * c', base, code)).toEqual([{ text: 'a * b * c', style: base }])
+    expect(parseInline('snake_case_word', base, code)).toEqual([{ text: 'snake_case_word', style: base }])
   })
 
   it('strike is strict: tilde-only and empty spans stay literal', () => {
-    expect(parseInline('~~ ~~', base)).toEqual([{ text: '~~ ~~', style: base }])
-    expect(parseInline('~~~~', base)).toEqual([{ text: '~~~~', style: base }])
+    expect(parseInline('~~ ~~', base, code)).toEqual([{ text: '~~ ~~', style: base }])
+    expect(parseInline('~~~~', base, code)).toEqual([{ text: '~~~~', style: base }])
     // A real strike still works.
-    expect(parseInline('~~gone~~', base)[0]?.style.strike).toBe(true)
+    expect(parseInline('~~gone~~', base, code)[0]?.style.strike).toBe(true)
   })
 
   it('links render text plainly, and the url only when it differs', () => {
-    expect(parseInline('[DeepSeek](https://deepseek.com)', base))
+    expect(parseInline('[DeepSeek](https://deepseek.com)', base, code))
       .toEqual([{ text: 'DeepSeek (https://deepseek.com)', style: base }])
-    expect(parseInline('[x](x)', base)).toEqual([{ text: 'x', style: base }])
+    expect(parseInline('[x](x)', base, code)).toEqual([{ text: 'x', style: base }])
   })
 
   it('code spans are data: no CJK seam inside', () => {
-    const segments = parseInline('`中文x`', base)
+    const segments = parseInline('`中文x`', base, code)
     expect(segments[0]?.text).toBe('中文x')
-    expect(segments[0]?.style.inverse).toBe(true)
+    expect(segments[0]?.style.fg).toBe(code.fg)
+    expect(segments[0]?.verbatim).toBe(true)
   })
 })
 
@@ -146,7 +149,7 @@ describe('the segment-aware wrapper', () => {
   it('honours kinsoku with styled spans across the realistic width range', () => {
     const paragraph = '这个解析器把整个文档读入内存之后才开始输出第一个token，所以首token的延迟不会低于整个文件的读取时间。正确的做法是边读边切词。'
     for (let width = 20; width <= 78; width++) {
-      const lines = wrapSegments(parseInline(paragraph, { ...base, bold: true }), width)
+      const lines = wrapSegments(parseInline(paragraph, { ...base, bold: true }, code), width)
       for (const line of lines) {
         const text = line.map(segment => segment.text).join('')
         expect(textWidth(text), `width ${width}`).toBeLessThanOrEqual(width)
