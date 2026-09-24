@@ -100,6 +100,24 @@ export interface AppHost {
 }
 
 /** Static description of the application, for the About box and the title bar. */
+/**
+ * One reading of the token-meter projection: the durable log's true usage
+ * split (uncached input and output billed, cache read and write separately)
+ * and, when the provider has reported it, the current context pressure and
+ * window. Every field except the token counts is optional — the projection
+ * publishes what the log can prove.
+ */
+export interface MeterSnapshot {
+  readonly input: number
+  readonly output: number
+  readonly cacheRead: number
+  readonly cacheWrite: number
+  /** Newest provider-reported prompt size, when there is one. */
+  readonly pressure?: number
+  /** The capacity the newest request was sized against, when known. */
+  readonly contextWindow?: number
+}
+
 export interface AppInfo {
   readonly name: string
   readonly version: string
@@ -767,6 +785,14 @@ export class TvisionApp {
   private credential: { configured: boolean; source?: string } | undefined
 
   /**
+   * The token-meter projection, when the composition provides one: the
+   * authoritative usage fold (uncached input, output, and both cache
+   * columns) plus the provider-reported context pressure. Undefined leaves
+   * the status bar on the event-derived numbers the document accumulates.
+   */
+  private meter: MeterSnapshot | undefined
+
+  /**
    * @param options - Terminal, host, identity, and skin.
    */
   constructor(options: AppOptions) {
@@ -1125,8 +1151,12 @@ export class TvisionApp {
   /** The right-hand status cells. */
   private buildStatus(): readonly { text: string; priority?: number; tone?: 'normal' | 'warning' | 'error' | 'success' }[] {
     const tokens = this.document.tokens
-    const window = this.options.host.contextWindow?.() ?? 0
-    const pressure = window > 0 ? this.document.contextTokens / window : 0
+    // The projection's numbers outrank the document's hand-rolled fold: they
+    // are the same replay dsh's own compaction and occupancy surfaces read.
+    const meter = this.meter
+    const window = meter?.contextWindow ?? this.options.host.contextWindow?.() ?? 0
+    const pressureTokens = meter?.pressure ?? this.document.contextTokens
+    const pressure = window > 0 ? pressureTokens / window : 0
     // Priorities decide what survives a narrow terminal, and the ordering is the
     // reverse of how interesting each thing is: the model route is the one fact
     // that must never be lost, the context meter is the one that matters most
@@ -1141,7 +1171,18 @@ export class TvisionApp {
         tone: pressure > 0.9 ? 'error' : pressure > 0.7 ? 'warning' : 'normal',
       })
     }
-    cells.push({ text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`, priority: 2 })
+    if (meter !== undefined) {
+      // ⇄ is the cache column: tokens the provider served from (or wrote to)
+      // cache rather than billing as fresh input. A zero cache is omitted —
+      // ⇄0 is noise, and the shorter cell survives status-bar eviction.
+      const cache = meter.cacheRead + meter.cacheWrite
+      cells.push({
+        text: `↑${formatTokens(meter.input)} ↓${formatTokens(meter.output)}${cache > 0 ? ` ⇄${formatTokens(cache)}` : ''}`,
+        priority: 2,
+      })
+    } else {
+      cells.push({ text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`, priority: 2 })
+    }
     // The unconfigured key outranks the trivia: it is the one cell that says
     // why nothing works yet.
     if (this.credential?.configured === false) {
@@ -1913,6 +1954,28 @@ export class TvisionApp {
       this.notify(`Could not index the workspace: ${describeError(error)}`, 'error')
       return undefined
     }
+  }
+
+  /**
+   * Publish one reading of the token-meter projection.
+   *
+   * Equal successive readings are dropped, so a projection refreshed on every
+   * session event cannot spin the render loop.
+   * @param meter - The projection's values, or undefined when the composition
+   * provides no meter (the status bar falls back to event-derived numbers).
+   */
+  setMeter(meter: MeterSnapshot | undefined): void {
+    const current = this.meter
+    if (meter === undefined) {
+      if (current === undefined) return
+    } else if (current !== undefined
+      && current.input === meter.input && current.output === meter.output
+      && current.cacheRead === meter.cacheRead && current.cacheWrite === meter.cacheWrite
+      && current.pressure === meter.pressure && current.contextWindow === meter.contextWindow) {
+      return
+    }
+    this.meter = meter
+    this.windows.requestRender()
   }
 
   /**

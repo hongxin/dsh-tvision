@@ -412,11 +412,13 @@ export function mount(input: MountInput): () => void {
   //    touched the filesystem also invalidates the project index, which is why
   //    the fold reports that rather than the view guessing at it.
   const invalidateContext = (handle as unknown as { invalidateContext?: () => void }).invalidateContext
+  let readMeter: ((session: unknown) => void) | undefined
   const offSession = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
     // A new advertised context window rides this event and nothing else; the
     // host's memoised value dies with it. The cast mirrors the event's own shape.
     if ((event as { type?: string }).type === 'request/context') invalidateContext?.()
+    if (readMeter !== undefined) readMeter(session)
     void app.applyEvent(event as unknown as { type: string; seq: number; time: number; data?: unknown })
       .then(() => {
         if (isFileMutatingTool(event)) void refreshProject()
@@ -497,6 +499,50 @@ export function mount(input: MountInput): () => void {
     }
     sync()
     return registry.onJobsChanged(sync)
+  })
+
+  // The token meter is a dsh-base projection, not a service we own: when the
+  // composition registers session projections, the registry folds the same
+  // event before our handler runs (it subscribed first, in dsh-base), so one
+  // snapshot read per session event is current by construction and carries
+  // the authoritative usage split — uncached input, output, both cache
+  // columns — plus the provider-reported context pressure. Without the
+  // registry the status bar keeps its event-derived numbers.
+  let meterBroken = false
+  void ctx.inject(['sessionProjections'], () => {
+    const projections = ctx.get('sessionProjections') as unknown as {
+      snapshot: (session: unknown) => { values: Record<string, unknown> }
+    }
+    readMeter = (session) => {
+      if (meterBroken) return
+      try {
+        const { values } = projections.snapshot(session)
+        const usage = values['tokenUsage'] as {
+          uncachedInputTokens?: number
+          outputTokens?: number
+          cacheReadTokens?: number
+          cacheWriteTokens?: number
+        } | undefined
+        const context = values['contextPressure'] as {
+          pressureTokens?: number
+          contextWindow?: number
+        } | undefined
+        if (usage === undefined && context === undefined) return
+        app.setMeter({
+          input: usage?.uncachedInputTokens ?? 0,
+          output: usage?.outputTokens ?? 0,
+          cacheRead: usage?.cacheReadTokens ?? 0,
+          cacheWrite: usage?.cacheWriteTokens ?? 0,
+          ...(context?.pressureTokens === undefined ? {} : { pressure: context.pressureTokens }),
+          ...(context?.contextWindow === undefined ? {} : { contextWindow: context.contextWindow }),
+        })
+      } catch (error) {
+        // Warn once: a projection that throws will throw on every event, and
+        // a per-event warning line is its own flood.
+        meterBroken = true
+        ctx.logger.warn(`tvision: token-meter snapshot failed: ${String(error)}`)
+      }
+    }
   })
 
   let projectTimer: ReturnType<typeof setTimeout> | undefined

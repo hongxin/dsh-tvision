@@ -185,6 +185,13 @@ def main():
         # enough to the end that scroll position cannot hide it.
         checks.append(('markdown rendered as structure, not markers', 'chunk by chunk' in screen and '│ A fence' in screen and '**' not in screen))
         checks.append(('the jobs window holds the background job', 'sleep 5' in screen and '▸' in screen))
+        # The token-meter projection reached the status bar. Asserted on the
+        # byte stream, like the other transient content: a long status notice
+        # (the breakpoint banner) legitimately evicts the token cell from the
+        # final screen, and the cache column exists only in the projection's
+        # usage split — its presence proves adapter usage -> durable log ->
+        # projection -> snapshot -> screen.
+        checks.append(('the token-meter projection drove the status bar', '⇄' in text and '↑' in text))
         counts = {seq: text.count(seq) for seq in TEARDOWN}
         checks.append(('every terminal mode restored exactly once', all(count == 1 for count in counts.values())))
         checks.append(('the cursor was left visible', text.count(CURSOR_SHOW) >= 1))

@@ -135,7 +135,7 @@ async function streamTurn(turn, res, model) {
       prompt_tokens: turn.usage.prompt_tokens,
       completion_tokens: turn.usage.completion_tokens,
       total_tokens: turn.usage.total,
-      prompt_tokens_details: { cached_tokens: 0 },
+      prompt_tokens_details: { cached_tokens: 96 },
     },
   })
   res.write('data: [DONE]\n\n')

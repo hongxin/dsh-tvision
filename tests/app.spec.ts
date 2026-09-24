@@ -327,6 +327,24 @@ describe('completions', () => {
     expect(text).toContain('Choose the model route')
   })
 
+  it('the token-meter projection outranks the event-derived status numbers', () => {
+    const { app } = build()
+    app.start()
+    app.setMeter({ input: 1234, output: 567, cacheRead: 89_000, cacheWrite: 1_200, pressure: 64_000, contextWindow: 128_000 })
+    app.windows.requestRender()
+    const text = (app.windows.paint()).lines().join('\n')
+    // The cache column only exists in the projection's usage split, and the
+    // occupancy comes from the provider-reported pressure, not the fold.
+    expect(text).toContain('⇄')
+    expect(text).toContain('50%')
+    // An identical reading is dropped rather than repainting; a changed one
+    // repaints. Both must at least settle without throwing.
+    app.setMeter({ input: 1234, output: 567, cacheRead: 89_000, cacheWrite: 1_200, pressure: 64_000, contextWindow: 128_000 })
+    app.setMeter(undefined)
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).not.toContain('⇄')
+  })
+
   it('walks the completion list with the arrows and accepts with Tab', () => {
     const { app } = build()
     app.start()
