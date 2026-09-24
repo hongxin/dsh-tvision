@@ -109,6 +109,7 @@ F1 Help      F2 New       F3 Open      F4 Tools     F5 Focus     F6 Next      F7
 | **Project** | `F7` | Files in the workspace, ranked; choosing one references it. |
 | **Tasks** | `F8` | The agent's own todo list, live. |
 | **Sessions** | `F3` | Resumable sessions, newest first; Enter hands the process over. |
+| **Breakpoints** | `Ctrl+B` | Rules that hold a tool before it runs; Enter toggles, `d` deletes. |
 | **Jobs** | — | Background jobs the agent started. |
 | **Help** | `F1` | The key list, plus the mouse reference. |
 | **About** | — | Identity, session, cwd, skin. |
@@ -278,7 +279,7 @@ confines the DSH-specific code to one file.
 
 ### `src/index.ts` — the harness bridge
 
-Three seams, each of which fails *silently* if done wrong, so each is called out
+Four seams, each of which fails *silently* if done wrong, so each is called out
 in the code:
 
 - **Conversation** is one `session/event` subscription folded into the document.
@@ -287,6 +288,10 @@ in the code:
   calling `next()`. With no answerer the harness fails closed to `unavailable`
   and every gated tool call is denied with a message about a missing approval
   channel — which is the state the upstream TUI ships in, and which this fixes.
+- **Breakpoints** are the `tools/pre-execute` waterfall — the same
+  claim-and-delegate shape, one step earlier. A pass-through returns `next()`
+  rather than a synthetic allow, so every later gate (approvals included)
+  still runs; only a refusal short-circuits.
 - **Commands** are `execute(agent, line, attachments, signal)` — four arguments.
   The runtime reads `signal.aborted` before dispatching, so passing the signal in
   the attachments slot throws.
@@ -442,6 +447,27 @@ re-inserted `storage`, `session-reference`, and `tool-ask-user` — all of which
 whole profile failed to boot. The patch now inserts only rows base does not
 provide, and says so, because the next person to add a row will make the same
 assumption.
+
+**Why breakpoints own their dialog instead of returning `ask`.** The
+`tools/pre-execute` waterfall has a three-way answer — allow, deny, ask — and
+`ask` looks like exactly what a breakpoint wants. But `ask` routes to the
+approval service, whose outcome vocabulary is single-grant by design
+(`allowed-once` or refusal); "always this session" cannot be said through it.
+So the desktop answers the waterfall itself with a three-choice dialog and
+keeps the session grant on its own side — which also keeps breakpoint grants
+out of the harness's audited approval record, where they would misrepresent
+what the user decided. Allow always *delegates* (`next()`), never a synthetic
+allow: a call that clears the breakpoint still owes its turn to every later
+gate. Parallel matching calls queue behind one dialog rather than preempting
+each other into silent denials; the residual case — a queued breakpoint dialog
+superseding another source's approval dialog — settles each as its own
+fail-closed answer, and is accepted rather than building a general
+multi-dialog queue. Dismissal, Escape, and abort all refuse: a breakpoint is
+a stop the user asked for, so the call must not slip through because its
+dialog went away. Two composition limits are accepted and documented: an
+earlier-registered `pre-execute` listener that does not delegate hides calls
+from the breakpoints entirely, and subagent calls (whose `exec.agent` is the
+subagent) are not ours to hold in v1.
 
 ---
 

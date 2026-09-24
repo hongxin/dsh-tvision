@@ -34,7 +34,9 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-tools'
 import { TvisionApp, WINDOW_IDS, type AppHost } from './app/app.ts'
+import type { BreakpointRule } from './app/breakpoints.ts'
 import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
 import { DEFAULT_SKIN_ID, findSkin, SKINS, skinOrDefault, type Skin } from './kit/skin.ts'
@@ -72,8 +74,19 @@ export interface Config {
   readonly goodbye?: string
 }
 
-/** The persisted preference shape: today, the remembered skin. */
-const TVISION_SETTINGS = z.object({ skin: z.string().default(DEFAULT_SKIN_ID) })
+/**
+ * The persisted preference shape: the remembered skin and the breakpoint
+ * rules. Both default, so a settings file written by an older tvision opens
+ * without migration.
+ */
+const TVISION_SETTINGS = z.object({
+  skin: z.string().default(DEFAULT_SKIN_ID),
+  breakpoints: z.array(z.object({
+    pattern: z.string().min(1),
+    action: z.union(['ask', 'deny']),
+    enabled: z.boolean().default(true),
+  })).default([]),
+})
 
 /** How long to wait after a file-changing tool before re-indexing the workspace. */
 export const PROJECT_REINDEX_DEBOUNCE_MS = 1500
@@ -143,14 +156,15 @@ export interface MountInput {
     kill?: (id: string, caller: unknown, reason?: string) => void
   }
   /**
-   * The settings seam: `read` yields the remembered skin id when the settings
-   * service has resolved one, `save` persists a new choice. Both optional —
-   * a composition without the service boots with the flag/default alone.
+   * The settings seam: `read` yields the remembered preferences when the
+   * settings service has resolved them, `save` persists a patch of only the
+   * keys that changed. Both optional — a composition without the service
+   * boots with the flag/default alone.
    */
   readonly settings: {
-    read?(): string | undefined
-    save?(id: string): void
-    watch?(listener: (next: { skin?: string }) => void): void
+    read?(): { skin?: string; breakpoints?: BreakpointRule[] } | undefined
+    save?(patch: { skin?: string; breakpoints?: BreakpointRule[] }): void
+    watch?(listener: (next: { skin?: string; breakpoints?: BreakpointRule[] }) => void): void
   }
   /**
    * The credentials seam: `sync` pushes the resolved key state into the app
@@ -296,10 +310,8 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       }
       jobsSlot.kill(id, agent)
     },
-    saveSettings: (patch: { skin?: string; breakpoints?: { pattern: string; action: 'ask' | 'deny'; enabled: boolean }[] }): void => {
-      // Breakpoint persistence arrives with the settings schema extension;
-      // until then the skin is the only stored preference.
-      if (patch.skin !== undefined) input.settings.save?.(patch.skin)
+    saveSettings: (patch: { skin?: string; breakpoints?: BreakpointRule[] }): void => {
+      input.settings.save?.(patch)
     },
     saveApiKey: (key: string): Promise<void> => {
       if (input.credentials.save === undefined) {
@@ -368,8 +380,12 @@ export function mount(input: MountInput): () => void {
       sessionId: String(agent.id),
       cwd: agent.session.header.cwd ?? process.cwd(),
     },
-    skin: resolveSkin(config, input.settings.read?.()),
+    skin: resolveSkin(config, input.settings.read?.()?.skin),
   })
+  // Stored breakpoints are the starting rules. Applied without writing back:
+  // a load that saved would rewrite the file on every boot for nothing.
+  const storedBreakpoints = input.settings.read?.()?.breakpoints
+  if (storedBreakpoints !== undefined) app.setBreakpoints(storedBreakpoints, { persist: false })
   attach?.(app)
   // Credential state flows one way: the seam pushes, the app displays. The
   // seam may have read the service before this effect ran, so attach the sink
@@ -383,11 +399,13 @@ export function mount(input: MountInput): () => void {
   input.credentials.sync = credentialSeam.sync
 
   // The settings user layer resolves after this effect runs on a cold boot, so
-  // the remembered skin can arrive one frame late; watch keeps it honest.
+  // the remembered skin can arrive one frame late; watch keeps it honest — and
+  // covers a rule edited in another window of the same file.
   input.settings.watch?.((next) => {
     if (config.skin === undefined && next.skin !== undefined) {
       app.setSkin(skinOrDefault(next.skin))
     }
+    if (next.breakpoints !== undefined) app.setBreakpoints(next.breakpoints, { persist: false })
   })
 
   // 1. The conversation: one subscription, folded into the document. A tool that
@@ -427,6 +445,24 @@ export function mount(input: MountInput): () => void {
   const offQuestions = ctx.on('user-questions/request', async (request, next) => {
     const answer = await app.askQuestions(request)
     return answer ?? next()
+  })
+
+  // 5. Breakpoints: hold matching tool calls before they run. Returning
+  //    `next()` on every pass-through and every grant is the point — the call
+  //    clears *this* gate, and every later one (the approval waterfall
+  //    included) still gets its turn. Only a refusal short-circuits, which is
+  //    what fail-closed means at this seam. The registry re-checks
+  //    cancellation once the dialog settles, so an aborted turn surfaces as
+  //    an abort rather than a denial.
+  const offBreakpoints = ctx.on('tools/pre-execute', async (exec, next) => {
+    if (exec.agent !== agent) return next()
+    const decision = await app.checkBreakpoint({
+      name: exec.name,
+      arguments: exec.arguments,
+      ...(exec.signal === undefined ? {} : { signal: exec.signal }),
+    })
+    if (decision === 'deny') return { kind: 'deny', reason: 'stopped by a tvision breakpoint' }
+    return next()
   })
 
   // 5. The window contents the host owns. Both are populated once at mount and
@@ -550,6 +586,7 @@ export function mount(input: MountInput): () => void {
     if (projectTimer !== undefined) clearTimeout(projectTimer)
     offApproval()
     offQuestions()
+    offBreakpoints()
     terminal.onEscapeTimeout = undefined
     app.stop()
     terminal.stop()
@@ -578,14 +615,14 @@ function createSettingsSeam(ctx: Context): MountInput['settings'] {
   void ctx.inject(['settings'], () => {
     const service = ctx.get('settings') as unknown as {
       register: (ns: string, schema: unknown) => {
-        get: () => { skin?: string }
-        watch: (listener: (next: { skin?: string }) => void) => () => void
-        update: (patch: { skin?: string }) => Promise<void>
+        get: () => { skin?: string; breakpoints?: BreakpointRule[] }
+        watch: (listener: (next: { skin?: string; breakpoints?: BreakpointRule[] }) => void) => () => void
+        update: (patch: { skin?: string; breakpoints?: BreakpointRule[] }) => Promise<void>
       }
     }
     const scope = service.register('tvision', TVISION_SETTINGS)
-    seam.read = () => scope.get().skin
-    seam.save = (id) => { void scope.update({ skin: id }) }
+    seam.read = () => scope.get()
+    seam.save = (patch) => { void scope.update(patch) }
     seam.watch = (listener) => scope.watch(listener)
   })
   return seam

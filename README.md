@@ -98,6 +98,7 @@ Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch director
 | `Ctrl+R` | Show / hide the agent's reasoning |
 | `Ctrl+Z` | Zoom the focused window |
 | `Ctrl+F` | Search the transcript — `Enter` next hit, `Shift+Enter` previous, `Esc` back where you were |
+| `Ctrl+B` | Breakpoints — rules that hold a tool before it runs |
 | `Ctrl+L` | Redraw the screen |
 
 ### Menus
@@ -174,6 +175,7 @@ This is not a chat TUI with a border. It is a window manager:
 - **A function-key strip generated from the keymap**, so the legend cannot lie about the keys.
 - **A fixed single-line composer**, because a growing input box shoves the conversation around.
 - **Modal dialogs as real windows**, so an approval prompt gets the same keyboard, mouse, and focus handling as everything else.
+- **Tool breakpoints**, the debugger's breakpoint moved onto the agent: `/breakpoint bash(rm *)` holds a matching call in a modal before it runs — `Y` once, `a` this session, `n` refuses and the model is told. `--deny` rules refuse without asking. `Ctrl+B` manages the rules; patterns match the one-line label the transcript shows.
 
 The transcript has a one-character gutter — `>` you, `|` the agent, `·` reasoning, `~` a tool, `!` an error — so the shape of a conversation is visible before its words are. Tool calls are one line collapsed and a framed body expanded, with colour-coded diffs.
 

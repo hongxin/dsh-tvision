@@ -56,6 +56,23 @@ const TURNS = [
     followupContent: 'The command printed wire-tool-ok. Tool round trip complete.',
     usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
   },
+  {
+    // Held by the breakpoint rule the wire script sets first; y lets it run.
+    match: 'wire-break',
+    reasoning: 'The user set a breakpoint on this call. Make it, and the hold becomes visible.',
+    toolCall: { id: 'call_mock_break', name: 'bash', arguments: '{"command":"echo wire-break-ok"}' },
+    followupContent: 'The breakpoint held the call, ran it once on approval, and the echo landed. Round trip complete.',
+    usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
+  },
+  {
+    // The same rule, refused this time: the denial is the tool result the
+    // model has to answer for, which is the whole point of a breakpoint.
+    match: 'wire-deny',
+    reasoning: 'The same breakpoint again. Make the call; expect the refusal.',
+    toolCall: { id: 'call_mock_break2', name: 'bash', arguments: '{"command":"echo wire-break-deny"}' },
+    followupContent: 'The call was refused at the breakpoint — the denial came back as the tool result, and the model saw it.',
+    usage: { prompt_tokens: 210, completion_tokens: 34, total_tokens: 244 },
+  },
 ]
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))

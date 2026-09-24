@@ -56,6 +56,16 @@ SWEEP = [
         ('down', b'\x1b[B'),
         ('escape', b'\x1b'),
     ]),
+    # Breakpoints window over the real terminal: open, walk a row, toggle it,
+    # close. The window is chrome like any other, so it owes the same
+    # invariants — no write past the edge, no scroll, rows exactly wide.
+    ('breakpoints', 100, 30, [
+        ('breakpoint-rule', b'/breakpoint bash(demo*)\r'),
+        ('open', b'\x02'),
+        ('down', b'\x1b[B'),
+        ('toggle', b'\r'),
+        ('close', b'\x02'),
+    ]),
     # The keys land after the demo has gone quiet, so the help window is actually
     # painted and captured rather than being opened and closed between two frames
     # of a stream.

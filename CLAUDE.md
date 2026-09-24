@@ -14,7 +14,7 @@ first; this file is only about verifying changes cheaply.
 | L0 | `npm test` | units, whole-desktop tests with a fake host, snapshots, **golden-log replay** (`tests/golden-replay.spec.ts`) | ~1 s, free | fold bugs against real event shapes, width/color/rendering invariants, regressions of everything below |
 | L1 | `npm run sweep:pty && npm test` | demo under a real pty, 18 scenarios, invariant assertions on the captures | ~2 min, free | real-terminal rendering drift, teardown modes, scroll/overflow |
 | L2 | `npm run verify:profile` | boots `dsh --profile tvision` for real; no key needed | ~15 s, free | profile install, dependency closure, patch composition, mount/teardown |
-| L3 | `npm run verify:wire` | real profile + `scripts/mock-llm.mjs` scripted endpoint: a reasoner turn, a CJK turn, a tool round trip (approval answered with Enter) | ~30 s, free | adapter contract drift, waterfall/approval end-to-end, streaming shapes |
+| L3 | `npm run verify:wire` | real profile + `scripts/mock-llm.mjs` scripted endpoint: a reasoner turn, a CJK turn, a tool round trip (approval answered with Enter), a breakpoint held then run (`y`) and refused (`n`) | ~30 s, free | adapter contract drift, waterfall/approval end-to-end, streaming shapes |
 | L4 | manual | one real model turn: cheapest model, `max_tokens` low, one short prompt | ~cents | the only unmockable residue — whether real DeepSeek matches the mock's wire assumptions |
 
 `npm run verify:all` = L0 + L2 + L3 and prints one line per check.

@@ -45,6 +45,24 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
+    # The breakpoint turn: a local rule, a matching call, run once. y answers
+    # the breakpoint dialog; the approval that may follow takes Enter as
+    # before. Then the same rule refuses the second call outright — the
+    # denial is the tool result the model has to answer for.
+    ('break-set', b'/breakpoint bash(*wire-break*)\r'),
+    ('dwell', b''),
+    ('break-prompt', b'wire-break\r'),
+    ('dwell', b''),
+    ('break-allow', b'y'),
+    ('dwell', b''),
+    ('approve-or-noop', b'\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('break-prompt-2', b'wire-deny\r'),
+    ('dwell', b''),
+    ('break-deny', b'n'),
+    ('dwell', b''),
+    ('dwell', b''),
     # Markdown turn first: its constructs must land on the real screen.
     ('md-prompt', b'wire-markdown\r'),
     ('dwell', b''),
@@ -149,6 +167,18 @@ def main():
         # on the screen — the stream legitimately holds a half-streamed '**'
         # frame before the closing partner arrives (the streaming rule).
         checks.append(('the tool card settled with its output', 'wire-tool-ok' in text and '~ bash' in text))
+        # Breakpoints: the dialog held the first matching call and y ran it;
+        # n refused the second. The refused call's card has scrolled off the
+        # final screen by now and a collapsed card does not repaint the
+        # denial reason, so the refusal is judged where it matters — the mock
+        # saw a follow-up request for the deny turn, which only happens once
+        # the denial has come back to the model as the tool result.
+        checks.append(('the breakpoint held the call and let it run',
+                       'Breakpoint' in text and 'wire-break-ok' in text))
+        deny_followups = sum(1 for line in mock_log.splitlines()
+                             if 'wire-deny' in line and 'followup=true' in line)
+        checks.append(('the refusal reached the model as the tool result',
+                       'wire-break-deny' in text and deny_followups >= 1))
         # Style runs split the byte stream (SGR between the quote bar and its
         # text), so markdown's judgement runs on the replayed screen, where the
         # content is contiguous. The markdown turn sits third of four, close

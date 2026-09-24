@@ -1996,8 +1996,10 @@ export class TvisionApp {
    * Replace the rule set, the seam the settings watch drives; also the path
    * the window's own edits take, so both stay in one order.
    * @param rules - The rules, first-wins.
+   * @param options - `persist: false` applies a load or an external edit
+   *   without writing it straight back.
    */
-  setBreakpoints(rules: readonly BreakpointRule[]): void {
+  setBreakpoints(rules: readonly BreakpointRule[], options: { persist?: boolean } = {}): void {
     this.breakpointRules = rules
     // A grant dies with the rule it belonged to — there is nothing left to
     // match it against, and a rule re-added later should ask again.
@@ -2005,7 +2007,9 @@ export class TvisionApp {
     for (const pattern of this.breakpointGrants) {
       if (!patterns.has(pattern)) this.breakpointGrants.delete(pattern)
     }
-    this.options.host.saveSettings?.({ breakpoints: rules.map(rule => ({ ...rule })) })
+    if (options.persist !== false) {
+      this.options.host.saveSettings?.({ breakpoints: rules.map(rule => ({ ...rule })) })
+    }
     this.setWindowTitle(WINDOW_IDS.breakpoints, `Breakpoints — ${rules.length}`)
     this.windows.requestRender()
   }
