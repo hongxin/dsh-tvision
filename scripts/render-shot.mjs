@@ -5,17 +5,28 @@
  * through @xterm/headless (the same emulator the test suite trusts), walks
  * the final screen cell by cell, and emits one <span> per style run. Point
  * a browser at the output and screenshot the `#term` element for a PNG —
- * that is how the four under docs/screenshots/ are made.
- *
- * The full recipe, per skin:
+ * that is how the five skin stills under docs/screenshots/ are made:
  *
  *   python3 - <<'PY'                     # capture in a real pty, truecolor
  *   import sys; sys.path.insert(0, 'scripts')
  *   from pty_common import run
- *   data = run(['node', 'lib/demo.js', '--skin', 'tvision'], [], 100, 30, 24, 0.4)
+ *   data = run(['node', 'lib/demo.js', '--skin', 'tvision'], [], 100, 30, 10, 0.4)
  *   open('/tmp/tvision.bin', 'wb').write(data)
  *   PY
  *   node scripts/render-shot.mjs /tmp/tvision.bin 100 30 /tmp/tvision.html
+ *
+ * The animated demo.gif is recorded against the REAL profile plus the mock
+ * endpoint (lib/demo.js has no Cordis waterfall, so it cannot show approvals
+ * or breakpoints). Record a timestamped cast, cut keyframes ONLY at
+ * synchronized-output bracket closes (a cut inside a bracket replays a
+ * half-repainted frame no terminal ever showed), render each prefix, and
+ * assemble at full resolution — pre-scaling eats 1px borders into the
+ * palette. Two more hard-won rules: decode the pty stream with an
+ * incremental UTF-8 decoder (per-chunk decoding corrupts glyphs that
+ * straddle a read boundary) and run one warm-up model turn first, because
+ * the first request carries the injected skills reminder as its last user
+ * message and cannot match a mock keyword. `MOCK_SLOW_MS=140` on the mock
+ * spreads the stream enough for 4 fps sampling.
  *
  * Usage: node render-shot.mjs <capture.bin> <columns> <rows> <out.html>
  */
