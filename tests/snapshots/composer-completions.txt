@@ -18,11 +18,11 @@
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
-║                                                                      ║                           │
 ║──────────────────────────────────────────────────────────────────────║                           │
 ║▸ /model  Choose the model route                                      ║                           │
 ║  /compact  Compact the context                                       ║                           │
 ║  /breakpoint  hold a tool before it runs: bash(rm *)                 ║                           │
+║  /attach  attach files to your next message: /attach notes.md img.png║                           │
 ║                                                                      ║  ─────────────────────────┘
 ║dsh> /                                                                ║
 ╚══════════════════════════════════════════════════════════════════════╝  ░░░░░░░░░░░░░░░░░░░░░░░░░░

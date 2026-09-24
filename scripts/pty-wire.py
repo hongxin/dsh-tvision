@@ -45,6 +45,16 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
+    # Attachment turn: /attach admits package.json through the real store,
+    # the next message carries it as a durable file part, and the adapter
+    # resolves it to model-visible handle text in the wire request. It runs
+    # early so the markdown turn — whose constructs are judged on the final
+    # screen — stays close to the end.
+    ('attach', b'/attach package.json\r'),
+    ('dwell', b''),
+    ('attach-prompt', b'wire-attach\r'),
+    ('dwell', b''),
+    ('dwell', b''),
     # The breakpoint turn: a local rule, a matching call, run once. y answers
     # the breakpoint dialog; the approval that may follow takes Enter as
     # before. Then the same rule refuses the second call outright — the
@@ -77,6 +87,8 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
+    # Open View ▸ Jobs through the menu bar: F10, right to View, and the
+    # &Jobs accelerator.
     ('menu', b'\x1b[21~'),
     ('dwell', b''),
     ('to-view', b'\x1b[C'),
@@ -192,6 +204,14 @@ def main():
         # usage split — its presence proves adapter usage -> durable log ->
         # projection -> snapshot -> screen.
         checks.append(('the token-meter projection drove the status bar', '⇄' in text and '↑' in text))
+        # The attachment round trip: /attach admitted package.json into the
+        # durable store, the next message carried it as a file part, and the
+        # adapter handed the model the handle text `[File "package.json"
+        # (…bytes…)]` — the file name on the wire request is the proof that
+        # the file itself, not a path mention, rode along.
+        attach_line = next((line for line in mock_log.splitlines() if 'wire-attach' in line), '')
+        checks.append(('the attached file reached the model as handle text',
+                       'package.json' in attach_line and 'model-visible' in text))
         counts = {seq: text.count(seq) for seq in TEARDOWN}
         checks.append(('every terminal mode restored exactly once', all(count == 1 for count in counts.values())))
         checks.append(('the cursor was left visible', text.count(CURSOR_SHOW) >= 1))

@@ -345,6 +345,40 @@ describe('completions', () => {
     expect((app.windows.paint()).lines().join('\n')).not.toContain('⇄')
   })
 
+  it('attached files ride exactly one message', async () => {
+    const sent: { text: string; files: string[] }[] = []
+    const { app } = build({
+      send: (text, files) => { sent.push({ text, files: (files ?? []).map(file => file.name) }) },
+      attach: async () => [
+        { ok: true, path: 'docs/a.png', id: 'att-1', name: 'a.png', bytes: 1234 },
+        { ok: false, path: 'gone.md', error: 'no such file' },
+      ],
+    })
+    app.start()
+    type(app, '/attach docs/a.png gone.md\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    // The failed path says so in the status line, and the placeholder reminds
+    // what is pending.
+    app.windows.requestRender()
+    const afterAttach = (app.windows.paint()).lines().join('\n')
+    expect(afterAttach).toContain('gone.md')
+    expect(afterAttach).toContain('[attached] a.png')
+    type(app, 'please read\r')
+    expect(sent).toEqual([{ text: 'please read', files: ['a.png'] }])
+    // The very next message carries nothing: attachments are one-shot.
+    type(app, 'again\r')
+    expect(sent[1]).toEqual({ text: 'again', files: [] })
+  })
+
+  it('/attach without a store refuses honestly', async () => {
+    const { app } = build()
+    app.start()
+    type(app, '/attach a.png\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).toContain('attachment store')
+  })
+
   it('walks the completion list with the arrows and accepts with Tab', () => {
     const { app } = build()
     app.start()

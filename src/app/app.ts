@@ -55,9 +55,32 @@ export interface AppTerminal {
 }
 
 /** What the application needs from the agent behind it. */
+/**
+ * One file admitted into durable attachment storage, waiting to ride the next
+ * submitted message. The id is the store's content-addressed identifier.
+ */
+export interface PendingAttachment {
+  readonly id: string
+  readonly name: string
+  readonly bytes: number
+}
+
+/** The outcome of admitting one `/attach` path. */
+export type AttachOutcome =
+  | { readonly ok: true; readonly path: string; readonly id: string; readonly name: string; readonly bytes: number }
+  | { readonly ok: false; readonly path: string; readonly error: string }
+
 export interface AppHost {
-  /** Send a user turn. */
-  send(text: string): void
+  /**
+   * Send a user turn, carrying any pending attachments as durable file parts.
+   * A host that cannot attach simply ignores the second argument.
+   */
+  send(text: string, attachments?: readonly PendingAttachment[]): void
+  /**
+   * Admit files on disk as durable attachments for the next message. Absent
+   * means the composition provides no attachment store and `/attach` says so.
+   */
+  attach?(paths: readonly string[]): Promise<readonly AttachOutcome[]>
   /** Run a slash command line; returns the text to show, or undefined when unknown. */
   runCommand?(line: string): Promise<{ text?: string; kind: 'success' | 'error' } | undefined>
   /** Ask the agent to stop. */
@@ -793,6 +816,13 @@ export class TvisionApp {
   private meter: MeterSnapshot | undefined
 
   /**
+   * Files admitted by `/attach` that have not ridden a message yet. They are
+   * host-side durable objects; this list only decides what the next submit
+   * carries and what the composer's placeholder reminds the user of.
+   */
+  private pendingAttachments: readonly PendingAttachment[] = []
+
+  /**
    * @param options - Terminal, host, identity, and skin.
    */
   constructor(options: AppOptions) {
@@ -828,7 +858,11 @@ export class TvisionApp {
         history: () => this.history,
         complete: token => this.complete(token),
         prompt: () => this.sigil(),
-        placeholder: 'Type a message · / for commands · F1 help · F10 menu',
+        placeholder: () => this.pendingAttachments.length === 0
+          ? 'Type a message · / for commands · F1 help · F10 menu'
+          // The reminder is the affordance: nothing else on screen says the
+          // next message will carry files.
+          : `[attached] ${this.pendingAttachments.map(file => file.name).join(', ')} — rides this message · /attach --clear`,
         changed: () => {
           this.composer.refresh()
           this.windows.requestRender()
@@ -1508,6 +1542,14 @@ export class TvisionApp {
       this.windows.requestRender()
       return
     }
+    // Attachments are also the desktop's own command, for the same reason as
+    // breakpoints: the admitting host call is ours, not a harness command.
+    if (trimmed === '/attach' || trimmed.startsWith('/attach ')) {
+      this.document.addUser(trimmed, Date.now(), { local: true })
+      void this.runAttachCommand(trimmed.slice('/attach'.length).trim())
+      this.windows.requestRender()
+      return
+    }
     if (trimmed.startsWith('/') && this.options.host.runCommand !== undefined) {
       this.document.addUser(trimmed, Date.now(), { local: true })
       this.windows.requestRender()
@@ -1527,7 +1569,53 @@ export class TvisionApp {
     // transcript immediately rather than when the host echoes the event back.
     this.document.addUser(trimmed, Date.now(), { local: true })
     this.windows.requestRender()
-    this.options.host.send(trimmed)
+    // Pending attachments ride exactly one message — the one that submits them.
+    this.options.host.send(trimmed, this.pendingAttachments.length > 0 ? [...this.pendingAttachments] : undefined)
+    this.pendingAttachments = []
+  }
+
+  /**
+   * Run `/attach`'s argument: paths admit files, `--clear` drops everything,
+   * and no argument reports what is pending.
+   * @param args - Everything after the command word.
+   */
+  private async runAttachCommand(args: string): Promise<void> {
+    if (args === '') {
+      if (this.pendingAttachments.length === 0) {
+        this.notify('Usage: /attach <path…>  · e.g. /attach screenshot.png notes.md', 'info')
+        return
+      }
+      const names = this.pendingAttachments.map(file => file.name).join(', ')
+      this.notify(`Attached: ${names} — rides your next message · /attach --clear drops all`, 'info')
+      return
+    }
+    if (args === '--clear') {
+      const dropped = this.pendingAttachments.length
+      this.pendingAttachments = []
+      this.notify(dropped > 0 ? `Dropped ${dropped} attachment${dropped === 1 ? '' : 's'}.` : 'Nothing was attached.', 'info')
+      return
+    }
+    if (this.options.host.attach === undefined) {
+      this.notify('This composition provides no attachment store; files cannot ride a message.', 'error')
+      return
+    }
+    let outcomes: readonly AttachOutcome[]
+    try {
+      outcomes = await this.options.host.attach(args.split(/\s+/u).filter(path => path !== ''))
+    } catch (error) {
+      this.notify(error instanceof Error ? error.message : String(error), 'error')
+      return
+    }
+    const admitted: PendingAttachment[] = []
+    for (const outcome of outcomes) {
+      if (outcome.ok) admitted.push({ id: outcome.id, name: outcome.name, bytes: outcome.bytes })
+      else this.notify(`Could not attach ${outcome.path}: ${outcome.error}`, 'error')
+    }
+    this.pendingAttachments = [...this.pendingAttachments, ...admitted]
+    if (admitted.length > 0) {
+      const names = admitted.map(file => file.name).join(', ')
+      this.notify(`Attached: ${names} — rides your next message · /attach --clear drops all`, 'info')
+    }
   }
 
   /**
@@ -1560,7 +1648,8 @@ export class TvisionApp {
     if (token.startsWith('/')) {
       const prefix = token.slice(1).toLowerCase()
       const commands = [...(this.options.host.commands?.() ?? []),
-        { name: 'breakpoint', description: 'hold a tool before it runs: bash(rm *)' }]
+        { name: 'breakpoint', description: 'hold a tool before it runs: bash(rm *)' },
+        { name: 'attach', description: 'attach files to your next message: /attach notes.md img.png' }]
       return commands
         .filter(command => command.name.toLowerCase().startsWith(prefix))
         .map(command => ({

@@ -69,6 +69,16 @@ const TURNS = [
     usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
   },
   {
+    // The attachment round trip: the profile's /attach admits a file through
+    // the real dsh-attachment store, the next message carries it as a durable
+    // file part, and the adapter resolves it to model-visible handle text —
+    // which is what the last user message on the wire contains.
+    match: 'wire-attach',
+    reasoning: 'The user attached a file. Confirm the handle text made the file model-visible.',
+    content: 'The attachment rode the message as a durable file part; the file is model-visible. Round trip complete.',
+    usage: { prompt_tokens: 230, completion_tokens: 30, total_tokens: 260 },
+  },
+  {
     // The same rule, refused this time: the denial is the tool result the
     // model has to answer for, which is the whole point of a breakpoint.
     match: 'wire-deny',

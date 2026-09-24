@@ -23,6 +23,8 @@
  * @module dsh-tvision
  */
 
+import { basename, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -30,12 +32,13 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-tools'
-import { TvisionApp, WINDOW_IDS, type AppHost } from './app/app.ts'
+import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment } from './app/app.ts'
 import type { BreakpointRule } from './app/breakpoints.ts'
 import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
@@ -220,12 +223,30 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
   const jobsSlot = input.jobsSlot
 
   const host: AppHost = {
-    send(text: string): void {
+    send(text: string, attachments?: readonly PendingAttachment[]): void {
       // A prompt sent while the agent is working steers the current step;
       // otherwise it opens a turn. That is what a terminal user expects from
-      // Enter, and it is the same rule the web surface uses.
+      // Enter, and it is the same rule the web surface uses. Attached files
+      // ride as durable file parts after the text — the adapter resolves each
+      // to its model-visible handle, so the model sees the file, not a path
+      // it has to be trusted to open.
+      const content: ({ type: 'text'; text: string } | { type: 'file'; attachment: { attachmentId: AttachmentId; name: string; bytes: number } })[] = [
+        { type: 'text', text },
+      ]
+      for (const file of attachments ?? []) {
+        content.push({
+          type: 'file',
+          attachment: {
+            // The brand is dsh-attachment's; `attach()` stored the ref's own
+            // id verbatim, so restoring it here is a round trip, not a guess.
+            attachmentId: file.id as AttachmentId,
+            name: file.name,
+            bytes: file.bytes,
+          },
+        })
+      }
       const message = createUserMessage({
-        content: [{ type: 'text', text }],
+        content,
         source: { kind: 'user' },
       })
       try {
@@ -234,6 +255,32 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       } catch (error) {
         app?.document.addNotice('error', `Could not send: ${describe(error)}`, Date.now())
       }
+    },
+    async attach(paths: readonly string[]): Promise<readonly AttachOutcome[]> {
+      // The store is dsh-attachment-local's, composed by dsh-base; asking per
+      // call (rather than injecting) is deliberate — `/attach` is rare, and a
+      // composition without the store deserves the honest per-file error.
+      const store = ctx.get('attachments') as unknown as {
+        admitEncodedFile: (input: { data: string; name?: string }) => Promise<{ attachmentId: string; name: string; bytes: number }>
+      } | undefined
+      if (store === undefined) {
+        return paths.map(path => ({ ok: false as const, path, error: 'no attachment store in this composition' }))
+      }
+      const root = agent.session.header.cwd ?? process.cwd()
+      const outcomes: AttachOutcome[] = []
+      for (const path of paths) {
+        try {
+          const bytes = await readFile(resolve(root, path))
+          const ref = await store.admitEncodedFile({
+            data: bytes.toString('base64'),
+            name: basename(path),
+          })
+          outcomes.push({ ok: true, path, id: String(ref.attachmentId), name: ref.name, bytes: ref.bytes })
+        } catch (error) {
+          outcomes.push({ ok: false as const, path, error: describe(error) })
+        }
+      }
+      return outcomes
     },
     async runCommand(line: string) {
       const controller = new AbortController()
