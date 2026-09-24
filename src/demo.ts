@@ -85,7 +85,7 @@ type Beat =
 const SCRIPT: readonly Beat[] = [
   { kind: 'reasoning', text: 'They want the parser to stream. Let me look at how it buffers first. ' },
   { kind: 'reasoning', text: 'The whole document is read before the first token, so nothing can be emitted early.' },
-  { kind: 'text', text: "Right — the parser buffers the entire document before it emits anything, which is why the **first token** never arrives until the whole file is read.\n\nHere is the shape of the fix:\n\n```ts\nfor await (const chunk of source) {\n  buffer += chunk\n  for (const token of drain(buffer)) yield token\n}\n```\n\nThe plan, in order:\n\n1. read chunks as they arrive\n2. `drain(buffer)` emits complete tokens\n3. hold a partial token across a chunk boundary\n\n> A fence that straddles a chunk boundary is the hard part.\n\nLet me check what the tests expect before changing it.\n" },
+  { kind: 'text', text: "Right — the parser buffers the entire document before it emits anything, which is why the **first token** never arrives until the whole file is read.\n\nHere is the shape of the fix:\n\n```ts\nfor await (const chunk of source) {\n  buffer += chunk\n  for (const token of drain(buffer)) yield token\n}\n```\n\n## The plan\n\n1. read chunks as they arrive\n2. `drain(buffer)` emits complete tokens\n3. hold a partial token across a chunk boundary\n\n> A fence that straddles a chunk boundary is the hard part.\n\nLet me check what the tests expect before changing it.\n" },
   { kind: 'tool', name: 'bash', args: '{"command":"npm test -- parser","timeout":120000}', result: 'PASS tests/parser.spec.ts\n  ✓ emits a token as soon as one is complete (12 ms)\n  ✓ holds a partial token across a chunk boundary (3 ms)\n  ✗ streams a fenced block (8 ms)\n\nTests: 1 failed, 2 passed, 3 total' },
   { kind: 'text', text: '\nOne test already covers the chunk boundary, and another one fails — it expected the old all-at-once behaviour. That failure is the change working.\n' },
   { kind: 'tool', name: 'edit', args: '{"path":"src/parser.ts","old_string":"const whole = await readAll(source)","new_string":"for await (const chunk of source)"}', result: 'Edited src/parser.ts', diff: ['@@ -42,7 +42,9 @@ export async function parse(source) {', '-  const whole = await readAll(source)', '-  return tokenize(whole)', '+  for await (const chunk of source) {', '+    buffer += chunk', '+    yield* drain(buffer)', '+  }', ' }'] },
@@ -96,7 +96,7 @@ const SCRIPT: readonly Beat[] = [
     { text: 'Check the fenced-block case', status: 'pending' },
   ] },
   { kind: 'tool', name: 'bash', args: '{"command":"npm test -- parser"}', result: 'Error: 1 test failed\n  ✗ streams a fenced block (8 ms)\n    expected ["```", "ts"] to equal ["```ts"]' },
-  { kind: 'text', text: '\nThe fence opener is being split across two chunks and emitted as two tokens. `drain` needs to hold a partial fence the same way it holds a partial word.\n\nThat is the last piece. The task list above tracks where things stand.\n' },
+  { kind: 'text', text: '\n### Where that leaves us\n\nThe fence opener is being split across two chunks and emitted as two tokens. `drain` needs to hold a partial fence the same way it holds a partial word.\n\nThat is the last piece. The task list above tracks where things stand.\n' },
   { kind: 'notice', text: 'Demo script finished. Press F1 for the key list, F10 for the menu, or type anything to replay.' },
 ]
 

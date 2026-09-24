@@ -17,10 +17,26 @@ const code = palette.code
 const rowsOf = (text: string, width = 60): string[] => markdownRows(text, width, base, palette).map(row => row.text)
 
 describe('block parsing', () => {
-  it('headings strip hashes at h1/h2 and keep them from h3', () => {
+  it('headings drop their markers at every level', () => {
     expect(rowsOf('# Ship it')).toEqual(['Ship it'])
     expect(rowsOf('## Ship it')).toEqual(['Ship it'])
-    expect(rowsOf('### Deep')).toEqual(['### Deep'])
+    expect(rowsOf('### Deep')).toEqual(['Deep'])
+    expect(rowsOf('#### Deeper')).toEqual(['Deeper'])
+  })
+
+  it('headings descend by attribute on the heading colour', () => {
+    const [h2] = markdownRows('## One', 60, base, palette)
+    const [h3] = markdownRows('### Two', 60, base, palette)
+    const [h4] = markdownRows('#### Three', 60, base, palette)
+    expect(h2?.segments[0]?.style).toMatchObject({ fg: palette.heading.fg, bold: true, underline: true })
+    expect(h3?.segments[0]?.style).toMatchObject({ fg: palette.heading.fg, bold: true })
+    expect(h3?.segments[0]?.style.underline).toBeUndefined()
+    expect(h4?.segments[0]?.style).toMatchObject({ fg: palette.heading.fg, bold: true, dim: true })
+  })
+
+  it('a heading mid-text gains a blank line before it; an opening one does not', () => {
+    expect(rowsOf('body first\n\n## One')).toEqual(['body first', '', 'One'])
+    expect(rowsOf('## One\n\nbody')).toEqual(['One', 'body'])
   })
 
   it('rules render to the measure under all three spellings', () => {

@@ -114,6 +114,8 @@ export interface Palette {
   assistantLabel: Pair
   /** Transcript: ordinary assistant prose. */
   bodyText: Pair
+  /** Transcript: markdown section headings. */
+  heading: Pair
   /** Transcript: the model's reasoning. */
   reasoning: Pair
   /** Transcript: tool-call header rows. */
@@ -159,7 +161,7 @@ export const PALETTE_ROLES = [
   'inputFrame', 'inputFrameActive', 'inputBody', 'inputPrompt', 'inputHint',
   'dialogStatic', 'dialogFocused', 'dialogDefault',
   'listNormal', 'listFocused', 'listSelected', 'listDisabled',
-  'userLabel', 'assistantLabel', 'bodyText', 'reasoning',
+  'userLabel', 'assistantLabel', 'bodyText', 'heading', 'reasoning',
   'toolHeader', 'toolBody', 'toolRunning', 'toolSuccess', 'toolError',
   'diffAdded', 'diffRemoved', 'diffMeta', 'code', 'notice', 'warning', 'error',
   'accent', 'searchHit', 'searchHitDim',
@@ -204,7 +206,8 @@ export function resolvePalette(skin: Skin): ResolvedPalette {
     const pair = skin.palette[role]
     const style: Style = { fg: pair.fg, bg: pair.bg }
     if (role === 'menuShortcut' || role === 'statusKey' || role === 'userLabel'
-      || role === 'assistantLabel' || role === 'toolHeader' || role === 'accent') {
+      || role === 'assistantLabel' || role === 'toolHeader' || role === 'accent'
+      || role === 'heading') {
       style.bold = true
     }
     if (role === 'reasoning' || role === 'inputHint' || role === 'menuDisabled'
@@ -272,6 +275,7 @@ export const TURBO_VISION: Skin = {
     userLabel: { fg: 0x55FF55, bg: 0x0000A8 },
     assistantLabel: { fg: 0x55FFFF, bg: 0x0000A8 },
     bodyText: { fg: 0xFFFFFF, bg: 0x0000A8 },
+    heading: { fg: 0x55FFFF, bg: 0x0000A8 },
     reasoning: { fg: 0x8A8A8A, bg: 0x0000A8 },
     toolHeader: { fg: 0xFFFF55, bg: 0x0000A8 },
     toolBody: { fg: 0xAAAAAA, bg: 0x0000A8 },
@@ -341,6 +345,7 @@ export const PHOSPHOR: Skin = {
     userLabel: { fg: 0x99FFBB, bg: 0x001A0A },
     assistantLabel: { fg: 0x66FF99, bg: 0x001A0A },
     bodyText: { fg: 0x33FF66, bg: 0x001A0A },
+    heading: { fg: 0x99FFBB, bg: 0x001A0A },
     reasoning: { fg: 0x22AA44, bg: 0x001A0A },
     toolHeader: { fg: 0x99FFBB, bg: 0x001A0A },
     toolBody: { fg: 0x33FF66, bg: 0x001A0A },
@@ -409,6 +414,7 @@ export const AMBER: Skin = {
     userLabel: { fg: 0xFFE0A0, bg: 0x1A0E00 },
     assistantLabel: { fg: 0xFFD070, bg: 0x1A0E00 },
     bodyText: { fg: 0xFFB000, bg: 0x1A0E00 },
+    heading: { fg: 0xFFE0A0, bg: 0x1A0E00 },
     reasoning: { fg: 0xAA7000, bg: 0x1A0E00 },
     toolHeader: { fg: 0xFFE0A0, bg: 0x1A0E00 },
     toolBody: { fg: 0xFFB000, bg: 0x1A0E00 },
@@ -476,6 +482,7 @@ export const SLATE: Skin = {
     userLabel: { fg: 0x7EE787, bg: 0x15171C },
     assistantLabel: { fg: 0x58A6FF, bg: 0x15171C },
     bodyText: { fg: 0xE6EDF3, bg: 0x15171C },
+    heading: { fg: 0x58A6FF, bg: 0x15171C },
     reasoning: { fg: 0x8B949E, bg: 0x15171C },
     toolHeader: { fg: 0xD2A8FF, bg: 0x15171C },
     toolBody: { fg: 0xA8B1C0, bg: 0x15171C },
@@ -552,6 +559,7 @@ export const ANSI: Skin = {
     userLabel: { fg: 10, bg: 0 },
     assistantLabel: { fg: 12, bg: 0 },
     bodyText: { fg: 7, bg: 0 },
+    heading: { fg: 12, bg: 0 },
     reasoning: { fg: 8, bg: 0 },
     toolHeader: { fg: 13, bg: 0 },
     toolBody: { fg: 7, bg: 0 },

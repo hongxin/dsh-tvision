@@ -9,7 +9,9 @@
  * conventions terminal renderers converged on (pi's TUI, glamour, Claude
  * Code): structure is expressed with attributes — bold, underline — because
  * attributes survive every skin, and colour is spent where it says something
- * (an inline code span wears the palette's code colour, not an inverse bar).
+ * (an inline code span wears the palette's code colour, not an inverse bar; a
+ * heading wears the palette's heading colour with a descending attribute
+ * ladder, because a bold lead-in in the body must never outrank a heading).
  *
  * Two properties are load-bearing:
  *
@@ -62,6 +64,11 @@ export function markdownRows(
   if (width <= 0) return [{ text: '', segments: [{ text: '', style: base }] }]
   const rows: MdRow[] = []
   for (const block of parseBlocks(text)) {
+    // A heading is a break in the prose; give it a blank line of air unless
+    // it opens the text, where a leading blank would float it off the top.
+    if (block.kind === 'heading' && rows.length > 0) {
+      rows.push({ text: '', segments: [{ text: '', style: base }] })
+    }
     rows.push(...blockRows(block, width, base, palette))
   }
   return rows
@@ -455,11 +462,18 @@ function matchSpan(rest: string, opener: string, before?: string, closeIndexHint
 function blockRows(block: Block, width: number, base: Style, palette: ResolvedPalette): MdRow[] {
   switch (block.kind) {
     case 'heading': {
-      const style = block.level === 1
-        ? { ...base, bold: true, underline: true }
-        : { ...base, bold: true }
-      const source = block.level >= 3 ? `${'#'.repeat(block.level)} ${block.text}` : block.text
-      return wrapSegments(parseInline(source, style, palette.code), width).map(toRow)
+      // The ladder is one colour descending by attribute: `##` underlines as
+      // a section, `###` stands plain, the rare deeper level dims. Two
+      // properties are the point — the heading must outrank any bold lead-in
+      // in the body beneath it, which another weight of body white could
+      // never do, and the markers themselves are dropped, because a literal
+      // `###` on screen reads as unparsed markup rather than as a level.
+      const style = block.level <= 2
+        ? { ...palette.heading, underline: true }
+        : block.level === 3
+          ? palette.heading
+          : { ...palette.heading, dim: true }
+      return wrapSegments(parseInline(block.text, style, palette.code), width).map(toRow)
     }
     case 'hr':
       return [{ text: '─'.repeat(width), segments: [{ text: '─'.repeat(width), style: base }] }]

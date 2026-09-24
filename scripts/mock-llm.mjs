@@ -65,7 +65,7 @@ const TURNS = [
     match: 'wire-break',
     reasoning: 'The user set a breakpoint on this call. Make it, and the hold becomes visible.',
     toolCall: { id: 'call_mock_break', name: 'bash', arguments: '{"command":"echo wire-break-ok"}' },
-    followupContent: 'The breakpoint held the call, ran it once on approval, and the echo landed. Round trip complete.',
+    followupContent: '## Round trip complete\n\nThe breakpoint held the call, ran it once on approval, and the echo landed.',
     usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
   },
   {

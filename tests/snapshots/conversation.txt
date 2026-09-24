@@ -12,11 +12,11 @@
 ║  · keep the old test passing                                         ║                           │
 ║  │ A fence that straddles a chunk boundary is the hard part.         ║                           │
 ║  ──────────────────────────────────────────────────────────────────  ║  ──────── Tasks ──────────┐
-║  ### See also                                                        ║  ✓ Find why the first tok…│
-║                                                                      ║  ▸ Make the parser emit p…│
-║~ bash  npm test -- parser                                            ║  · Update the streaming t…│
+║                                                                      ║  ✓ Find why the first tok…│
+║  See also                                                            ║  ▸ Make the parser emit p…│
+║                                                                      ║  · Update the streaming t…│
+║~ bash  npm test -- parser                                            ║                           │
 ║  ok ▸                                                                ║                           │
-║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
 ║                                                                      ║                           │
