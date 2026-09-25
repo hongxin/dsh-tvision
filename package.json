@@ -1,7 +1,7 @@
 {
   "name": "dsh-tvision",
   "description": "Turbo Vision-style character-cell windowing IDE for DeepSeek Harness agents",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
