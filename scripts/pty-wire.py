@@ -157,6 +157,25 @@ def main():
             argv += ['--dsh-home', args.dsh_home]
         capture = run(argv, SCRIPT, 100, 30, args.seconds, SCRIPT_GAP)
         screen = replay(capture, 100, 30)
+        # Resume: the goodbye line names the session; a second boot with
+        # --resume must show the persisted history on screen. The session
+        # seeds its log at construction and constructor seeds never ride the
+        # session/event firehose, so this pins the mount-time backfill —
+        # without it the model carries the whole context into an empty
+        # transcript.
+        goodbye = re.search(r'--resume=([a-z0-9-]+)', capture.decode('utf8', 'replace'))
+        if goodbye is not None:
+            capture2 = run(
+                ['dsh', '--profile', 'tvision', f'--resume={goodbye.group(1)}'],
+                [('settle', b'')], 100, 30, 20.0, 1.0,
+            )
+            screen2 = replay(capture2, 100, 30)
+            checks.append(('a resumed session shows its history on screen',
+                           'The sleep is running' in screen2 or 'Round trip complete' in screen2))
+            checks.append(('a resumed session shows the usage meter',
+                           '⇄' in capture2.decode('utf8', 'replace')))
+        else:
+            checks.append(('a resumed session shows its history on screen', False))
 
         text = capture.decode('utf8', 'replace')
         # The mock must actually have served both turns; a profile that found a

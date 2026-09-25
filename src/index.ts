@@ -460,17 +460,35 @@ export function mount(input: MountInput): () => void {
   //    the fold reports that rather than the view guessing at it.
   const invalidateContext = (handle as unknown as { invalidateContext?: () => void }).invalidateContext
   let readMeter: ((session: unknown) => void) | undefined
+  // Events fold one at a time in arrival order, whether they arrived live or
+  // from the resume backfill below — one shared chain is what keeps a
+  // replay's screen identical to the live turn's.
+  let foldChain: Promise<void> = Promise.resolve()
+  const foldOne = (event: unknown): Promise<void> => {
+    foldChain = foldChain
+      .then(() => app.applyEvent(event as { type: string; seq: number; time: number; data?: unknown }))
+      .catch(error => { ctx.logger.warn(`tvision: the fold rejected an event: ${String(error)}`) })
+    return foldChain
+  }
   const offSession = ctx.on('session/event', (session, event) => {
     if (session !== agent.session) return
     // A new advertised context window rides this event and nothing else; the
     // host's memoised value dies with it. The cast mirrors the event's own shape.
     if ((event as { type?: string }).type === 'request/context') invalidateContext?.()
     if (readMeter !== undefined) readMeter(session)
-    void app.applyEvent(event as unknown as { type: string; seq: number; time: number; data?: unknown })
+    void foldOne(event)
       .then(() => {
         if (isFileMutatingTool(event)) void refreshProject()
       })
   })
+  // 1b. Resumed history never rides the firehose: the session seeds its log
+  //     at construction and constructor seeds do not emit `session/event`,
+  //     so without this the desktop boots into an empty transcript while the
+  //     model quietly carries the whole context. The seeds fold through the
+  //     same path live events take, which is also the fold's contract — a
+  //     replay must produce the screen the live turn did. (For a fresh
+  //     session there are no seeds and this loop is a no-op.)
+  for (const seed of agent.session.snapshotEvents()) void foldOne(seed)
 
   // 2. Agent lifecycle keeps the running indicator honest when a turn is
   //    cancelled without a closing event.
@@ -590,6 +608,10 @@ export function mount(input: MountInput): () => void {
         ctx.logger.warn(`tvision: token-meter snapshot failed: ${String(error)}`)
       }
     }
+    // An initial read covers a resumed session: the meter's numbers live in
+    // the projection, not in our fold, so no live event will deliver them
+    // until the next turn starts.
+    readMeter(agent.session)
   })
 
   let projectTimer: ReturnType<typeof setTimeout> | undefined
