@@ -52,8 +52,8 @@ export interface ComposerOptions {
   complete?: CompletionSource
   /** The sigil in front of the text. */
   prompt?: () => string
-  /** Placeholder shown when the composer is empty; a function is read per paint. */
-  placeholder?: string | (() => string)
+  /** Placeholder shown when the composer is empty; read per paint. */
+  placeholder?: () => string
 }
 
 /** How the composer is drawn. */
@@ -192,8 +192,7 @@ export class Composer implements Widget {
     const room = Math.max(0, painter.width - textWidth(sigil))
     if (this.text === '') {
       if (!context.focused) return
-      const raw = this.options.placeholder
-      const hint = (typeof raw === 'function' ? raw() : raw) ?? ''
+      const hint = this.options.placeholder?.() ?? ''
       painter.text(textWidth(sigil), inputRow, takeColumns(hint, room), room, theme.hint)
       return
     }

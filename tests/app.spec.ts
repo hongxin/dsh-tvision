@@ -187,6 +187,16 @@ describe('composer', () => {
     expect(host.sent).toEqual(['hello there'])
   })
 
+  it('/quit leaves through the same door Ctrl+Q uses', () => {
+    const { app, host } = build()
+    app.start()
+    type(app, '/quit\r')
+    expect(host.quit).toBe(1)
+    // The word never reaches the model as a prompt, nor the host's dispatch.
+    expect(host.sent).toEqual([])
+    expect(host.commands).toEqual([])
+  })
+
   it('clears after sending', () => {
     const { app } = build()
     app.start()

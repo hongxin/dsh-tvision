@@ -30,9 +30,10 @@ import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-query'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, type FileBlock, type TextBlock } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import type { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -46,7 +47,14 @@ import { DEFAULT_SKIN_ID, findSkin, SKINS, skinOrDefault, type Skin } from './ki
 import { ProcessTerminal } from './term/process-terminal.ts'
 
 export { TvisionApp } from './app/app.ts'
-export type { AppHost, AppInfo, AppTerminal } from './app/app.ts'
+export type {
+  AppHost,
+  AppInfo,
+  AppTerminal,
+  AttachOutcome,
+  MeterSnapshot,
+  PendingAttachment,
+} from './app/app.ts'
 export { SKINS, findSkin, skinOrDefault } from './kit/skin.ts'
 export { VERSION } from './version.ts'
 
@@ -230,16 +238,14 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       // ride as durable file parts after the text — the adapter resolves each
       // to its model-visible handle, so the model sees the file, not a path
       // it has to be trusted to open.
-      const content: ({ type: 'text'; text: string } | { type: 'file'; attachment: { attachmentId: AttachmentId; name: string; bytes: number } })[] = [
-        { type: 'text', text },
-      ]
+      const content: [TextBlock, ...FileBlock[]] = [{ type: 'text', text }]
       for (const file of attachments ?? []) {
         content.push({
           type: 'file',
           attachment: {
             // The brand is dsh-attachment's; `attach()` stored the ref's own
             // id verbatim, so restoring it here is a round trip, not a guess.
-            attachmentId: file.id as AttachmentId,
+            attachmentId: file.id as FileAttachmentRef['attachmentId'],
             name: file.name,
             bytes: file.bytes,
           },
@@ -260,27 +266,24 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
       // The store is dsh-attachment-local's, composed by dsh-base; asking per
       // call (rather than injecting) is deliberate — `/attach` is rare, and a
       // composition without the store deserves the honest per-file error.
+      // `saveFile` is the byte-level entry: the bytes came from our own disk,
+      // so the base64 upload validation of `admitEncodedFile` would buy three
+      // extra conversions and prove nothing.
       const store = ctx.get('attachments') as unknown as {
-        admitEncodedFile: (input: { data: string; name?: string }) => Promise<{ attachmentId: string; name: string; bytes: number }>
+        saveFile: (input: { data: Uint8Array; name?: string }) => Promise<FileAttachmentRef>
       } | undefined
       if (store === undefined) {
         return paths.map(path => ({ ok: false as const, path, error: 'no attachment store in this composition' }))
       }
       const root = agent.session.header.cwd ?? process.cwd()
-      const outcomes: AttachOutcome[] = []
-      for (const path of paths) {
+      return Promise.all(paths.map(async (path): Promise<AttachOutcome> => {
         try {
-          const bytes = await readFile(resolve(root, path))
-          const ref = await store.admitEncodedFile({
-            data: bytes.toString('base64'),
-            name: basename(path),
-          })
-          outcomes.push({ ok: true, path, id: String(ref.attachmentId), name: ref.name, bytes: ref.bytes })
+          const ref = await store.saveFile({ data: await readFile(resolve(root, path)), name: basename(path) })
+          return { ok: true, path, id: ref.attachmentId, name: ref.name, bytes: ref.bytes }
         } catch (error) {
-          outcomes.push({ ok: false as const, path, error: describe(error) })
+          return { ok: false, path, error: describe(error) }
         }
-      }
-      return outcomes
+      }))
     },
     async runCommand(line: string) {
       const controller = new AbortController()
@@ -475,7 +478,7 @@ export function mount(input: MountInput): () => void {
     // A new advertised context window rides this event and nothing else; the
     // host's memoised value dies with it. The cast mirrors the event's own shape.
     if ((event as { type?: string }).type === 'request/context') invalidateContext?.()
-    if (readMeter !== undefined) readMeter(session)
+    readMeter?.(session)
     void foldOne(event)
       .then(() => {
         if (isFileMutatingTool(event)) void refreshProject()
@@ -573,25 +576,18 @@ export function mount(input: MountInput): () => void {
   // the authoritative usage split — uncached input, output, both cache
   // columns — plus the provider-reported context pressure. Without the
   // registry the status bar keeps its event-derived numbers.
-  let meterBroken = false
   void ctx.inject(['sessionProjections'], () => {
     const projections = ctx.get('sessionProjections') as unknown as {
-      snapshot: (session: unknown) => { values: Record<string, unknown> }
+      snapshot: (session: unknown, keys?: readonly string[]) => { values: Record<string, unknown> }
     }
     readMeter = (session) => {
-      if (meterBroken) return
       try {
-        const { values } = projections.snapshot(session)
-        const usage = values['tokenUsage'] as {
-          uncachedInputTokens?: number
-          outputTokens?: number
-          cacheReadTokens?: number
-          cacheWriteTokens?: number
-        } | undefined
-        const context = values['contextPressure'] as {
-          pressureTokens?: number
-          contextWindow?: number
-        } | undefined
+        // Only the two units we read: an unselected snapshot computes and
+        // schema-validates every registered unit's wire view, and this runs
+        // per session event — chunks included.
+        const { values } = projections.snapshot(session, ['tokenUsage', 'contextPressure'])
+        const usage = values['tokenUsage'] as TokenUsageProjection | undefined
+        const context = values['contextPressure'] as ContextPressureProjection | undefined
         if (usage === undefined && context === undefined) return
         app.setMeter({
           input: usage?.uncachedInputTokens ?? 0,
@@ -602,9 +598,6 @@ export function mount(input: MountInput): () => void {
           ...(context?.contextWindow === undefined ? {} : { contextWindow: context.contextWindow }),
         })
       } catch (error) {
-        // Warn once: a projection that throws will throw on every event, and
-        // a per-event warning line is its own flood.
-        meterBroken = true
         ctx.logger.warn(`tvision: token-meter snapshot failed: ${String(error)}`)
       }
     }

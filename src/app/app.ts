@@ -28,7 +28,7 @@ import type { InputEvent } from '../kit/input.ts'
 import { ScreenRenderer, detectTruecolor, type CursorState } from '../kit/screen.ts'
 import { MenuBarBase, type Menu } from '../widgets/menubar.ts'
 import { StatusBar, formatDuration, formatTokens, pressureBar } from '../widgets/statusbar.ts'
-import { SessionDocument } from '../session/model.ts'
+import { SessionDocument, type TokenTotals } from '../session/model.ts'
 import { TranscriptView, summarizeArgs } from '../views/transcript.ts'
 import { textWidth } from '../kit/text.ts'
 import { Composer, type Completion, type ComposerTheme } from './composer.ts'
@@ -55,21 +55,6 @@ export interface AppTerminal {
 }
 
 /** What the application needs from the agent behind it. */
-/**
- * One file admitted into durable attachment storage, waiting to ride the next
- * submitted message. The id is the store's content-addressed identifier.
- */
-export interface PendingAttachment {
-  readonly id: string
-  readonly name: string
-  readonly bytes: number
-}
-
-/** The outcome of admitting one `/attach` path. */
-export type AttachOutcome =
-  | { readonly ok: true; readonly path: string; readonly id: string; readonly name: string; readonly bytes: number }
-  | { readonly ok: false; readonly path: string; readonly error: string }
-
 export interface AppHost {
   /**
    * Send a user turn, carrying any pending attachments as durable file parts.
@@ -123,6 +108,28 @@ export interface AppHost {
 }
 
 /** Static description of the application, for the About box and the title bar. */
+export interface AppInfo {
+  readonly name: string
+  readonly version: string
+  readonly sessionId: string
+  readonly cwd: string
+}
+
+/**
+ * One file admitted into durable attachment storage, waiting to ride the next
+ * submitted message. The id is the store's content-addressed identifier.
+ */
+export interface PendingAttachment {
+  readonly id: string
+  readonly name: string
+  readonly bytes: number
+}
+
+/** The outcome of admitting one `/attach` path. */
+export type AttachOutcome =
+  | { readonly ok: true; readonly path: string; readonly id: string; readonly name: string; readonly bytes: number }
+  | { readonly ok: false; readonly path: string; readonly error: string }
+
 /**
  * One reading of the token-meter projection: the durable log's true usage
  * split (uncached input and output billed, cache read and write separately)
@@ -130,22 +137,11 @@ export interface AppHost {
  * window. Every field except the token counts is optional — the projection
  * publishes what the log can prove.
  */
-export interface MeterSnapshot {
-  readonly input: number
-  readonly output: number
-  readonly cacheRead: number
-  readonly cacheWrite: number
+export interface MeterSnapshot extends TokenTotals {
   /** Newest provider-reported prompt size, when there is one. */
   readonly pressure?: number
   /** The capacity the newest request was sized against, when known. */
   readonly contextWindow?: number
-}
-
-export interface AppInfo {
-  readonly name: string
-  readonly version: string
-  readonly sessionId: string
-  readonly cwd: string
 }
 
 /** Options for {@link TvisionApp}. */
@@ -1205,18 +1201,15 @@ export class TvisionApp {
         tone: pressure > 0.9 ? 'error' : pressure > 0.7 ? 'warning' : 'normal',
       })
     }
-    if (meter !== undefined) {
-      // ⇄ is the cache column: tokens the provider served from (or wrote to)
-      // cache rather than billing as fresh input. A zero cache is omitted —
-      // ⇄0 is noise, and the shorter cell survives status-bar eviction.
-      const cache = meter.cacheRead + meter.cacheWrite
-      cells.push({
-        text: `↑${formatTokens(meter.input)} ↓${formatTokens(meter.output)}${cache > 0 ? ` ⇄${formatTokens(cache)}` : ''}`,
-        priority: 2,
-      })
-    } else {
-      cells.push({ text: `↑${formatTokens(tokens.input)} ↓${formatTokens(tokens.output)}`, priority: 2 })
-    }
+    // ⇄ is the cache column: tokens the provider served from (or wrote to)
+    // cache rather than billing as fresh input. A zero cache is omitted —
+    // ⇄0 is noise, and the shorter cell survives status-bar eviction — so
+    // the meter-absent path (no cache figures at all) collapses into it.
+    const cache = meter === undefined ? 0 : meter.cacheRead + meter.cacheWrite
+    cells.push({
+      text: `↑${formatTokens(meter?.input ?? tokens.input)} ↓${formatTokens(meter?.output ?? tokens.output)}${cache > 0 ? ` ⇄${formatTokens(cache)}` : ''}`,
+      priority: 2,
+    })
     // The unconfigured key outranks the trivia: it is the one cell that says
     // why nothing works yet.
     if (this.credential?.configured === false) {
@@ -1527,6 +1520,41 @@ export class TvisionApp {
   }
 
   /**
+   * The commands the desktop owns, dispatched above the host's slash table
+   * and offered by the composer's `/` completion. Each `run` owns its own
+   * transcript echo — `/quit` has none, because the desktop is leaving.
+   */
+  private readonly localCommands: readonly {
+    readonly name: string
+    readonly description: string
+    readonly run: (args: string, line: string) => void
+  }[] = [
+      {
+        name: 'breakpoint',
+        description: 'hold a tool before it runs: bash(rm *)',
+        run: (args, line) => {
+          this.document.addUser(line, Date.now(), { local: true })
+          this.runBreakpointCommand(args)
+        },
+      },
+      {
+        name: 'attach',
+        description: 'attach files to your next message: /attach notes.md img.png',
+        run: (args, line) => {
+          this.document.addUser(line, Date.now(), { local: true })
+          void this.runAttachCommand(args)
+        },
+      },
+      {
+        // The leave action is ours; the host's dispatch has no /quit, so
+        // falling through would send the word to the model as a turn.
+        name: 'quit',
+        description: 'leave tvision (same as Ctrl+Q)',
+        run: () => { this.options.host.quit() },
+      },
+    ]
+
+  /**
    * Submit the composer's contents, routing slash commands through the host.
    * @param text - The submitted text.
    */
@@ -1536,17 +1564,15 @@ export class TvisionApp {
     // Breakpoints are the desktop's own command, so it is handled here — above
     // the host's slash dispatch, which a host without `runCommand` would fall
     // through and send the rule text to the model as an ordinary turn.
-    if (trimmed === '/breakpoint' || trimmed.startsWith('/breakpoint ')) {
-      this.document.addUser(trimmed, Date.now(), { local: true })
-      this.runBreakpointCommand(trimmed.slice('/breakpoint'.length).trim())
-      this.windows.requestRender()
-      return
-    }
-    // Attachments are also the desktop's own command, for the same reason as
-    // breakpoints: the admitting host call is ours, not a harness command.
-    if (trimmed === '/attach' || trimmed.startsWith('/attach ')) {
-      this.document.addUser(trimmed, Date.now(), { local: true })
-      void this.runAttachCommand(trimmed.slice('/attach'.length).trim())
+    // Commands the desktop owns are dispatched here — above the host's slash
+    // dispatch, which a host without `runCommand` would fall through and send
+    // the word to the model as an ordinary turn. One table serves both this
+    // dispatch and the completion list, so a command can never exist in one
+    // and not the other.
+    const local = this.localCommands.find(command =>
+      trimmed === `/${command.name}` || trimmed.startsWith(`/${command.name} `))
+    if (local !== undefined) {
+      local.run(trimmed.slice(local.name.length + 1).trim(), trimmed)
       this.windows.requestRender()
       return
     }
@@ -1569,8 +1595,9 @@ export class TvisionApp {
     // transcript immediately rather than when the host echoes the event back.
     this.document.addUser(trimmed, Date.now(), { local: true })
     this.windows.requestRender()
-    // Pending attachments ride exactly one message — the one that submits them.
-    this.options.host.send(trimmed, this.pendingAttachments.length > 0 ? [...this.pendingAttachments] : undefined)
+    // Pending attachments ride exactly one message — the one that submits
+    // them. An empty list and no list are the same to every host.
+    this.options.host.send(trimmed, this.pendingAttachments)
     this.pendingAttachments = []
   }
 
@@ -1580,13 +1607,18 @@ export class TvisionApp {
    * @param args - Everything after the command word.
    */
   private async runAttachCommand(args: string): Promise<void> {
+    // The pending report is one sentence whether it answers `/attach` with no
+    // argument or follows a successful admit.
+    const report = (): void => {
+      const names = this.pendingAttachments.map(file => file.name).join(', ')
+      this.notify(`Attached: ${names} — rides your next message · /attach --clear drops all`, 'info')
+    }
     if (args === '') {
       if (this.pendingAttachments.length === 0) {
         this.notify('Usage: /attach <path…>  · e.g. /attach screenshot.png notes.md', 'info')
         return
       }
-      const names = this.pendingAttachments.map(file => file.name).join(', ')
-      this.notify(`Attached: ${names} — rides your next message · /attach --clear drops all`, 'info')
+      report()
       return
     }
     if (args === '--clear') {
@@ -1601,9 +1633,9 @@ export class TvisionApp {
     }
     let outcomes: readonly AttachOutcome[]
     try {
-      outcomes = await this.options.host.attach(args.split(/\s+/u).filter(path => path !== ''))
+      outcomes = await this.options.host.attach(args.split(/\s+/u))
     } catch (error) {
-      this.notify(error instanceof Error ? error.message : String(error), 'error')
+      this.notify(describeError(error), 'error')
       return
     }
     const admitted: PendingAttachment[] = []
@@ -1612,10 +1644,7 @@ export class TvisionApp {
       else this.notify(`Could not attach ${outcome.path}: ${outcome.error}`, 'error')
     }
     this.pendingAttachments = [...this.pendingAttachments, ...admitted]
-    if (admitted.length > 0) {
-      const names = admitted.map(file => file.name).join(', ')
-      this.notify(`Attached: ${names} — rides your next message · /attach --clear drops all`, 'info')
-    }
+    if (admitted.length > 0) report()
   }
 
   /**
@@ -1648,8 +1677,7 @@ export class TvisionApp {
     if (token.startsWith('/')) {
       const prefix = token.slice(1).toLowerCase()
       const commands = [...(this.options.host.commands?.() ?? []),
-        { name: 'breakpoint', description: 'hold a tool before it runs: bash(rm *)' },
-        { name: 'attach', description: 'attach files to your next message: /attach notes.md img.png' }]
+        ...this.localCommands.map(command => ({ name: command.name, description: command.description }))]
       return commands
         .filter(command => command.name.toLowerCase().startsWith(prefix))
         .map(command => ({
@@ -2046,23 +2074,13 @@ export class TvisionApp {
   }
 
   /**
-   * Publish one reading of the token-meter projection.
-   *
-   * Equal successive readings are dropped, so a projection refreshed on every
-   * session event cannot spin the render loop.
+   * Publish one reading of the token-meter projection. Assignment plus a
+   * render request, like every sibling setter — the frame loop coalesces, so
+   * a projection refreshed on every session event cannot spin it.
    * @param meter - The projection's values, or undefined when the composition
    * provides no meter (the status bar falls back to event-derived numbers).
    */
   setMeter(meter: MeterSnapshot | undefined): void {
-    const current = this.meter
-    if (meter === undefined) {
-      if (current === undefined) return
-    } else if (current !== undefined
-      && current.input === meter.input && current.output === meter.output
-      && current.cacheRead === meter.cacheRead && current.cacheWrite === meter.cacheWrite
-      && current.pressure === meter.pressure && current.contextWindow === meter.contextWindow) {
-      return
-    }
     this.meter = meter
     this.windows.requestRender()
   }

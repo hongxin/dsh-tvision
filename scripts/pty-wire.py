@@ -87,8 +87,6 @@ SCRIPT = [
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
-    # Open View ▸ Jobs through the menu bar: F10, right to View, and the
-    # &Jobs accelerator.
     ('menu', b'\x1b[21~'),
     ('dwell', b''),
     ('to-view', b'\x1b[C'),
@@ -166,8 +164,8 @@ def main():
         goodbye = re.search(r'--resume=([a-z0-9-]+)', capture.decode('utf8', 'replace'))
         if goodbye is not None:
             capture2 = run(
-                ['dsh', '--profile', 'tvision', f'--resume={goodbye.group(1)}'],
-                [('settle', b'')], 100, 30, 20.0, 1.0,
+                [*argv, f'--resume={goodbye.group(1)}'],
+                [('settle', b'')], 100, 30, 10.0, 1.0,
             )
             screen2 = replay(capture2, 100, 30)
             checks.append(('a resumed session shows its history on screen',
