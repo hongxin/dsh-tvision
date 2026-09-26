@@ -207,14 +207,26 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       return { changed: true }
     }
     case 'tool/call': {
+      const name = str(data, 'name') ?? 'tool'
+      const args = str(data, 'arguments') ?? ''
       document.addToolCall({
         callId: str(data, 'callId') ?? `seq-${event.seq}`,
-        name: str(data, 'name') ?? 'tool',
-        args: str(data, 'arguments') ?? '',
+        name,
+        args,
         turn: num(data, 'turn', 0),
         step: num(data, 'step', 0),
         time: event.time,
       })
+      // The plan a review will judge on rides the call's arguments; keeping it
+      // on the document is what lets the Plan window outlive the dialog.
+      if (name === 'exit_plan_mode') {
+        try {
+          const plan = (JSON.parse(args) as { plan?: unknown }).plan
+          if (typeof plan === 'string' && plan.trim() !== '') document.setPlan(plan)
+        } catch {
+          // A malformed call is the tool's error to report, not the fold's.
+        }
+      }
       return { changed: true }
     }
     case 'tool/result': {
@@ -255,6 +267,13 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       if (title === undefined || title === '') return UNCHANGED
       document.setTitle(title)
       return { changed: true, titleChanged: title }
+    }
+    case 'plan/mode': {
+      // A whole-value stance event: the last logged value is the state, so
+      // replay and fork converge without ordering concerns.
+      const active = field(data, 'active')
+      if (typeof active !== 'boolean') return UNCHANGED
+      return document.setPlanMode(active) ? { changed: true } : UNCHANGED
     }
     case 'subagent/catalog': {
       // The durable discovery fact: one delegated child, appended to the

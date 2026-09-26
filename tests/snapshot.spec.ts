@@ -242,6 +242,21 @@ describe('desktop snapshots', () => {
     expectSnapshot('composer-completions', await view.frame())
   })
 
+  it('renders the Plan window from a presented plan, with the plan-mode prompt', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    await view.app.applyEvent({ type: 'plan/mode', seq: 1, time: 1, data: { active: true } })
+    await view.app.applyEvent({
+      type: 'tool/call', seq: 2, time: 2,
+      data: {
+        callId: 'call_plan', name: 'exit_plan_mode', turn: 1, step: 1,
+        arguments: '{"plan":"# Stream the parser\\n\\nThe fix, in order:\\n\\n1. drain complete tokens per chunk\\n2. hold partial fences\\n\\n> A fence that straddles a chunk boundary is the hard part."}',
+      },
+    })
+    view.app.openWindow(WINDOW_IDS.plan)
+    expectSnapshot('plan-window', await view.frame())
+  })
+
   it('renders the Breakpoints window', async () => {
     const view = scene(96, 26)
     view.app.start()

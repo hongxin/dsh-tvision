@@ -30,6 +30,7 @@ import { MenuBarBase, type Menu } from '../widgets/menubar.ts'
 import { StatusBar, formatDuration, formatTokens, pressureBar } from '../widgets/statusbar.ts'
 import { SessionDocument, type TokenTotals } from '../session/model.ts'
 import { TranscriptView, summarizeArgs } from '../views/transcript.ts'
+import { markdownRows, type MdRow } from '../views/markdown.ts'
 import { textWidth } from '../kit/text.ts'
 import { Composer, type Completion, type ComposerTheme } from './composer.ts'
 import { Dialog, type DialogResult, type DialogSpec } from '../views/dialogs.ts'
@@ -286,6 +287,7 @@ export const WINDOW_IDS = {
   breakpoints: 'breakpoints',
   subagents: 'subagents',
   subagentView: 'subagent-view',
+  plan: 'plan',
   help: 'help',
   about: 'about',
 } as const
@@ -539,6 +541,95 @@ class SubagentPane implements Widget {
 
   onMouse(event: MouseEvent): Consumed {
     return this.view?.onMouse(event) ?? Consumed.No
+  }
+}
+
+/**
+ * The Plan window's body: the latest presented plan, rendered as the markdown
+ * it was written as. The window outlives the review dialog — approving a plan
+ * is the start of the work, and "what did I approve" is a fair question for
+ * the whole execution that follows.
+ */
+class PlanView implements Widget {
+  private offset = 0
+  private cache: { source: string; width: number; palette: unknown; rows: readonly MdRow[] } | undefined
+
+  /** Reads the document's current plan; undefined until the agent presents one. */
+  private readonly plan: () => string | undefined
+
+  /**
+   * @param plan - Reads the document's current plan.
+   */
+  constructor(plan: () => string | undefined) {
+    this.plan = plan
+  }
+
+  draw(painter: Painter, context: WidgetContext): void {
+    const palette = context.palette
+    const plan = this.plan()
+    if (plan === undefined || plan.trim() === '') {
+      painter.text(0, 0, 'No plan presented yet — an exit_plan_mode call fills this.', painter.width, palette.inputHint)
+      return
+    }
+    if (this.cache?.source !== plan || this.cache.width !== painter.width || this.cache.palette !== palette) {
+      this.cache = {
+        source: plan,
+        width: painter.width,
+        palette,
+        rows: markdownRows(plan, painter.width, palette.dialogStatic, palette),
+      }
+      this.offset = Math.min(this.offset, Math.max(0, this.cache.rows.length - 1))
+    }
+    const rows = this.cache.rows
+    for (let row = 0; row < painter.height; row++) {
+      const line = rows[this.offset + row]
+      if (line === undefined) break
+      let column = 0
+      for (const segment of line.segments) {
+        const room = Math.max(0, painter.width - column)
+        if (room <= 0) break
+        painter.text(column, row, segment.text, room, segment.style)
+        column += textWidth(segment.text)
+      }
+    }
+    if (rows.length > painter.height) {
+      const more = ` ↓ ${rows.length - this.offset - painter.height} more · ↑↓ scroll `
+      painter.text(Math.max(0, painter.width - more.length), painter.height - 1, more, more.length, palette.diffMeta)
+    }
+  }
+
+  onKey(event: KeyEvent): Consumed {
+    const length = this.cache?.rows.length ?? 0
+    const clamp = (value: number): number => Math.max(0, Math.min(Math.max(0, length - 1), value))
+    switch (event.key) {
+      case 'down':
+        this.offset = clamp(this.offset + 1)
+        return Consumed.Yes
+      case 'up':
+        this.offset = clamp(this.offset - 1)
+        return Consumed.Yes
+      case 'pagedown':
+        this.offset = clamp(this.offset + 10)
+        return Consumed.Yes
+      case 'pageup':
+        this.offset = clamp(this.offset - 10)
+        return Consumed.Yes
+      case 'home':
+        this.offset = 0
+        return Consumed.Yes
+      case 'end':
+        this.offset = clamp(length - 1)
+        return Consumed.Yes
+      default:
+        return Consumed.No
+    }
+  }
+
+  onMouse(event: MouseEvent): Consumed {
+    if (event.kind !== 'wheel') return Consumed.No
+    const length = this.cache?.rows.length ?? 0
+    this.offset = Math.max(0, Math.min(Math.max(0, length - 1), this.offset + (event.delta ?? 1) * 3))
+    return Consumed.Yes
   }
 }
 
@@ -955,12 +1046,15 @@ export class TvisionApp {
   /** The line the composer prints as its sigil, including the running timer. */
   private sigil(): string {
     const phase = this.document.agentPhase
+    // Plan mode is a stance, not a phase: it holds across turns, so it names
+    // the prompt rather than replacing it.
+    const plan = this.document.planMode ? ' plan' : ''
     if (phase === 'running') {
       const elapsed = formatDuration(Date.now() - this.document.phaseSince)
-      return `dsh ${elapsed}> `
+      return `dsh${plan} ${elapsed}> `
     }
-    if (phase === 'compacting') return 'dsh compacting> '
-    return 'dsh> '
+    if (phase === 'compacting') return `dsh${plan} compacting> `
+    return `dsh${plan}> `
   }
 
   /** The composer's styles, resolved from the active palette. */
@@ -1104,6 +1198,16 @@ export class TvisionApp {
       listed: true,
     })
     this.windows.close(WINDOW_IDS.subagentView)
+    this.windows.open({
+      id: WINDOW_IDS.plan,
+      title: 'Plan',
+      rect: { x: 6, y: 3, width: 60, height: 18 },
+      widget: new PlanView(() => this.document.plan),
+      resizable: true,
+      listed: true,
+      dismissable: true,
+    })
+    this.windows.close(WINDOW_IDS.plan)
     this.windows.focus(WINDOW_IDS.transcript)
   }
 
@@ -1337,6 +1441,7 @@ export class TvisionApp {
           { id: 'sessions', label: '&Sessions', shortcut: 'F3', action: run(() => this.toggleWindow(WINDOW_IDS.sessions)) },
           { id: 'subagents', label: 'Sub&agents', action: run(() => this.toggleWindow(WINDOW_IDS.subagents)), hint: 'Delegated children' },
           { id: 'subagentview', label: 'Subagent &transcript', action: run(() => this.toggleWindow(WINDOW_IDS.subagentView)), hint: 'The selected child, read-only' },
+          { id: 'plan', label: '&Plan', action: run(() => this.toggleWindow(WINDOW_IDS.plan)), hint: 'The plan under review, or the last one presented' },
           { id: 'sep', label: '', separator: true },
           {
             id: 'layout',

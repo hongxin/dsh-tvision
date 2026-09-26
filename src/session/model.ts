@@ -146,6 +146,8 @@ export class SessionDocument {
   private pendingDirty = false
   private todos: TodoItem[] = []
   private readonly subagents: SubagentEntry[] = []
+  private planActive = false
+  private planText: string | undefined
   private title: string | undefined
   private phase: AgentPhase = 'idle'
   private phaseStartedAt = 0
@@ -209,6 +211,40 @@ export class SessionDocument {
   /** The delegated children, in discovery order (the `subagent/catalog` fold). */
   get subagentList(): readonly SubagentEntry[] {
     return this.subagents
+  }
+
+  /** Whether plan mode is active — the `plan/mode` whole-value fold. */
+  get planMode(): boolean {
+    return this.planActive
+  }
+
+  /** The latest plan the agent presented, markdown, from `exit_plan_mode`. */
+  get plan(): string | undefined {
+    return this.planText
+  }
+
+  /**
+   * Set plan mode; the last logged `plan/mode` wins, so replay converges.
+   * @param active - Whether the agent now works under plan guidance.
+   * @returns Whether anything changed.
+   */
+  setPlanMode(active: boolean): boolean {
+    if (this.planActive === active) return false
+    this.planActive = active
+    this.touch()
+    return true
+  }
+
+  /**
+   * Remember the latest presented plan; the newest presentation wins.
+   * @param markdown - The plan, as the model wrote it.
+   * @returns Whether anything changed.
+   */
+  setPlan(markdown: string): boolean {
+    if (this.planText === markdown) return false
+    this.planText = markdown
+    this.touch()
+    return true
   }
 
   /**

@@ -918,6 +918,50 @@ describe('markdown in the transcript', () => {
   })
 })
 
+describe('plan mode', () => {
+  it('plan/mode sets the stance and the last logged value wins', () => {
+    const document = new SessionDocument()
+    expect(foldEvent(document, { type: 'plan/mode', seq: 1, time: 1, data: { active: true } }).changed).toBe(true)
+    expect(document.planMode).toBe(true)
+    expect(foldEvent(document, { type: 'plan/mode', seq: 2, time: 2, data: { active: false } }).changed).toBe(true)
+    expect(document.planMode).toBe(false)
+    // A repeated same-value event is quiet — replay converges without churn.
+    expect(foldEvent(document, { type: 'plan/mode', seq: 3, time: 3, data: { active: false } }).changed).toBeFalsy()
+  })
+
+  it('a malformed plan/mode without a boolean changes nothing', () => {
+    const document = new SessionDocument()
+    const outcome = foldEvent(document, { type: 'plan/mode', seq: 1, time: 1, data: { active: 'yes' } })
+    expect(outcome.changed).toBeFalsy()
+    expect(document.planMode).toBe(false)
+  })
+
+  it('an exit_plan_mode call leaves its plan on the document', () => {
+    const document = new SessionDocument()
+    foldEvent(document, {
+      type: 'tool/call', seq: 4, time: 4,
+      data: { callId: 'call_p', name: 'exit_plan_mode', arguments: '{"plan":"# The fix\\n\\n1. drain"}', turn: 1, step: 1 },
+    })
+    expect(document.plan).toBe('# The fix\n\n1. drain')
+    // A newer presentation replaces it.
+    foldEvent(document, {
+      type: 'tool/call', seq: 5, time: 5,
+      data: { callId: 'call_p2', name: 'exit_plan_mode', arguments: '{"plan":"# The revision"}', turn: 2, step: 1 },
+    })
+    expect(document.plan).toBe('# The revision')
+  })
+
+  it('a malformed exit_plan_mode call folds its card and leaves the plan alone', () => {
+    const document = new SessionDocument()
+    foldEvent(document, {
+      type: 'tool/call', seq: 4, time: 4,
+      data: { callId: 'call_bad', name: 'exit_plan_mode', arguments: 'not json', turn: 1, step: 1 },
+    })
+    expect(document.plan).toBeUndefined()
+    expect(document.all).toHaveLength(1)
+  })
+})
+
 describe('the subagent catalog', () => {
   /** A subagent/catalog event shaped the way the parent session appends it. */
   const catalog = (childId: string, seq = 1): Parameters<typeof foldEvent>[1] => ({

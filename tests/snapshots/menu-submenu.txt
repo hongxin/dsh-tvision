@@ -7,10 +7,10 @@
 ║      │Sessions           F3│                                         ║                           │
 ║      │Subagents            │                                         ║                           │
 ║      │Subagent transcript  │                                         ║                           │
+║      │Plan                 │                                         ║                           │
 ║      │─────────────────────│                                         ║                           │
 ║      │Layout              ▸│                                         ║                           │
 ║      └─────────────────────┘                                         ║                           │
-║                                                                      ║                           │
 ║                                                                      ║  ──────── Tasks ──────────┐
 ║                                                                      ║  o tasks yet.             │
 ║                                                                      ║                           │
