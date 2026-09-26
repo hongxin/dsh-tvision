@@ -85,6 +85,30 @@ SCRIPT = [
     ('dwell', b''),
     ('dwell', b''),
     ('dwell', b''),
+    # Plan review: enter plan mode, ask for the plan, and answer with free
+    # text (Other…) — the harder half of the review contract. The typed
+    # feedback comes back as the tool result, which is the deterministic
+    # assertion; approval is the plain-Enter case the golden and snapshot
+    # suites already pin.
+    ('plan-on', b'/plan\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('plan-prompt', b'wire-plan-exit\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    # Buttons: Approve, Keep planning, Other… — two rights to Other…, then
+    # type the feedback and send it with Enter.
+    ('plan-other', b'\x1b[C\x1b[C\r'),
+    ('plan-feedback', b'tighten the fence case\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('plan-window-menu', b'\x1b[21~'),
+    ('plan-window-right', b'\x1b[C\x1b[C\x1b[C\x1b[C'),
+    ('plan-window-item', b'\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B'),
+    ('plan-window-pick', b'\r'),
+    ('dwell', b''),
+    ('plan-window-close', b'\x1b'),
+    ('dwell', b''),
     # Markdown turn first: its constructs must land on the real screen.
     ('md-prompt', b'wire-markdown\r'),
     ('dwell', b''),
@@ -262,6 +286,17 @@ def main():
         # child received are visible only inside that window.
         checks.append(('the delegation settled and was labelled as the subagent',
                        '~ subagent' in text and '+ Subagent' in text))
+        # Plan review: the dialog showed the plan rendered as markdown (the
+        # literal '#' heading never reached the screen), the prompt named the
+        # mode, the typed feedback rode the tool result back to the model,
+        # and the Plan window kept the plan after the review closed.
+        checks.append(('the plan review rendered the plan as markdown',
+                       'Plan review' in text and 'Stream the parser' in text and '# Stream' not in text))
+        checks.append(('the plan-mode prompt names the stance', 'dsh plan>' in text))
+        checks.append(('the typed feedback reached the model',
+                       'feedback-tighten seen in request' in mock_log))
+        checks.append(('the plan window holds the plan after review',
+                       'keep the tests green' in text))
         checks.append(('the subagents catalog and child transcript opened',
                        'Subagents — 1' in text and 'Delegate a scoped reply' in text
                        and 'Subagent — Delegate a scoped reply' in text

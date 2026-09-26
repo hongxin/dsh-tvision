@@ -69,6 +69,21 @@ const TURNS = [
     usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
   },
   {
+    // Plan mode: the model presents its plan for review. The review rides
+    // the user-questions waterfall with the plan markdown in the question's
+    // detail; a free-text answer comes back as the tool result the model
+    // has to answer for, which is what the wire script pins.
+    match: 'wire-plan-exit',
+    reasoning: 'The plan is ready. Present it for review.',
+    toolCall: {
+      id: 'call_mock_plan',
+      name: 'exit_plan_mode',
+      arguments: '{"plan":"# Stream the parser\\n\\nThe fix, in order:\\n\\n1. drain complete tokens per chunk\\n2. hold partial fences\\n3. keep the tests green"}',
+    },
+    followupContent: 'The plan was approved; carrying it out from this step.',
+    usage: { prompt_tokens: 260, completion_tokens: 34, total_tokens: 294 },
+  },
+  {
     // Delegation: the parent calls the composed subagent tool (continuable,
     // so the result is the immediate child-id and the child's reply arrives
     // later as the settlement notice). The child's own request and the
@@ -198,6 +213,9 @@ const server = createServer(async (req, res) => {
     ? { ...turn, reasoning: undefined, toolCall: undefined, content: turn.followupContent }
     : turn
   if (turn.toolCall !== undefined && !followup) emittedTool.add(turn.match)
+  // A marker for the wire rung: free-text answers ride back as tool
+  // results, which the one-line request log does not show.
+  if (body.includes('tighten the fence case')) console.log('[mock-llm] feedback-tighten seen in request')
   console.log(`[mock-llm] ${req.url} model=${request.model} tools=${(request.tools ?? []).length} ` +
     `roles=${messages.map((message) => message.role).join(',')} ` +
     `turn="${turn.match}" followup=${followup} last="${lastText.slice(0, 40).replace(/\n/g, ' ')}"`)
