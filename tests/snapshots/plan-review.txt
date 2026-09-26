@@ -16,7 +16,7 @@
 │        ║────────────────────────────────────────────────────────────────────────────║        │
 │        ║                                                                            ║        │
 │        ║                                                                            ║        │
-│        ║                   Approve      Keep planning      Cancel                   ║        │
+│        ║             Approve      Keep planning      Other…      Cancel             ║        │
 │        ║Leave plan mode; the plan is carried out from the next step.                ║        │
 │        ╚════════════════════════════════════════════════════════════════════════════╝        │
 │                                                                                        ──────┘

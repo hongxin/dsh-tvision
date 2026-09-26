@@ -330,7 +330,7 @@ describe('approvalSpec', () => {
 describe('askApproval', () => {
   /** A host that answers with a fixed choice. */
   const hostAnswering = (value: string | undefined): AskHost => ({
-    ask: async () => value,
+    ask: async () => ({ dismissed: value === undefined, value }),
   })
 
   it('maps the allow choice to a one-shot grant', async () => {
@@ -349,7 +349,7 @@ describe('askApproval', () => {
   it('cancels without asking when the request is already aborted', async () => {
     const controller = new AbortController()
     controller.abort()
-    const ask = vi.fn(async () => 'allow')
+    const ask = vi.fn(async () => ({ dismissed: false, value: 'allow' }))
     // Opening a window for a turn that is already gone would be a lie.
     expect(await askApproval({ ask }, { toolName: 'bash', signal: controller.signal })).toBe('cancelled')
     expect(ask).not.toHaveBeenCalled()
@@ -360,7 +360,7 @@ describe('askApproval', () => {
     const host: AskHost = {
       ask: async () => {
         controller.abort()
-        return 'allow'
+        return { dismissed: false, value: 'allow' }
       },
     }
     expect(await askApproval(host, { toolName: 'bash', signal: controller.signal })).toBe('cancelled')
@@ -376,7 +376,7 @@ describe('questionSpec', () => {
 
   it('offers every option plus a way to decline', () => {
     const spec = questionSpec(question, [])
-    expect(spec.choices.map(choice => choice.value)).toEqual(['stream', 'buffer', QUESTION_SENTINELS.cancel])
+    expect(spec.choices.map(choice => choice.value)).toEqual(['stream', 'buffer', QUESTION_SENTINELS.other, QUESTION_SENTINELS.cancel])
   })
 
   it('ticks the options already chosen', () => {
@@ -392,17 +392,15 @@ describe('questionSpec', () => {
     expect(done?.isDefault).toBe(true)
   })
 
-  it('offers Done immediately for an optionless multi-select', () => {
+  it('offers Done and free text immediately for an optionless multi-select', () => {
     // An unanswerable window is worse than a trivial one.
     const spec = questionSpec({ id: 'q', question: 'Anything?', multiSelect: true }, [])
-    expect(spec.choices).toHaveLength(1)
-    expect(spec.choices[0]?.value).toBe(QUESTION_SENTINELS.done)
+    expect(spec.choices.map(choice => choice.value)).toEqual([QUESTION_SENTINELS.other, QUESTION_SENTINELS.done])
   })
 
-  it('offers only a decline for an optionless single-select', () => {
+  it('offers free text and a decline for an optionless single-select', () => {
     const spec = questionSpec({ id: 'q', question: 'Free text?' }, [])
-    expect(spec.choices).toHaveLength(1)
-    expect(spec.choices[0]?.value).toBe(QUESTION_SENTINELS.cancel)
+    expect(spec.choices.map(choice => choice.value)).toEqual([QUESTION_SENTINELS.other, QUESTION_SENTINELS.cancel])
   })
 
   it('uses the header as the title and passes the detail through', () => {
@@ -417,15 +415,25 @@ describe('questionSpec', () => {
 })
 
 describe('askQuestions', () => {
-  /** A host that answers each question from a script, in order. */
-  function scriptedHost(answers: (string | undefined)[]): AskHost & { asked: number } {
+  /**
+   * A host that answers each question from a script, in order. A scripted
+   * string becomes the chosen value; `undefined` a dismissed dialog; and a
+   * `{ text }` the typed half of an Other… answer.
+   */
+  function scriptedHost(
+    answers: (string | undefined | { text: string })[],
+  ): AskHost & { asked: number } {
     const state = { asked: 0 }
     return {
       get asked() { return state.asked },
       ask: async () => {
         const answer = answers[state.asked]
         state.asked++
-        return answer
+        if (answer === undefined) return { dismissed: true }
+        if (typeof answer !== 'string') {
+          return { dismissed: false, value: QUESTION_SENTINELS.send, input: answer.text }
+        }
+        return { dismissed: false, value: answer }
       },
     }
   }
@@ -437,7 +445,7 @@ describe('askQuestions', () => {
   })
 
   it('records nothing when a question is declined', async () => {
-    const host = scriptedHost([QUESTION_SENTINELS.cancel])
+    const host = scriptedHost([QUESTION_SENTINELS.other, QUESTION_SENTINELS.cancel])
     const answer = await askQuestions(host, [{ id: 'q1', question: 'Which?', options: [{ label: 'stream' }] }])
     expect(answer.answers).toEqual([{ id: 'q1', selected: [] }])
   })
@@ -446,6 +454,29 @@ describe('askQuestions', () => {
     const host = scriptedHost([undefined])
     const answer = await askQuestions(host, [{ id: 'q1', question: 'Which?', options: [{ label: 'stream' }] }])
     expect(answer.answers).toEqual([{ id: 'q1', selected: [] }])
+  })
+
+  it('an Other… answer sends the typed text as custom', async () => {
+    // The plan-review feedback path: a free-text answer carries custom back,
+    // which is what "keep planning, and here is why" rides on.
+    const host = scriptedHost([QUESTION_SENTINELS.other, { text: 'cover the fence case' }])
+    const answer = await askQuestions(host, [{ id: 'q1', question: 'Which?', options: [{ label: 'stream' }] }])
+    expect(answer.answers).toEqual([{ id: 'q1', selected: [], custom: 'cover the fence case' }])
+    expect(host.asked).toBe(2)
+  })
+
+  it('an empty Other… answer is no answer', async () => {
+    const host = scriptedHost([QUESTION_SENTINELS.other, { text: '   ' }])
+    const answer = await askQuestions(host, [{ id: 'q1', question: 'Which?', options: [{ label: 'stream' }] }])
+    expect(answer.answers).toEqual([{ id: 'q1', selected: [] }])
+  })
+
+  it('a multi-select keeps its ticks under a free-text answer', async () => {
+    const host = scriptedHost(['stream', QUESTION_SENTINELS.other, { text: 'also buffer' }])
+    const answer = await askQuestions(host, [
+      { id: 'q1', question: 'Which?', multiSelect: true, options: [{ label: 'stream' }, { label: 'buffer' }] },
+    ])
+    expect(answer.answers).toEqual([{ id: 'q1', selected: ['stream'], custom: 'also buffer' }])
   })
 
   it('toggles a multi-select and finishes on Done', async () => {

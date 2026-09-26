@@ -335,7 +335,7 @@ describe('closing a dialog window by its system box', () => {
     const dialog = app.windows.all().find(window => window.title === 'Approval required')
     if (dialog === undefined) throw new Error('the dialog window never opened')
     app.feed(`\u001B[<0;${dialog.rect.x + 4};${dialog.rect.y + 1}M`)
-    await expect(asked).resolves.toBeUndefined()
+    await expect(asked).resolves.toMatchObject({ dismissed: true })
     // And the desktop it leaves behind still takes input.
     app.windows.focus(WINDOW_IDS.transcript)
     app.feed('hi')
@@ -360,8 +360,8 @@ describe('a superseded dialog', () => {
     app.frame()
     // Only the second dialog holds the desktop; answer it with Enter.
     app.feed('\r')
-    await expect(second).resolves.toBe('yes')
-    await expect(first).resolves.toBeUndefined()
+    await expect(second).resolves.toMatchObject({ value: 'yes' })
+    await expect(first).resolves.toMatchObject({ dismissed: true })
     // And neither window is left behind.
     expect(app.windows.all().some(window => !window.closed && window.title === 'First')).toBe(false)
     expect(app.windows.all().some(window => !window.closed && window.title === 'Second')).toBe(false)

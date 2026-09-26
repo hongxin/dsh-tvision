@@ -1896,8 +1896,8 @@ export class TvisionApp {
    * @param signal - Optional lifetime; aborting dismisses the dialog.
    * @returns The chosen value, or undefined when dismissed.
    */
-  async ask(spec: DialogSpec, signal?: AbortSignal): Promise<string | undefined> {
-    return (await this.askResult(spec, signal)).value
+  async ask(spec: DialogSpec, signal?: AbortSignal): Promise<DialogResult> {
+    return this.askResult(spec, signal)
   }
 
   /**
@@ -2010,7 +2010,7 @@ export class TvisionApp {
         { value: 'cancel', label: 'Cancel', isDefault: true },
       ],
     })
-    if (answer === 'kill') this.options.host.killJob?.(job.id)
+    if (answer.value === 'kill') this.options.host.killJob?.(job.id)
   }
 
   /**
@@ -2033,7 +2033,7 @@ export class TvisionApp {
         { value: 'cancel', label: 'Cancel', isDefault: true },
       ],
     })
-    if (answer !== 'delete') return
+    if (answer.value !== 'delete') return
     this.setBreakpoints(this.breakpointRules.filter(candidate => candidate.pattern !== rule.pattern))
     this.notify(`Breakpoint removed: ${rule.pattern}`, 'info')
   }

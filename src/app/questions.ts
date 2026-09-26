@@ -16,7 +16,7 @@
  * @module dsh-tvision/app/questions
  */
 
-import type { DialogSpec } from '../views/dialogs.ts'
+import type { DialogSpec, DialogResult } from '../views/dialogs.ts'
 
 /** The harness's closed approval vocabulary. */
 export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
@@ -40,7 +40,7 @@ export interface QuestionAsk {
 
 /** The answer shape `ask_user_question` expects back. */
 export interface QuestionsAnswer {
-  readonly answers: { id: string; selected: string[] }[]
+  readonly answers: { id: string; selected: string[]; custom?: string }[]
 }
 
 /** The one thing this module needs from the application. */
@@ -49,15 +49,20 @@ export interface AskHost {
    * Put a modal question and wait for the answer.
    * @param spec - The question, detail, and choices.
    * @param signal - Optional lifetime; aborting dismisses.
-   * @returns The chosen value, or undefined when dismissed.
+   * @returns Everything the dialog settled with; `value` is undefined when
+   * it was dismissed.
    */
-  ask(spec: DialogSpec, signal?: AbortSignal): Promise<string | undefined>
+  ask(spec: DialogSpec, signal?: AbortSignal): Promise<DialogResult>
 }
 
 /** The sentinel a multi-select question uses for "I am finished choosing". */
 const DONE = '\u0000done'
 /** The sentinel a single-select question uses for "I do not want to answer". */
 const CANCEL = '\u0000cancel'
+/** The sentinel for the free-text answer, which reopens with an input. */
+const OTHER = '\u0000other'
+/** The sentinel the free-text dialog uses for "send what was typed". */
+const SEND = '\u0000send'
 
 /**
  * Build the approval dialog.
@@ -113,7 +118,7 @@ export async function askApproval(host: AskHost, request: ApprovalAsk): Promise<
   const signal = request.signal
   const aborted = (): boolean => signal?.aborted === true
   if (aborted()) return 'cancelled'
-  const value = await host.ask(approvalSpec(request), signal)
+  const value = (await host.ask(approvalSpec(request), signal)).value
   // An abort during the dialog is a withdrawal rather than a refusal, and the
   // harness records the two differently in its audit log.
   if (aborted()) return 'cancelled'
@@ -187,7 +192,7 @@ export async function askBreakpoint(
 ): Promise<'allow' | 'always' | 'deny'> {
   // Dismissal and abort both refuse: a breakpoint is a stop the user asked
   // for, so the call must not slip through because its dialog went away.
-  const value = await host.ask(breakpointSpec(request), request.signal)
+  const value = (await host.ask(breakpointSpec(request), request.signal)).value
   if (value === 'allow') return 'allow'
   if (value === 'always') return 'always'
   return 'deny'
@@ -209,16 +214,19 @@ export function questionSpec(question: QuestionAsk, chosen: readonly string[]): 
     label: chosen.includes(option.label) ? `✓ ${option.label}` : option.label,
     ...(option.description === undefined ? {} : { detail: option.description }),
   }))
+  // The free-text out; the option-count below must not count it.
+  const optionCount = choices.length
+  choices.push({ value: OTHER, label: 'Other…', detail: 'Answer with your own text.' })
   if (question.multiSelect === true) {
     // A multi-select always has a way out: `Done` once something is ticked, and
     // on an optionless question immediately, because an unanswerable window is
     // worse than a trivial one.
     if (chosen.length > 0) {
       choices.push({ value: DONE, label: `Done (${chosen.length} chosen)`, isDefault: true })
-    } else if (choices.length === 0) {
+    } else if (optionCount === 0) {
       choices.push({ value: DONE, label: 'Done', isDefault: true })
     }
-  } else if (choices.length === 0) {
+  } else if (optionCount === 0) {
     // A free-form question with no options: the only useful answer is to
     // decline, and saying so is better than an empty window.
     choices.push({ value: CANCEL, label: 'No answer', dangerous: true })
@@ -243,26 +251,56 @@ export async function askQuestions(
   host: AskHost,
   questions: readonly QuestionAsk[],
 ): Promise<QuestionsAnswer> {
-  const answers: { id: string; selected: string[] }[] = []
+  const answers: { id: string; selected: string[]; custom?: string }[] = []
   for (const question of questions) {
     const chosen: string[] = []
+    let custom: string | undefined
     if (question.multiSelect === true) {
-      // Repeated passes: each choice toggles and reopens until Done.
+      // Repeated passes: each choice toggles and reopens until Done, or until
+      // a free-text answer settles the whole question with the ticks kept.
       for (;;) {
-        const value = await host.ask(questionSpec(question, chosen))
+        const value = (await host.ask(questionSpec(question, chosen))).value
         if (value === undefined || value === CANCEL || value === DONE) break
+        if (value === OTHER) {
+          const text = await askOtherText(host, question)
+          if (text !== undefined) custom = text
+          break
+        }
         const index = chosen.indexOf(value)
         if (index >= 0) chosen.splice(index, 1)
         else chosen.push(value)
       }
     } else {
-      const value = await host.ask(questionSpec(question, chosen))
-      if (value !== undefined && value !== CANCEL) chosen.push(value)
+      const value = (await host.ask(questionSpec(question, chosen))).value
+      if (value === OTHER) custom = await askOtherText(host, question)
+      else if (value !== undefined && value !== CANCEL) chosen.push(value)
     }
-    answers.push({ id: question.id, selected: chosen })
+    answers.push({ id: question.id, selected: chosen, ...(custom === undefined ? {} : { custom }) })
   }
   return { answers }
 }
 
+/**
+ * Ask the free-text half of an Other… answer.
+ * @param host - The application's modal hook.
+ * @param question - The question being answered, for the title.
+ * @returns The typed text, or undefined when sent empty or cancelled — an
+ * empty free-text answer is no answer, and the harness reads it that way.
+ */
+async function askOtherText(host: AskHost, question: QuestionAsk): Promise<string | undefined> {
+  const result = await host.ask({
+    title: question.header ?? 'Question',
+    question: 'Type your answer',
+    input: { placeholder: 'Your answer — Enter sends it' },
+    choices: [
+      { value: SEND, label: 'Send', isDefault: true },
+      { value: CANCEL, label: 'Cancel', dangerous: true },
+    ],
+  })
+  if (result.value !== SEND) return undefined
+  const text = result.input?.trim()
+  return text === undefined || text === '' ? undefined : text
+}
+
 /** The sentinel values, exposed so the tests can assert on them. */
-export const QUESTION_SENTINELS = Object.freeze({ done: DONE, cancel: CANCEL })
+export const QUESTION_SENTINELS = Object.freeze({ done: DONE, cancel: CANCEL, other: OTHER, send: SEND })
