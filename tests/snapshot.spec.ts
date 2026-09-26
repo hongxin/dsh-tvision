@@ -243,6 +243,27 @@ describe('desktop snapshots', () => {
     await pending
   })
 
+  it('renders the Subagents window and a delegated child transcript', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    await view.app.applyEvent({
+      type: 'subagent/catalog', seq: 1, time: 1,
+      data: { version: 0, childId: 'child-fixture-1', childCreatedAt: 1, mode: 'continuable', label: 'Scoped reply' },
+    })
+    for (const event of [
+      { type: 'user/message', seq: 1, time: 2, data: { content: [{ type: 'text', text: 'the delegated prompt' }], source: { kind: 'user' } } },
+      { type: 'turn/start', seq: 2, time: 3, data: { turn: 1 } },
+      { type: 'step/start', seq: 3, time: 4, data: { turn: 1, step: 1 } },
+      { type: 'assistant/chunk', seq: 4, time: 5, data: { turn: 1, step: 1, chunk: { type: 'text', text: 'the scoped answer' } } },
+    ] as const) {
+      await view.app.applySubagentEvent('child-fixture-1', event)
+    }
+    view.app.openWindow(WINDOW_IDS.subagents)
+    expectSnapshot('subagents', await view.frame())
+    view.app.handle({ type: 'key', key: 'enter' })
+    expectSnapshot('subagent-view', await view.frame())
+  })
+
   it('renders a narrow terminal without a side column', async () => {
     const view = scene(72, 22)
     view.app.start()

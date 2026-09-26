@@ -635,6 +635,32 @@ describe('session events', () => {
     expect(app.subagentDocument('child-1')?.all).toHaveLength(1)
   })
 
+  it('a delegated child lists in the catalog and opens in its own window', async () => {
+    const { app } = build()
+    app.start()
+    await app.applyEvent({
+      type: 'subagent/catalog', seq: 1, time: 1,
+      data: { version: 0, childId: 'child-1', childCreatedAt: 1, mode: 'continuable', label: 'Scoped reply' },
+    })
+    await app.applySubagentEvent('child-1', {
+      type: 'user/message', seq: 1, time: 2,
+      data: { content: [{ type: 'text', text: 'the delegated prompt' }], source: { kind: 'user' } },
+    })
+    app.setSubagentRunning('child-1', true)
+    app.openWindow(WINDOW_IDS.subagents)
+    app.windows.requestRender()
+    const catalog = (app.windows.paint()).lines().join('\n')
+    expect(catalog).toContain('Subagents — 1')
+    expect(catalog).toContain('Scoped reply')
+    expect(catalog).toContain('running')
+    // Enter opens the child's transcript in the read-only window.
+    app.handle({ type: 'key', key: 'enter' })
+    app.windows.requestRender()
+    const view = (app.windows.paint()).lines().join('\n')
+    expect(view).toContain('Subagent — Scoped reply')
+    expect(view).toContain('the delegated prompt')
+  })
+
   it('records a tool call and its result', async () => {
     const { app } = build()
     app.start()

@@ -284,6 +284,8 @@ export const WINDOW_IDS = {
   sessions: 'sessions',
   jobs: 'jobs',
   breakpoints: 'breakpoints',
+  subagents: 'subagents',
+  subagentView: 'subagent-view',
   help: 'help',
   about: 'about',
 } as const
@@ -506,6 +508,39 @@ class TranscriptPane implements Widget {
  */
 /** One row of a list window, with an optional filter haystack. */
 type ListRow = { label: string; detail?: string; marker?: string; filter?: string }
+
+/**
+ * The read-only transcript body of the subagent-view window.
+ *
+ * One window serves the whole catalog — the window-manager moment is the
+ * parent's conversation and a child's living in overlapping windows at once —
+ * so selecting another row swaps the view rather than opening another window.
+ * The transcript itself is the same widget the main conversation renders
+ * with, fed from the child's own document.
+ */
+class SubagentPane implements Widget {
+  private view: TranscriptView | undefined
+
+  /**
+   * Point the pane at a child's document.
+   * @param document - The child's transcript document.
+   */
+  show(document: SessionDocument): void {
+    this.view = new TranscriptView(document, { gutterWidth: 2, collapsed: true, showReasoning: true })
+  }
+
+  draw(painter: Painter, context: WidgetContext): void {
+    this.view?.draw(painter, context)
+  }
+
+  onKey(event: KeyEvent): Consumed {
+    return this.view?.onKey(event) ?? Consumed.No
+  }
+
+  onMouse(event: MouseEvent): Consumed {
+    return this.view?.onMouse(event) ?? Consumed.No
+  }
+}
 
 class ListWindow implements Widget {
   private offset = 0
@@ -831,6 +866,12 @@ export class TvisionApp {
    */
   private readonly subagentDocuments = new Map<string, SessionDocument>()
 
+  /** The read-only body of the subagent-view window; see {@link SubagentPane}. */
+  private readonly subagentPane = new SubagentPane()
+
+  /** The catalog count the Subagents window's title last showed. */
+  private subagentTitleCount = -1
+
   /**
    * @param options - Terminal, host, identity, and skin.
    */
@@ -1033,6 +1074,31 @@ export class TvisionApp {
       listed: true,
     })
     this.windows.close(WINDOW_IDS.breakpoints)
+    this.windows.open({
+      id: WINDOW_IDS.subagents,
+      title: 'Subagents — 0',
+      rect: { x: 4, y: 3, width: 54, height: 10 },
+      widget: this.listWindow(
+        WINDOW_IDS.subagents,
+        () => this.document.subagentList.map(entry => ({
+          label: entry.label ?? entry.id.slice(0, 8),
+          detail: `${entry.mode} · ${entry.running ? '● running' : '· settled'}`,
+          marker: entry.running ? '●' : '·',
+        })),
+        'No subagents yet. The catalog fills when the agent delegates.',
+      ),
+      listed: true,
+    })
+    this.windows.close(WINDOW_IDS.subagents)
+    this.windows.open({
+      id: WINDOW_IDS.subagentView,
+      title: 'Subagent',
+      rect: { x: 8, y: 4, width: 56, height: 16 },
+      widget: this.subagentPane,
+      resizable: true,
+      listed: true,
+    })
+    this.windows.close(WINDOW_IDS.subagentView)
     this.windows.focus(WINDOW_IDS.transcript)
   }
 
@@ -1119,6 +1185,11 @@ export class TvisionApp {
       // and in the rules; Enter enables or disables the rule under the cursor.
       const rule = this.breakpointRules[index]
       if (rule !== undefined) this.toggleBreakpoint(rule.pattern)
+      return
+    }
+    if (id === WINDOW_IDS.subagents) {
+      const entry = this.document.subagentList[index]
+      if (entry !== undefined) void this.openSubagentView(entry.id, entry.label)
       return
     }
     if (id === WINDOW_IDS.project) {
@@ -1259,6 +1330,7 @@ export class TvisionApp {
           { id: 'tasks', label: '&Tasks', shortcut: 'F8', action: run(() => this.toggleWindow(WINDOW_IDS.tasks)) },
           { id: 'jobs', label: '&Jobs', action: run(() => this.toggleWindow(WINDOW_IDS.jobs)) },
           { id: 'sessions', label: '&Sessions', shortcut: 'F3', action: run(() => this.toggleWindow(WINDOW_IDS.sessions)) },
+          { id: 'subagents', label: 'Sub&agents', action: run(() => this.toggleWindow(WINDOW_IDS.subagents)), hint: 'Delegated children' },
           { id: 'sep', label: '', separator: true },
           {
             id: 'layout',
@@ -2010,7 +2082,10 @@ export class TvisionApp {
     if (outcome.notice !== undefined) {
       this.document.addNotice(outcome.notice.kind, outcome.notice.text, event.time)
     }
-    if (outcome.changed) this.windows.requestRender()
+    if (outcome.changed) {
+      this.syncSubagentWindow()
+      this.windows.requestRender()
+    }
   }
 
   /**
@@ -2038,6 +2113,39 @@ export class TvisionApp {
    */
   setSubagentRunning(id: string, running: boolean): void {
     if (this.document.setSubagentRunning(id, running)) this.windows.requestRender()
+  }
+
+  /**
+   * Open the read-only transcript of one delegated child, lazily loading its
+   * persisted log when nothing has folded yet — the child ran before this
+   * boot, or its events have not begun to arrive.
+   * @param id - The child session id.
+   * @param label - The catalog label, for the window title.
+   */
+  private async openSubagentView(id: string, label?: string): Promise<void> {
+    this.subagentPane.show(this.subagentDocumentFor(id))
+    // The window is registered once at boot; re-opening keeps its geometry,
+    // so only the title follows the selection.
+    this.windows.setOpen(WINDOW_IDS.subagentView, true)
+    this.setWindowTitle(WINDOW_IDS.subagentView, `Subagent — ${label ?? id.slice(0, 8)}`)
+    this.windows.focus(WINDOW_IDS.subagentView)
+    this.syncSubagentWindow()
+    const existing = this.subagentDocument(id)
+    if (existing !== undefined && existing.all.length > 0) return
+    try {
+      const loaded = await this.options.host.loadSubagent?.(id)
+      if (loaded === false) this.notify('This subagent has no readable transcript yet.', 'warning')
+    } catch (error) {
+      this.notify(describeError(error), 'error')
+    }
+  }
+
+  /** Keep the Subagents window's title honest about the catalog's size. */
+  private syncSubagentWindow(): void {
+    const count = this.document.subagentList.length
+    if (count === this.subagentTitleCount) return
+    this.subagentTitleCount = count
+    this.setWindowTitle(WINDOW_IDS.subagents, `Subagents — ${count}`)
   }
 
   /**
