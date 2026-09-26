@@ -59,6 +59,8 @@ export interface WindowSpec {
   readonly widget: Widget
   /** Whether the window participates in the Window menu and cascade (default true). */
   readonly listed?: boolean
+  /** Whether an unclaimed Escape dismisses the window (default false). */
+  readonly dismissable?: boolean
   /** Whether the title bar shows a system box that closes it (default false). */
   readonly closable?: boolean
   /** Whether the bottom-right grip resizes it (default true). */
@@ -99,6 +101,8 @@ export class Window {
   rect: Rect
   /** Whether the Window menu lists it and cascade places it. */
   readonly listed: boolean
+  /** Whether an unclaimed Escape dismisses the window. */
+  readonly dismissable: boolean
   /** Whether the title bar's system box closes it. */
   readonly closable: boolean
   /** Whether the grip resizes it. */
@@ -135,6 +139,7 @@ export class Window {
     this.rect = spec.rect
     this.widget = spec.widget
     this.listed = spec.listed ?? true
+    this.dismissable = spec.dismissable ?? false
     this.closable = spec.closable ?? false
     this.resizable = spec.resizable ?? true
     this.scrollable = spec.scrollable ?? false
@@ -1125,6 +1130,13 @@ export class WindowManager {
       // consumed even though the focused widget did not. A false return lets a
       // caller re-dispatch what was already handled.
       this.requestRender()
+      return true
+    } else if (event.key === 'escape' && active.dismissable) {
+      // An Escape nobody wanted dismisses the raised panel — the Borland
+      // reflex. Only windows that asked for it: the conversation and the
+      // side column are the desktop itself, not panels over it, and a
+      // composer with a draft consumes Escape first to protect the text.
+      this.close(active.id)
       return true
     }
     return consumed

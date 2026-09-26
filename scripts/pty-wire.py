@@ -73,6 +73,18 @@ SCRIPT = [
     ('break-deny', b'n'),
     ('dwell', b''),
     ('dwell', b''),
+    # Delegation turn: the parent calls the composed subagent tool, the child
+    # runs in the background, and its settlement arrives as a notice that
+    # wakes one more parent turn. It sits between the dialog-driven
+    # breakpoints and the screen-judged markdown turn, with generous dwells,
+    # so the settlement cannot shift either neighbour's keystroke timing.
+    ('sub-prompt', b'wire-sub\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
+    ('dwell', b''),
     # Markdown turn first: its constructs must land on the real screen.
     ('md-prompt', b'wire-markdown\r'),
     ('dwell', b''),
@@ -86,6 +98,23 @@ SCRIPT = [
     ('dwell', b''),
     ('approve-or-noop', b'\r'),
     ('dwell', b''),
+    ('dwell', b''),
+    # Subagent inspection: Window (5th menu) -> Subagents opens the catalog;
+    # Enter opens the selected child's transcript. Both are then closed the
+    # same way, so the final screen still shows the transcript for the
+    # markdown judgement below.
+    ('sub-menu', b'\x1b[21~'),
+    ('sub-win-right', b'\x1b[C\x1b[C\x1b[C\x1b[C'),
+    ('sub-win-item', b'\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B'),
+    ('sub-win-pick', b'\r'),
+    ('dwell', b''),
+    ('sub-open', b'\r'),
+    ('dwell', b''),
+    ('dwell', b''),
+    # Escape dismisses the raised panel — the view first (it holds focus),
+    # then the catalog beneath it — leaving the final screen to the transcript.
+    ('sub-close-view', b'\x1b'),
+    ('sub-close-cat', b'\x1b'),
     ('dwell', b''),
     ('menu', b'\x1b[21~'),
     ('dwell', b''),
@@ -128,7 +157,7 @@ def replay(capture, columns, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsh-home', default=None)
-    parser.add_argument('--seconds', type=float, default=75.0)
+    parser.add_argument('--seconds', type=float, default=110.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
     args = parser.parse_args()
 
@@ -227,6 +256,16 @@ def main():
         # (…bytes…)]` — the file name on the wire request is the proof that
         # the file itself, not a path mention, rode along.
         attach_line = next((line for line in mock_log.splitlines() if 'wire-attach' in line), '')
+        # Delegation: the tool card settled with the child id, the settlement
+        # notice carried the Subagent context label, and the end-of-run walk
+        # opened the catalog and the child's own transcript — the prompts the
+        # child received are visible only inside that window.
+        checks.append(('the delegation settled and was labelled as the subagent',
+                       '~ subagent' in text and '+ Subagent' in text))
+        checks.append(('the subagents catalog and child transcript opened',
+                       'Subagents — 1' in text and 'Delegate a scoped reply' in text
+                       and 'Subagent — Delegate a scoped reply' in text
+                       and 'wire-sub-child: say delegated-done' in text))
         checks.append(('the attached file reached the model as handle text',
                        'package.json' in attach_line and 'model-visible' in text))
         counts = {seq: text.count(seq) for seq in TEARDOWN}

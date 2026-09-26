@@ -69,6 +69,23 @@ const TURNS = [
     usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
   },
   {
+    // Delegation: the parent calls the composed subagent tool (continuable,
+    // so the result is the immediate child-id and the child's reply arrives
+    // later as the settlement notice). The child's own request and the
+    // settlement followup both land on the first turn below — their last
+    // user message carries no keyword — which keeps the scenario
+    // deterministic end to end.
+    match: 'wire-sub',
+    reasoning: 'The user wants delegation offloaded. Call the subagent tool.',
+    toolCall: {
+      id: 'call_mock_sub',
+      name: 'subagent',
+      arguments: '{"prompt":"wire-sub-child: say delegated-done","description":"Delegate a scoped reply"}',
+    },
+    followupContent: 'The subagent settled and its reply is folded back.',
+    usage: { prompt_tokens: 240, completion_tokens: 30, total_tokens: 270 },
+  },
+  {
     // The attachment round trip: the profile's /attach admits a file through
     // the real dsh-attachment store, the next message carries it as a durable
     // file part, and the adapter resolves it to model-visible handle text —

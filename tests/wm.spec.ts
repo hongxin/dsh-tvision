@@ -782,6 +782,25 @@ describe('closing a modal window', () => {
     expect(manager.activeWindowId).not.toBe('dialog')
   })
 
+  it('an unclaimed Escape dismisses a dismissable panel, never the desktop', () => {
+    const manager = makeManager()
+    manager.open({ id: 'desk', title: 'Desk', rect: rect(1, 1, 40, 10), widget: new SpyWidget() })
+    const panel = new SpyWidget()
+    panel.consumed = false // claims nothing, so the Escape reaches the manager
+    manager.open({
+      id: 'panel', title: 'Panel', rect: rect(4, 3, 20, 6), widget: panel,
+      dismissable: true,
+    })
+    manager.focus('panel')
+    manager.handle({ type: 'key', key: 'escape' })
+    expect(manager.isOpen('panel')).toBe(false)
+    // The desktop window beneath is not dismissable, so the same key is a
+    // no-op there rather than a way to lose the conversation.
+    manager.focus('desk')
+    manager.handle({ type: 'key', key: 'escape' })
+    expect(manager.isOpen('desk')).toBe(true)
+  })
+
   it('notifies onClose exactly once', () => {
     const manager = makeManager()
     let closed = 0

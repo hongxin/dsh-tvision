@@ -1049,6 +1049,7 @@ export class TvisionApp {
     this.windows.open({
       id: WINDOW_IDS.sessions,
       title: 'Sessions',
+      dismissable: true,
       rect: { x: Math.max(2, plan.transcript.width - 50), y: 3, width: 46, height: 12 },
       widget: this.listWindow(WINDOW_IDS.sessions, () => [], 'Press F3 to list resumable sessions.', { filterable: true }),
       listed: true,
@@ -1057,6 +1058,7 @@ export class TvisionApp {
     this.windows.open({
       id: WINDOW_IDS.jobs,
       title: 'Jobs',
+      dismissable: true,
       rect: { x: 4, y: 4, width: 44, height: 10 },
       widget: this.listWindow(WINDOW_IDS.jobs, () => [], 'No background jobs.'),
       listed: true,
@@ -1065,6 +1067,7 @@ export class TvisionApp {
     this.windows.open({
       id: WINDOW_IDS.breakpoints,
       title: 'Breakpoints — 0',
+      dismissable: true,
       rect: { x: 6, y: 5, width: 46, height: 10 },
       widget: this.listWindow(
         WINDOW_IDS.breakpoints,
@@ -1077,6 +1080,7 @@ export class TvisionApp {
     this.windows.open({
       id: WINDOW_IDS.subagents,
       title: 'Subagents — 0',
+      dismissable: true,
       rect: { x: 4, y: 3, width: 54, height: 10 },
       widget: this.listWindow(
         WINDOW_IDS.subagents,
@@ -1093,6 +1097,7 @@ export class TvisionApp {
     this.windows.open({
       id: WINDOW_IDS.subagentView,
       title: 'Subagent',
+      dismissable: true,
       rect: { x: 8, y: 4, width: 56, height: 16 },
       widget: this.subagentPane,
       resizable: true,
@@ -1331,6 +1336,7 @@ export class TvisionApp {
           { id: 'jobs', label: '&Jobs', action: run(() => this.toggleWindow(WINDOW_IDS.jobs)) },
           { id: 'sessions', label: '&Sessions', shortcut: 'F3', action: run(() => this.toggleWindow(WINDOW_IDS.sessions)) },
           { id: 'subagents', label: 'Sub&agents', action: run(() => this.toggleWindow(WINDOW_IDS.subagents)), hint: 'Delegated children' },
+          { id: 'subagentview', label: 'Subagent &transcript', action: run(() => this.toggleWindow(WINDOW_IDS.subagentView)), hint: 'The selected child, read-only' },
           { id: 'sep', label: '', separator: true },
           {
             id: 'layout',
