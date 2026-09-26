@@ -89,6 +89,19 @@ export interface Entry {
 }
 
 /** A todo item as the todo window shows it. */
+/**
+ * One delegated child agent, from the parent session's `subagent/catalog`
+ * events. `running` is display state, not durable: live `subagent/start` /
+ * `subagent/end` events flip it, and a replayed catalog starts settled.
+ */
+export interface SubagentEntry {
+  readonly id: string
+  readonly mode: string
+  readonly label?: string
+  readonly createdAt: number
+  running: boolean
+}
+
 export interface TodoItem {
   readonly id: string
   readonly text: string
@@ -132,6 +145,7 @@ export class SessionDocument {
   } | undefined
   private pendingDirty = false
   private todos: TodoItem[] = []
+  private readonly subagents: SubagentEntry[] = []
   private title: string | undefined
   private phase: AgentPhase = 'idle'
   private phaseStartedAt = 0
@@ -190,6 +204,38 @@ export class SessionDocument {
   /** The task list as last written. */
   get todoList(): readonly TodoItem[] {
     return this.todos
+  }
+
+  /** The delegated children, in discovery order (the `subagent/catalog` fold). */
+  get subagentList(): readonly SubagentEntry[] {
+    return this.subagents
+  }
+
+  /**
+   * Record one delegated child. Idempotent on id: a replayed catalog and the
+   * live discovery describe the same child, and the first fact wins.
+   * @param entry - Everything but `running`, which starts settled.
+   * @returns Whether the catalog grew.
+   */
+  addSubagent(entry: Omit<SubagentEntry, 'running'>): boolean {
+    if (this.subagents.some(candidate => candidate.id === entry.id)) return false
+    this.subagents.push({ ...entry, running: false })
+    this.touch()
+    return true
+  }
+
+  /**
+   * Flip one child's running marker.
+   * @param id - The child session id.
+   * @param running - Whether it has a turn in flight.
+   * @returns Whether anything changed.
+   */
+  setSubagentRunning(id: string, running: boolean): boolean {
+    const entry = this.subagents.find(candidate => candidate.id === id)
+    if (entry === undefined || entry.running === running) return false
+    entry.running = running
+    this.touch()
+    return true
   }
 
   /** The session title, once the title plugin has produced one. */

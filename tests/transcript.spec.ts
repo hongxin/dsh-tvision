@@ -917,3 +917,45 @@ describe('markdown in the transcript', () => {
     expect(view.searchStatus().total).toBe(1)
   })
 })
+
+describe('the subagent catalog', () => {
+  /** A subagent/catalog event shaped the way the parent session appends it. */
+  const catalog = (childId: string, seq = 1): Parameters<typeof foldEvent>[1] => ({
+    type: 'subagent/catalog',
+    seq,
+    time: seq * 1000,
+    data: { version: 0, childId, childCreatedAt: seq * 900, mode: 'continuable', label: 'Delegate a scoped reply' },
+  })
+
+  it('a catalog event grows the registry and reports the change', () => {
+    const document = new SessionDocument()
+    const outcome = foldEvent(document, catalog('child-1'))
+    expect(outcome.changed).toBe(true)
+    expect(document.subagentList.map(entry => entry.id)).toEqual(['child-1'])
+    expect(document.subagentList[0]).toMatchObject({ mode: 'continuable', label: 'Delegate a scoped reply' })
+  })
+
+  it('a replayed catalog is idempotent — the first discovery of a child wins', () => {
+    const document = new SessionDocument()
+    expect(foldEvent(document, catalog('child-1', 1)).changed).toBe(true)
+    expect(foldEvent(document, catalog('child-1', 2)).changed).toBeFalsy()
+    expect(document.subagentList).toHaveLength(1)
+  })
+
+  it('a malformed catalog without a child id changes nothing', () => {
+    const document = new SessionDocument()
+    const outcome = foldEvent(document, { type: 'subagent/catalog', seq: 1, time: 1, data: { version: 0 } })
+    expect(outcome.changed).toBeFalsy()
+    expect(document.subagentList).toHaveLength(0)
+  })
+
+  it('the running marker is display state: it flips and settles without new entries', () => {
+    const document = new SessionDocument()
+    foldEvent(document, catalog('child-1'))
+    expect(document.setSubagentRunning('child-1', true)).toBe(true)
+    expect(document.subagentList[0]?.running).toBe(true)
+    expect(document.setSubagentRunning('child-1', true)).toBe(false)
+    expect(document.setSubagentRunning('child-1', false)).toBe(true)
+    expect(document.all).toHaveLength(0)
+  })
+})

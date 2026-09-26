@@ -1,0 +1,13 @@
+{"type":"turn/start","seq":1,"time":1790408570000,"data":{"turn":2}}
+{"type":"step/start","seq":2,"time":1790408570050,"data":{"turn":2,"step":1}}
+{"type":"user/message","seq":3,"time":1790408570100,"data":{"content":[{"type":"text","text":"delegate a scoped reply"}],"source":{"kind":"user"},"role":"user"}}
+{"type":"assistant/message","seq":4,"time":1790408570200,"data":{"turn":2,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"Offload the scoped work to a child."},{"type":"tool-use","id":"call_fixture_sub","name":"subagent","input":{"prompt":"say delegated-done","description":"Delegate a scoped reply"}}]}}}
+{"type":"tool/call","seq":5,"time":1790408570250,"data":{"turn":2,"step":1,"callId":"call_fixture_sub","name":"subagent","arguments":"{\"prompt\":\"say delegated-done\",\"description\":\"Delegate a scoped reply\"}"}}
+{"type":"subagent/catalog","seq":6,"time":1790408570300,"data":{"version":0,"childId":"child-fixture-1","childCreatedAt":1790408570280,"mode":"continuable","label":"Delegate a scoped reply"}}
+{"type":"tool/result","seq":7,"time":1790408570350,"data":{"turn":2,"step":1,"message":{"source":{"kind":"tool","callId":"call_fixture_sub"},"content":[{"type":"tool-result","toolCallId":"call_fixture_sub","content":[{"type":"text","text":"started subagent child-fixture-1"}],"isError":false}],"role":"user"}}}
+{"type":"step/end","seq":8,"time":1790408570400,"data":{"turn":2,"step":1}}
+{"type":"step/start","seq":9,"time":1790408572400,"data":{"turn":2,"step":2}}
+{"type":"user/message","seq":10,"time":1790408572450,"data":{"content":[{"type":"text","text":"Background subagent child-fixture-1 finished and will do no further work unless you send it more."},{"type":"text","text":"Its closing message:"},{"type":"reasoning","text":"The delegated child reasoned briefly."},{"type":"text","text":"delegated-done: the scoped reply."}],"source":{"kind":"subagent-settled","form":"notice","summary":"Background subagent child-fixture-1 finished","senderSessionId":"child-fixture-1"},"role":"user"}}
+{"type":"assistant/message","seq":11,"time":1790408572600,"data":{"turn":2,"step":2,"message":{"role":"assistant","content":[{"type":"text","text":"The delegated reply is folded back."}]}}}
+{"type":"step/end","seq":12,"time":1790408572700,"data":{"turn":2,"step":2}}
+{"type":"turn/end","seq":13,"time":1790408572800,"data":{"turn":2,"reason":{"kind":"completed"}}}

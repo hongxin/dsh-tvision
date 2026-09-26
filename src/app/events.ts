@@ -256,6 +256,18 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       document.setTitle(title)
       return { changed: true, titleChanged: title }
     }
+    case 'subagent/catalog': {
+      // The durable discovery fact: one delegated child, appended to the
+      // parent's own log, so a replay restores the catalog exactly. The
+      // child's transcript lives in its own session, not here.
+      const id = str(data, 'childId')
+      if (id === undefined) return UNCHANGED
+      const createdAt = num(data, 'childCreatedAt', event.time)
+      const mode = str(data, 'mode') ?? 'one-shot'
+      const label = str(data, 'label')
+      const grew = document.addSubagent({ id, mode, createdAt, ...(label === undefined ? {} : { label }) })
+      return grew ? { changed: true } : UNCHANGED
+    }
     case 'compaction/start': {
       document.setPhase('compacting', event.time)
       document.addNotice('compaction', 'Compacting context…', event.time)
@@ -344,6 +356,11 @@ function contextLabel(source: string): string {
     case 'skill-catalog':
     case 'agent-instructions':
       return 'Context'
+    case 'subagent-settled':
+      // The settlement notice a delegated child leaves in the parent's log;
+      // its `senderSessionId` is the child, whose transcript opens from the
+      // Subagents window.
+      return 'Subagent'
     /* c8 ignore next 2 -- an unrecognised source keeps its own name. */
     default:
       return source

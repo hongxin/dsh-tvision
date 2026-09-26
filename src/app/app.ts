@@ -66,6 +66,12 @@ export interface AppHost {
    * means the composition provides no attachment store and `/attach` says so.
    */
   attach?(paths: readonly string[]): Promise<readonly AttachOutcome[]>
+  /**
+   * Load a delegated child's persisted log into its transcript document —
+   * the lazy path for a child that ran before this boot. Resolves false when
+   * the log cannot be opened, and the desktop says so.
+   */
+  loadSubagent?(id: string): Promise<boolean>
   /** Run a slash command line; returns the text to show, or undefined when unknown. */
   runCommand?(line: string): Promise<{ text?: string; kind: 'success' | 'error' } | undefined>
   /** Ask the agent to stop. */
@@ -817,6 +823,13 @@ export class TvisionApp {
    * carries and what the composer's placeholder reminds the user of.
    */
   private pendingAttachments: readonly PendingAttachment[] = []
+
+  /**
+   * Transcript documents of delegated child agents, keyed by child session
+   * id. Created on the child's first folded event (live or lazily loaded);
+   * a child that never runs costs nothing.
+   */
+  private readonly subagentDocuments = new Map<string, SessionDocument>()
 
   /**
    * @param options - Terminal, host, identity, and skin.
@@ -1998,6 +2011,53 @@ export class TvisionApp {
       this.document.addNotice(outcome.notice.kind, outcome.notice.text, event.time)
     }
     if (outcome.changed) this.windows.requestRender()
+  }
+
+  /**
+   * Feed one event from a delegated child's session into that child's own
+   * document. Same fold, different document — a child's replay must render
+   * exactly as its live run did, which is the same contract the main fold
+   * carries. Calls await one shared module, so folds settle in arrival order.
+   * @param id - The child session id.
+   * @param event - The event, in the log's shape.
+   */
+  async applySubagentEvent(id: string, event: { type: string; seq: number; time: number; data?: unknown }): Promise<void> {
+    const module = await import('./events.ts')
+    const document = this.subagentDocumentFor(id)
+    const outcome = module.foldEvent(document, event)
+    if (outcome.notice !== undefined) {
+      document.addNotice(outcome.notice.kind, outcome.notice.text, event.time)
+    }
+    if (outcome.changed) this.windows.requestRender()
+  }
+
+  /**
+   * Flip a child's running marker on the main catalog.
+   * @param id - The child session id.
+   * @param running - Whether it has a turn in flight.
+   */
+  setSubagentRunning(id: string, running: boolean): void {
+    if (this.document.setSubagentRunning(id, running)) this.windows.requestRender()
+  }
+
+  /**
+   * A child's transcript document, once any of its events has folded (live or
+   * lazily loaded). The Subagents window opens views over these.
+   * @param id - The child session id.
+   * @returns The document, or undefined while none exists.
+   */
+  subagentDocument(id: string): SessionDocument | undefined {
+    return this.subagentDocuments.get(id)
+  }
+
+  /** Get-or-create one child's document slot. */
+  private subagentDocumentFor(id: string): SessionDocument {
+    let document = this.subagentDocuments.get(id)
+    if (document === undefined) {
+      document = new SessionDocument()
+      this.subagentDocuments.set(id, document)
+    }
+    return document
   }
 
   /**

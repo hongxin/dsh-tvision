@@ -616,6 +616,25 @@ describe('session events', () => {
     expect(app.document.all.some(entry => entry.text === 'hello')).toBe(true)
   })
 
+  it('subagent events fold into their own document, not the main one', async () => {
+    const { app } = build()
+    app.start()
+    await app.applySubagentEvent('child-1', {
+      type: 'user/message', seq: 1, time: 1,
+      data: { content: [{ type: 'text', text: 'the delegated prompt' }], source: { kind: 'user' } },
+    })
+    const child = app.subagentDocument('child-1')
+    expect(child?.all.some(entry => entry.text === 'the delegated prompt')).toBe(true)
+    expect(app.document.all).toHaveLength(0)
+    // A second child gets its own document; the first is untouched.
+    await app.applySubagentEvent('child-2', {
+      type: 'user/message', seq: 1, time: 2,
+      data: { content: [{ type: 'text', text: 'another prompt' }], source: { kind: 'user' } },
+    })
+    expect(app.subagentDocument('child-2')?.all).toHaveLength(1)
+    expect(app.subagentDocument('child-1')?.all).toHaveLength(1)
+  })
+
   it('records a tool call and its result', async () => {
     const { app } = build()
     app.start()

@@ -67,3 +67,41 @@ describe('golden replay: a tool round trip', () => {
     ])
   })
 })
+
+describe('golden replay: a delegation turn', () => {
+  const rows = replay('subagent')
+
+  it('shows the tool card, the settled notice labelled as the subagent, and the folded reply', () => {
+    expect(rows).toEqual([
+      '> You',
+      '  delegate a scoped reply',
+      '',
+      '| Agent · step 2',
+      '  · Offload the scoped work to a child.',
+      '',
+      '~ subagent  say delegated-done',
+      '  ok · 0.1s ▸',
+      '',
+      '+ Subagent',
+      '  Background subagent child-fixture-1 finished and will do',
+      '  no further work unless you send it more.',
+      '  Its closing message:',
+      '  delegated-done: the scoped reply.',
+      '',
+      '| Agent · step 3',
+      '  The delegated reply is folded back.',
+    ])
+  })
+
+  it('the catalog registered the child for the Subagents window', () => {
+    const document = new SessionDocument()
+    const text = readFileSync(join(HERE, 'golden', 'subagent.jsonl'), 'utf8')
+    for (const line of text.split('\n')) {
+      if (line.trim() === '') continue
+      void foldEvent(document, JSON.parse(line))
+    }
+    expect(document.subagentList).toEqual([
+      { id: 'child-fixture-1', mode: 'continuable', label: 'Delegate a scoped reply', createdAt: 1790408570280, running: false },
+    ])
+  })
+})

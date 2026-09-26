@@ -34,6 +34,7 @@ import { createUserMessage, type FileBlock, type TextBlock } from '@deepseek-ai/
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -285,6 +286,23 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         }
       }))
     },
+    async loadSubagent(id: string): Promise<boolean> {
+      // The sessions service opens the child's durable log, and
+      // snapshotEvents is the same primitive the resume backfill reads. An
+      // absent service or unknown id resolves false — the honest empty
+      // window, not a silent one.
+      if (app === undefined) return false
+      const sessions = ctx.get('sessions') as unknown as {
+        get?: (id: string) => { snapshotEvents: () => readonly unknown[] } | undefined
+      } | undefined
+      const child = sessions?.get?.(id)
+      if (child === undefined) return false
+      const seeds = child.snapshotEvents()
+      for (const event of seeds) {
+        void app.applySubagentEvent(id, event as unknown as { type: string; seq: number; time: number; data?: unknown })
+      }
+      return seeds.length > 0
+    },
     async runCommand(line: string) {
       const controller = new AbortController()
       controllers.add(controller)
@@ -474,7 +492,15 @@ export function mount(input: MountInput): () => void {
     return foldChain
   }
   const offSession = ctx.on('session/event', (session, event) => {
-    if (session !== agent.session) return
+    if (session !== agent.session) {
+      // A child session — one the main agent delegated to — rides the same
+      // firehose. Its transcript belongs in its own document, rendered when
+      // the user opens it from the Subagents window; discarding it here is
+      // what made subagents invisible.
+      const id = String((session as { id?: unknown }).id ?? '')
+      if (id !== '') void app.applySubagentEvent(id, event as unknown as { type: string; seq: number; time: number; data?: unknown })
+      return
+    }
     // A new advertised context window rides this event and nothing else; the
     // host's memoised value dies with it. The cast mirrors the event's own shape.
     if ((event as { type?: string }).type === 'request/context') invalidateContext?.()
@@ -497,6 +523,16 @@ export function mount(input: MountInput): () => void {
   //    cancelled without a closing event.
   const offStatus = ctx.on('agent/status', () => {
     app.windows.requestRender()
+  })
+
+  // 2b. Subagent lifecycle flips the catalog's running markers. Scope-filtered
+  //     dispatch keys the carrier by the delegating parent, and the typed
+  //     listener sees only the `info` argument.
+  const offSubStart = ctx.on('subagent/start', info => {
+    if (typeof info?.id === 'string') app.setSubagentRunning(info.id, true)
+  })
+  const offSubEnd = ctx.on('subagent/end', info => {
+    if (typeof info?.id === 'string') app.setSubagentRunning(info.id, false)
   })
 
   // 3. Approvals: claim the waterfall for our own agent, delegate otherwise.
@@ -690,6 +726,8 @@ export function mount(input: MountInput): () => void {
     stopFrameLoop()
     offSession()
     offStatus()
+    offSubStart()
+    offSubEnd()
     offCreated()
     if (projectTimer !== undefined) clearTimeout(projectTimer)
     offApproval()
