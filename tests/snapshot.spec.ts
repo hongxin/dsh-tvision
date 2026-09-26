@@ -213,6 +213,28 @@ describe('desktop snapshots', () => {
     await pending
   })
 
+  it('renders a plan review with the plan as markdown', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    const pending = view.app.askQuestions({
+      questions: [{
+        id: 'plan-review',
+        header: 'Plan review',
+        question: 'Approve this plan and leave plan mode?',
+        detail: '# Stream the parser\n\nThe fix, in order:\n\n1. drain complete tokens per chunk\n2. hold partial fences\n3. keep the tests green\n\n> A fence that straddles a chunk boundary is the hard part.',
+        options: [
+          { label: 'Approve', description: 'Leave plan mode; the plan is carried out from the next step.' },
+          { label: 'Keep planning', description: 'Stay in plan mode; feedback goes back to the model.' },
+        ],
+      }],
+    })
+    await view.frame()
+    expectSnapshot('plan-review', await view.frame())
+    view.feed('\u001B')
+    view.app.flushInput()
+    await pending
+  })
+
   it('renders the composer with a command completion popup', async () => {
     const view = scene()
     view.app.start()

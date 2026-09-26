@@ -6,14 +6,14 @@
 │        ║                                                                            ║        │
 │        ║────────────────────────────────────────────────────────────────────────────║        │
 │        ║ A rule you set stopped this call before it ran.                            ║        │
-│        ║                                                                            ║        │
 │        ║ tool: bash                                                                 ║        │
+│        ║ call: rm -rf build && make                                                 ║        │
+│        ║ Y runs this one call; the rule asks again next time. a also covers every   ║        │
+│        ║ later call matching this rule, this session. n, Escape, or closing this    ║  ──────┐
+│        ║ window refuses the call, and the model is told it was denied.              ║        │
 │        ║                                                                            ║        │
-│        ║ call: rm -rf build && make                                                 ║  ──────┐
 │        ║                                                                            ║        │
-│        ║ Y runs this one call; the rule asks again next time.                       ║        │
-│        ║ a also covers every later call matching this rule, this session.           ║        │
-│        ║─ ↓ more ───────────────────────────────────────────────────────────────────║        │
+│        ║────────────────────────────────────────────────────────────────────────────║        │
 │        ║                                                                            ║        │
 │        ║                                                                            ║        │
 │        ║                Run once      Always this session      Deny                 ║        │

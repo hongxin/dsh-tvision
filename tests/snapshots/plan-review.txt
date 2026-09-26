@@ -1,23 +1,23 @@
   File  View  Agent  Tools  Window  Help                                           dsh tvision
 ┌────────────────────────── Conversation ──────────────────────────┐┌──────── Project ─────────┐
 │                                                                  │                           │
-│        ╔═[■]════════════════════════ Approval required ═════════════════════════[↑]═╗        │
-│        ║bash: writes outside the workspace                                          ║        │
+│        ╔═[■]═══════════════════════════ Plan review ════════════════════════════[↑]═╗        │
+│        ║Approve this plan and leave plan mode?                                      ║        │
 │        ║                                                                            ║        │
 │        ║────────────────────────────────────────────────────────────────────────────║        │
-│        ║ The agent asked to run a tool that needs your decision.                    ║        │
-│        ║ tool: bash                                                                 ║        │
-│        ║ reason: writes outside the workspace                                       ║        │
-│        ║ Y allows this call only. The grant is one-shot by design: the harness      ║        │
-│        ║ records the decision in the session log and asks again next time.          ║  ──────┐
-│        ║ N, Escape, or closing this window refuses the call, and the model is told  ║        │
-│        ║ it was denied.                                                             ║        │
+│        ║ Stream the parser                                                          ║        │
+│        ║ The fix, in order:                                                         ║        │
+│        ║ 1. drain complete tokens per chunk                                         ║        │
+│        ║ 2. hold partial fences                                                     ║        │
+│        ║ 3. keep the tests green                                                    ║  ──────┐
+│        ║ │ A fence that straddles a chunk boundary is the hard part.                ║        │
+│        ║                                                                            ║        │
 │        ║                                                                            ║        │
 │        ║────────────────────────────────────────────────────────────────────────────║        │
 │        ║                                                                            ║        │
 │        ║                                                                            ║        │
-│        ║                            Allow once      Deny                            ║        │
-│        ║Run this one call; ask again next time.                                     ║        │
+│        ║                   Approve      Keep planning      Cancel                   ║        │
+│        ║Leave plan mode; the plan is carried out from the next step.                ║        │
 │        ╚════════════════════════════════════════════════════════════════════════════╝        │
 │                                                                                        ──────┘
 │                                                                  │

@@ -24,6 +24,7 @@ import type { Painter } from '../kit/painter.ts'
 import type { KeyEvent, MouseEvent, Widget, WidgetContext } from '../kit/widget.ts'
 import { Consumed } from '../kit/widget.ts'
 import { prevClusterStart, takeColumns, textWidth } from '../kit/text.ts'
+import { markdownRows } from './markdown.ts'
 import { wrapText } from './transcript.ts'
 
 /** One choice in a dialog. */
@@ -181,26 +182,35 @@ export class Dialog implements Widget {
       row++
     }
     row++
-    // The detail, in a bordered region the reader can scroll.
+    // The detail, in a bordered region the reader can scroll. It renders as
+    // markdown — a plan review's detail IS the plan, and headings, lists, and
+    // tables carry meaning there exactly as they do in the transcript.
     if (this.spec.detail !== undefined && this.spec.detail !== '') {
       const buttonRows = this.spec.choices.length > 0 ? 4 : 2
       const detailHeight = Math.max(0, painter.height - row - buttonRows)
       if (detailHeight > 2) {
         const inner = painter.sub(0, row, painter.width, detailHeight)
-        const lines = this.spec.detail.split('\n').flatMap(line => wrapText(line, Math.max(1, inner.width - 2)))
-        const max = Math.max(0, lines.length - (inner.height - 2))
+        const budget = Math.max(1, inner.width - 2)
+        const rows = markdownRows(this.spec.detail, budget, palette.dialogStatic, palette)
+        const max = Math.max(0, rows.length - (inner.height - 2))
         this.detailOffset = Math.min(this.detailOffset, max)
         for (let column = 0; column < inner.width; column++) {
           inner.set(column, 0, '─', palette.dialogStatic)
           inner.set(column, inner.height - 1, '─', palette.dialogStatic)
         }
         for (let index = 0; index < inner.height - 2; index++) {
-          const line = lines[this.detailOffset + index]
+          const line = rows[this.detailOffset + index]
           if (line === undefined) break
-          inner.text(1, index + 1, line, Math.max(0, inner.width - 2), palette.dialogStatic)
+          let column = 1
+          for (const segment of line.segments) {
+            const room = Math.max(0, inner.width - 1 - column)
+            if (room <= 0) break
+            inner.text(column, index + 1, segment.text, room, segment.style)
+            column += textWidth(segment.text)
+          }
         }
-        if (lines.length > inner.height - 2) {
-          const more = this.detailOffset + inner.height - 2 < lines.length ? ' ↓ more' : ' ↑ top'
+        if (rows.length > inner.height - 2) {
+          const more = this.detailOffset + inner.height - 2 < rows.length ? ' ↓ more' : ' ↑ top'
           inner.text(1, inner.height - 1, more, Math.min(8, inner.width - 2), palette.diffMeta)
         }
         row += detailHeight
