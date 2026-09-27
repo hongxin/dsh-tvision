@@ -73,6 +73,17 @@ export interface AppHost {
    * the log cannot be opened, and the desktop says so.
    */
   loadSubagent?(id: string): Promise<boolean>
+  /**
+   * List the workspace's user-invocable skills for the Skills window and the
+   * `/` completion. Absent means the composition mounts no skill registry.
+   */
+  listSkills?(): Promise<readonly SkillRow[]>
+  /**
+   * Invoke a `/name` line as a skill: load the body and inject it as the
+   * canonical skill-invocation message. Resolves false when the name is not a
+   * user-invocable skill, and the caller falls through to its unknown notice.
+   */
+  invokeSkill?(line: string): Promise<boolean>
   /** Run a slash command line; returns the text to show, or undefined when unknown. */
   runCommand?(line: string): Promise<{ text?: string; kind: 'success' | 'error' } | undefined>
   /** Ask the agent to stop. */
@@ -136,6 +147,14 @@ export interface PendingAttachment {
 export type AttachOutcome =
   | { readonly ok: true; readonly path: string; readonly id: string; readonly name: string; readonly bytes: number }
   | { readonly ok: false; readonly path: string; readonly error: string }
+
+/** One user-invocable skill, as the Skills window and `/` completion show it. */
+export interface SkillRow {
+  readonly name: string
+  readonly description: string
+  /** False when only a human can invoke it — the `user-only` marker. */
+  readonly modelInvocable: boolean
+}
 
 /**
  * One reading of the token-meter projection: the durable log's true usage
@@ -288,6 +307,7 @@ export const WINDOW_IDS = {
   subagents: 'subagents',
   subagentView: 'subagent-view',
   plan: 'plan',
+  skills: 'skills',
   help: 'help',
   about: 'about',
 } as const
@@ -960,6 +980,9 @@ export class TvisionApp {
   /** The read-only body of the subagent-view window; see {@link SubagentPane}. */
   private readonly subagentPane = new SubagentPane()
 
+  /** The user-invocable skills the seam last listed; `/`-completion and adjudication read it. */
+  private skills: readonly SkillRow[] = []
+
   /** The catalog count the Subagents window's title last showed. */
   private subagentTitleCount = -1
 
@@ -1208,6 +1231,15 @@ export class TvisionApp {
       dismissable: true,
     })
     this.windows.close(WINDOW_IDS.plan)
+    this.windows.open({
+      id: WINDOW_IDS.skills,
+      title: 'Skills — 0',
+      rect: { x: 5, y: 3, width: 58, height: 12 },
+      widget: this.listWindow(WINDOW_IDS.skills, () => [], 'No user-invocable skills in this workspace.'),
+      listed: true,
+      dismissable: true,
+    })
+    this.windows.close(WINDOW_IDS.skills)
     this.windows.focus(WINDOW_IDS.transcript)
   }
 
@@ -1299,6 +1331,14 @@ export class TvisionApp {
     if (id === WINDOW_IDS.subagents) {
       const entry = this.document.subagentList[index]
       if (entry !== undefined) void this.openSubagentView(entry.id, entry.label)
+      return
+    }
+    if (id === WINDOW_IDS.skills) {
+      const skill = this.skills[index]
+      if (skill !== undefined) {
+        this.composer.insert(`/${skill.name} `)
+        this.windows.focus(WINDOW_IDS.transcript)
+      }
       return
     }
     if (id === WINDOW_IDS.project) {
@@ -1442,6 +1482,7 @@ export class TvisionApp {
           { id: 'subagents', label: 'Sub&agents', action: run(() => this.toggleWindow(WINDOW_IDS.subagents)), hint: 'Delegated children' },
           { id: 'subagentview', label: 'Subagent &transcript', action: run(() => this.toggleWindow(WINDOW_IDS.subagentView)), hint: 'The selected child, read-only' },
           { id: 'plan', label: '&Plan', action: run(() => this.toggleWindow(WINDOW_IDS.plan)), hint: 'The plan under review, or the last one presented' },
+          { id: 'skills', label: 'S&kills', action: run(() => this.openSkillsWindow()), hint: 'The workspace skill catalog' },
           { id: 'sep', label: '', separator: true },
           {
             id: 'layout',
@@ -1777,7 +1818,13 @@ export class TvisionApp {
       this.windows.requestRender()
       try {
         const result = await this.options.host.runCommand(trimmed)
-        if (result === undefined) this.document.addNotice('error', `Unknown command: ${trimmed}`, Date.now())
+        if (result === undefined) {
+          // A name the command table does not know may still be a skill: the
+          // host loads the body and injects it as the skill-invocation
+          // message, which is the official `/name` semantics.
+          const invoked = await this.invokeSkillLine(trimmed)
+          if (!invoked) this.document.addNotice('error', `Unknown command: ${trimmed}`, Date.now())
+        }
         else if (result.text !== undefined && result.text !== '') {
           this.document.addNotice(result.kind === 'error' ? 'error' : 'notice', result.text, Date.now())
         }
@@ -1873,7 +1920,13 @@ export class TvisionApp {
     if (token.startsWith('/')) {
       const prefix = token.slice(1).toLowerCase()
       const commands = [...(this.options.host.commands?.() ?? []),
-        ...this.localCommands.map(command => ({ name: command.name, description: command.description }))]
+        ...this.localCommands.map(command => ({ name: command.name, description: command.description })),
+        // Skills answer to the same `/name` grammar; the description says
+        // which group a row belongs to before Enter sends it.
+        ...this.skills.map(skill => ({
+          name: skill.name,
+          description: `skill${skill.modelInvocable ? '' : ' (user-only)'} — ${skill.description}`,
+        }))]
       return commands
         .filter(command => command.name.toLowerCase().startsWith(prefix))
         .map(command => ({
@@ -2251,6 +2304,41 @@ export class TvisionApp {
     }
   }
 
+  /**
+   * Open the Skills window and refresh its catalog from the seam — the list
+   * changes as skills are installed, so the window never shows a stale set.
+   */
+  openSkillsWindow(): void {
+    this.openWindow(WINDOW_IDS.skills)
+    void this.refreshSkills()
+  }
+
+  /**
+   * Try one submitted line as a skill invocation. A throw is reported as its
+   * own error and counts as handled — the name *was* a skill whose load
+   * failed, and "Unknown command" on top of that would mislead.
+   * @param line - The submitted line, `/name` plus any extra text.
+   * @returns Whether the line was consumed as a skill attempt.
+   */
+  private async invokeSkillLine(line: string): Promise<boolean> {
+    if (this.options.host.invokeSkill === undefined) return false
+    try {
+      return await this.options.host.invokeSkill(line)
+    } catch (error) {
+      this.notify(describeError(error), 'error')
+      return true
+    }
+  }
+
+  private async refreshSkills(): Promise<void> {
+    if (this.options.host.listSkills === undefined) return
+    try {
+      this.setSkills(await this.options.host.listSkills())
+    } catch (error) {
+      this.notify(describeError(error), 'error')
+    }
+  }
+
   /** Keep the Subagents window's title honest about the catalog's size. */
   private syncSubagentWindow(): void {
     const count = this.document.subagentList.length
@@ -2350,6 +2438,22 @@ export class TvisionApp {
       this.notify(`Could not index the workspace: ${describeError(error)}`, 'error')
       return undefined
     }
+  }
+
+  /**
+   * Replace the skill catalog the seam listed — the Skills window's rows and
+   * the `/` completion's skill group read the same list.
+   * @param rows - The user-invocable skills, or none.
+   */
+  setSkills(rows: readonly SkillRow[]): void {
+    this.skills = [...rows]
+    this.setListRows(WINDOW_IDS.skills, this.skills.map(skill => ({
+      label: skill.name,
+      detail: skill.modelInvocable ? skill.description : `user-only — ${skill.description}`,
+      marker: skill.modelInvocable ? '·' : '○',
+    })))
+    this.setWindowTitle(WINDOW_IDS.skills, `Skills — ${rows.length}`)
+    this.windows.requestRender()
   }
 
   /**

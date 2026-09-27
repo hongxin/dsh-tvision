@@ -242,6 +242,17 @@ describe('desktop snapshots', () => {
     expectSnapshot('composer-completions', await view.frame())
   })
 
+  it('renders the Skills window from the listed catalog', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    view.app.setSkills([
+      { name: 'find-skills', description: 'Discover installable skills', modelInvocable: true },
+      { name: 'deploy-badge', description: 'Add the powered-by badge', modelInvocable: false },
+    ])
+    view.app.openWindow(WINDOW_IDS.skills)
+    expectSnapshot('skills-window', await view.frame())
+  })
+
   it('renders the Plan window from a presented plan, with the plan-mode prompt', async () => {
     const view = scene(96, 26)
     view.app.start()

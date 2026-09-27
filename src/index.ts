@@ -33,6 +33,8 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import { createUserMessage, type FileBlock, type TextBlock } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { isUserInvocable, renderSkillContent } from '@deepseek-ai/dsh-skill'
+import type { SkillDefinition, SkillSummary } from '@deepseek-ai/dsh-skill'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -40,7 +42,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-tools'
-import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment } from './app/app.ts'
+import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment, type SkillRow } from './app/app.ts'
 import type { BreakpointRule } from './app/breakpoints.ts'
 import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
@@ -285,6 +287,48 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
           return { ok: false, path, error: describe(error) }
         }
       }))
+    },
+    async listSkills(): Promise<readonly SkillRow[]> {
+      // The registry is dsh-skill's, composed by dsh-base; the view options
+      // carry the session's cwd so filesystem providers discover workspace
+      // skills, and only user-invocable entries reach the desktop.
+      const skills = ctx.get('skills') as unknown as {
+        list: (options: { cwd?: string }) => Promise<SkillSummary[]>
+      } | undefined
+      if (skills === undefined) return []
+      const listed = await skills.list({ cwd: agent.session.header.cwd ?? process.cwd() })
+      return listed.filter(isUserInvocable).map(skill => ({
+        name: skill.name,
+        description: skill.description,
+        modelInvocable: skill.invocation.modelInvocable,
+      }))
+    },
+    async invokeSkill(line: string): Promise<boolean> {
+      // `/name extra text`: the skill body rides in the canonical wrapper and
+      // the extra text stays outside it, which is the documented shape both
+      // the model-facing tool and the host-side injection share.
+      const name = line.slice(1).split(/\s+/u)[0] ?? ''
+      if (name === '') return false
+      const skills = ctx.get('skills') as unknown as {
+        get: (name: string, options: { cwd?: string }) => Promise<SkillDefinition | undefined>
+      } | undefined
+      if (skills === undefined) return false
+      const definition = await skills.get(name, { cwd: agent.session.header.cwd ?? process.cwd() })
+      if (definition === undefined || !isUserInvocable(definition)) return false
+      const extra = line.slice(1 + name.length).trim()
+      const content: TextBlock[] = [{ type: 'text', text: renderSkillContent(definition) }]
+      if (extra !== '') content.push({ type: 'text', text: extra })
+      const message = createUserMessage({
+        content,
+        source: { kind: 'skill-invocation', name, form: 'instructions' },
+      })
+      try {
+        if (agent.status === 'running') agent.steer(message)
+        else agent.followup(message)
+      } catch (error) {
+        app?.document.addNotice('error', `Could not invoke ${name}: ${describe(error)}`, Date.now())
+      }
+      return true
     },
     async loadSubagent(id: string): Promise<boolean> {
       // The sessions service opens the child's durable log, and
@@ -642,6 +686,15 @@ export function mount(input: MountInput): () => void {
     // until the next turn starts.
     readMeter(agent.session)
   })
+
+  // The skill catalog rides the same seam: listed once at mount so `/`
+  // completion knows the names, and again whenever the Skills window opens.
+  const refreshSkills = (): void => {
+    void handle.host.listSkills?.()
+      .then(rows => app.setSkills(rows))
+      .catch(error => { ctx.logger.warn(`tvision: skill listing failed: ${String(error)}`) })
+  }
+  refreshSkills()
 
   let projectTimer: ReturnType<typeof setTimeout> | undefined
 

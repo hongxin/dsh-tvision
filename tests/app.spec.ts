@@ -187,6 +187,61 @@ describe('composer', () => {
     expect(host.sent).toEqual(['hello there'])
   })
 
+  it('skills list in their window, complete after /, and Enter inserts the invocation', async () => {
+    const { app, host } = build({
+      listSkills: async () => [
+        { name: 'find-skills', description: 'Discover installable skills', modelInvocable: true },
+        { name: 'deploy-badge', description: 'Add the badge', modelInvocable: false },
+      ],
+    })
+    app.start()
+    app.setSkills([
+      { name: 'find-skills', description: 'Discover installable skills', modelInvocable: true },
+      { name: 'deploy-badge', description: 'Add the badge', modelInvocable: false },
+    ])
+    // While the composer holds focus, the /-completion offers the skill group.
+    type(app, '/find')
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).toContain('skill — Discover installable skills')
+    app.feed('')
+    app.flushInput()
+    // The window lists the catalog, marking the user-only entry.
+    app.openSkillsWindow()
+    app.windows.requestRender()
+    const catalog = (app.windows.paint()).lines().join('\n')
+    expect(catalog).toContain('Skills — 2')
+    expect(catalog).toContain('find-skills')
+    expect(catalog).toContain('user-only — Add the badge')
+    // Enter on a catalog row inserts the invocation for the composer.
+    app.handle({ type: 'key', key: 'enter' })
+    expect(app.composer.value).toBe('/find-skills ')
+    expect(host.sent).toEqual([])
+  })
+
+  it('an unknown /name falls through to the skill seam before the notice', async () => {
+    const invoked: string[] = []
+    const { app } = build({
+      runCommand: async () => undefined,
+      invokeSkill: async (line) => {
+        invoked.push(line)
+        return line === '/find-skills'
+      },
+    })
+    app.start()
+    type(app, '/find-skills\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(invoked).toEqual(['/find-skills'])
+    // The skill attempt consumed the line: no unknown-command error entry.
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).not.toContain('Unknown command')
+    // A miss lands on the honest notice.
+    type(app, '/nope\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(invoked).toEqual(['/find-skills', '/nope'])
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).toContain('Unknown command: /nope')
+  })
+
   it('/quit leaves through the same door Ctrl+Q uses', () => {
     const { app, host } = build()
     app.start()

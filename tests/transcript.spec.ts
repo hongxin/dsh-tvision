@@ -918,6 +918,29 @@ describe('markdown in the transcript', () => {
   })
 })
 
+describe('skill invocation', () => {
+  /** A skill-invocation user message shaped the way the host injects it. */
+  const injected = (name: string): Parameters<typeof foldEvent>[1] => ({
+    type: 'user/message',
+    seq: 9,
+    time: 9000,
+    data: {
+      content: [{ type: 'text', text: `<skill_content name="${name}">` }],
+      source: { kind: 'skill-invocation', name, form: 'instructions' },
+    },
+  })
+
+  it('renders as Skill-labelled context, never in the user voice', () => {
+    const document = new SessionDocument()
+    foldEvent(document, injected('find-skills'))
+    const rows = buildRows(document.all, 60, resolvePalette(TURBO_VISION), {
+      gutterWidth: 2, collapsed: true, showReasoning: true,
+    }).map(row => row.text)
+    expect(rows).toContain('+ Skill')
+    expect(rows.join('\n')).not.toContain('> You')
+  })
+})
+
 describe('plan mode', () => {
   it('plan/mode sets the stance and the last logged value wins', () => {
     const document = new SessionDocument()

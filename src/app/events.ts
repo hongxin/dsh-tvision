@@ -375,6 +375,9 @@ function contextLabel(source: string): string {
     case 'skill-catalog':
     case 'agent-instructions':
       return 'Context'
+    case 'skill-invocation':
+      // The host-injected body of a skill the user invoked with `/name`.
+      return 'Skill'
     case 'subagent-settled':
       // The settlement notice a delegated child leaves in the parent's log;
       // its `senderSessionId` is the child, whose transcript opens from the
