@@ -1060,20 +1060,19 @@ describe('file-mutating tool detection', () => {
   })
 
   it('the writer families trip it; readers and non-tool events do not', () => {
-    const document = new SessionDocument()
     expect(isFileMutatingTool(call('bash'))).toBe(true)
     expect(isFileMutatingTool(call('edit'))).toBe(true)
     expect(isFileMutatingTool(call('apply_patch'))).toBe(true)
     expect(isFileMutatingTool(call('read'))).toBe(false)
-    expect(isFileMutatingTool({ type: 'user/message', seq: 2, time: 2, data: { name: 'bash' } })).toBe(false)
+    expect(isFileMutatingTool({ type: 'user/message', data: { name: 'bash' } })).toBe(false)
   })
 
   it('a result whose only writer signal is tool-private metadata still trips it', () => {
     // The meta branch is the nameless shape: a first-party tool the regex
     // does not know, recognized by the diff it left behind.
-    expect(isFileMutatingTool({ type: 'tool/result', seq: 5, time: 5, data: { meta: { diff: '- a\n+ b' } } })).toBe(true)
-    expect(isFileMutatingTool({ type: 'tool/result', seq: 6, time: 6, data: { meta: 'not an object' } })).toBe(false)
-    expect(isFileMutatingTool({ type: 'tool/result', seq: 7, time: 7, data: {} })).toBe(false)
+    expect(isFileMutatingTool({ type: 'tool/result', data: { meta: { diff: '- a\n+ b' } } })).toBe(true)
+    expect(isFileMutatingTool({ type: 'tool/result', data: { meta: 'not an object' } })).toBe(false)
+    expect(isFileMutatingTool({ type: 'tool/result', data: {} })).toBe(false)
   })
 })
 
