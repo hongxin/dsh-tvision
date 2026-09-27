@@ -218,6 +218,22 @@ describe('composer', () => {
     expect(host.sent).toEqual([])
   })
 
+  it('a newer release shows a status cell and announces itself once', () => {
+    const { app } = build()
+    app.start()
+    app.setUpdateAvailable({ current: '0.3.0', latest: '0.4.0', firstSeen: true })
+    app.windows.requestRender()
+    const first = (app.windows.paint()).lines().join('\n')
+    expect(first).toContain('↑0.4.0')
+    expect(first).toContain('0.4.0 is available — /update installs it')
+    // A replay with firstSeen false keeps the cell. The notice itself is a
+    // six-second transient on the wall clock, which no synchronous test can
+    // expire — its once-per-version gate is the firstSeen flag this sets.
+    app.setUpdateAvailable({ current: '0.3.0', latest: '0.4.0', firstSeen: false })
+    app.windows.requestRender()
+    expect((app.windows.paint()).lines().join('\n')).toContain('↑0.4.0')
+  })
+
   it('the @-completion offers sessions after files, inserting the canonical mention', async () => {
     const { app } = build({
       completeSessions: async () => [

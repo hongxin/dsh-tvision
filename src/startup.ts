@@ -106,9 +106,40 @@ export function apply(ctx: Context): void {
  * @param ctx - Plugin context whose root fiber owns the whole app tree.
  */
 function installResumeHost(ctx: Context): void {
+  const execve = process.execve?.bind(process)
+  if (process.argv[1] === undefined || execve === undefined) return
+  ctx.provide('tvisionResumeHost', {
+    async handoff(sessionId: string, cwd: string | undefined): Promise<never> {
+      if (cwd !== undefined && cwd !== '') {
+        try {
+          process.chdir(cwd)
+        } catch (error) {
+          throw new Error(`tvision: cannot resume in "${cwd}": ${String(error)}`)
+        }
+      }
+      return restartIntoSession(ctx, sessionId)
+    },
+  })
+}
+
+/**
+ * Replace this process with the same launcher invocation bound to one session.
+ *
+ * The one primitive both resume and update restart on: release the terminal
+ * (the replacement draws its own first frame, and two writers on one
+ * alternate screen corrupt it), then execve the launcher with every original
+ * argument except `--resume`, plus the session to re-enter. Never returns on
+ * success; on failure the process cannot be saved (the terminal is already
+ * released), so it exits loudly rather than pretending to continue.
+ * @param ctx - Context whose root fiber owns the whole app tree.
+ * @param sessionId - The session the replacement opens.
+ */
+export async function restartIntoSession(ctx: Context, sessionId: string): Promise<never> {
   const entry = process.argv[1]
   const execve = process.execve?.bind(process)
-  if (entry === undefined || execve === undefined) return
+  if (entry === undefined || execve === undefined) {
+    throw new Error('tvision: this platform cannot restart in place')
+  }
   // The launcher arguments minus every `--resume`, so the replacement keeps the
   // invoking profile and overlays while swapping only the session.
   const baseArgs: string[] = []
@@ -122,31 +153,32 @@ function installResumeHost(ctx: Context): void {
     }
     baseArgs.push(arg)
   }
-  ctx.provide('tvisionResumeHost', {
-    async handoff(sessionId: string, cwd: string | undefined): Promise<never> {
-      if (cwd !== undefined && cwd !== '') {
-        try {
-          process.chdir(cwd)
-        } catch (error) {
-          throw new Error(`tvision: cannot resume in "${cwd}": ${String(error)}`)
-        }
-      }
-      try {
-        // Release the terminal first: the replacement draws its own first frame,
-        // and two writers on one alternate screen is a corrupt screen.
-        await ctx.root.fiber.dispose()
-        execve(
-          process.execPath,
-          [process.execPath, ...process.execArgv, entry, ...baseArgs, `--resume=${sessionId}`],
-          process.env,
-        )
-        throw new Error('process replacement returned unexpectedly')
-      } catch (error) {
-        process.stderr.write(`tvision: resume handoff failed after terminal release: ${String(error)}\n`)
-        process.exit(1)
-      }
-    },
-  })
+  try {
+    await ctx.root.fiber.dispose()
+    execve(
+      process.execPath,
+      [process.execPath, ...process.execArgv, entry, ...baseArgs, `--resume=${sessionId}`],
+      process.env,
+    )
+    throw new Error('process replacement returned unexpectedly')
+  } catch (error) {
+    process.stderr.write(`tvision: restart failed after terminal release: ${String(error)}\n`)
+    process.exit(1)
+  }
+}
+
+/**
+ * The profile name this process was launched with, from the launcher argv.
+ * @returns The name after `--profile`, or undefined for a bare invocation.
+ */
+export function launchedProfileName(): string | undefined {
+  const argv = process.argv.slice(2)
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]
+    if (arg === '--profile') return argv[index + 1]
+    if (arg !== undefined && arg.startsWith('--profile=')) return arg.slice('--profile='.length)
+  }
+  return undefined
 }
 
 declare module '@deepseek-ai/cordis' {

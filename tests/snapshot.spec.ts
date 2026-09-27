@@ -242,6 +242,13 @@ describe('desktop snapshots', () => {
     expectSnapshot('composer-completions', await view.frame())
   })
 
+  it('renders the update-available status cell', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    view.app.setUpdateAvailable({ current: '0.3.0', latest: '0.4.0', firstSeen: false })
+    expectSnapshot('update-cell', await view.frame())
+  })
+
   it('renders the Skills window from the listed catalog', async () => {
     const view = scene(96, 26)
     view.app.start()

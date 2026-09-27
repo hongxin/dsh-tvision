@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply, GOODBYE_KEY, MAIN_AGENT_ID, TVISION_STARTUP_SERVICE } from '../src/startup.ts'
+import { semverNewer } from '../src/app/app.ts'
 import { CONFIGURED_AGENT_IDENTITIES_KEY } from '@deepseek-ai/dsh-agent-loop'
 
 /** A context that records provides and answers the two services the parser reads. */
@@ -71,5 +72,20 @@ describe('the launch grammar', () => {
     const startup = ctx.provided[TVISION_STARTUP_SERVICE] as { skin?: string; mouse: boolean }
     expect(startup.skin).toBe('amber')
     expect(startup.mouse).toBe(false)
+  })
+})
+
+describe('semverNewer', () => {
+  it('orders plain triples and ignores a leading v', () => {
+    expect(semverNewer('0.4.0', '0.3.0')).toBe(true)
+    expect(semverNewer('v1.0.0', '0.9.9')).toBe(true)
+    expect(semverNewer('0.3.0', '0.3.0')).toBe(false)
+    expect(semverNewer('0.2.9', '0.3.0')).toBe(false)
+  })
+
+  it('a malformed candidate is never newer — the safe answer', () => {
+    expect(semverNewer('latest', '0.3.0')).toBe(false)
+    expect(semverNewer('', '0.3.0')).toBe(false)
+    expect(semverNewer('1.2.x', '0.3.0')).toBe(false)
   })
 })

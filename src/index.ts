@@ -43,7 +43,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-tools'
-import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment, type SessionCandidate, type SkillRow } from './app/app.ts'
+import { TvisionApp, WINDOW_IDS, semverNewer, type AppHost, type AttachOutcome, type PendingAttachment, type SessionCandidate, type SkillRow } from './app/app.ts'
 import type { BreakpointRule } from './app/breakpoints.ts'
 import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
@@ -87,6 +87,8 @@ export interface Config {
   readonly mouse?: boolean
   /** A line to print once the terminal is released on exit. */
   readonly goodbye?: string
+  /** Whether to look for newer releases at boot (default true). */
+  readonly updateCheck?: boolean
 }
 
 /**
@@ -101,6 +103,10 @@ const TVISION_SETTINGS = z.object({
     action: z.union(['ask', 'deny']),
     enabled: z.boolean().default(true),
   })).default([]),
+  update: z.object({
+    lastCheckAt: z.number().default(0),
+    latest: z.string().default(''),
+  }).default({ lastCheckAt: 0, latest: '' }),
 })
 
 /** How long to wait after a file-changing tool before re-indexing the workspace. */
@@ -177,8 +183,8 @@ export interface MountInput {
    * boots with the flag/default alone.
    */
   readonly settings: {
-    read?(): { skin?: string; breakpoints?: BreakpointRule[] } | undefined
-    save?(patch: { skin?: string; breakpoints?: BreakpointRule[] }): void
+    read?(): { skin?: string; breakpoints?: BreakpointRule[]; update?: { lastCheckAt: number; latest: string } } | undefined
+    save?(patch: { skin?: string; breakpoints?: BreakpointRule[]; update?: { lastCheckAt: number; latest: string } }): void
     watch?(listener: (next: { skin?: string; breakpoints?: BreakpointRule[] }) => void): void
   }
   /**
@@ -715,6 +721,34 @@ export function mount(input: MountInput): () => void {
       .catch(error => { ctx.logger.warn(`tvision: skill listing failed: ${String(error)}`) })
   }
   refreshSkills()
+
+  // Newer-release awareness: one GitHub query per day at most, silent on
+  // every failure (a flaky route to api.github.com must never delay or noise
+  // the desktop), and the answer persists so the next boot skips the ask.
+  if (config.updateCheck !== false) {
+    const state = input.settings.read?.()?.update
+    if (state === undefined || Date.now() - state.lastCheckAt > 24 * 60 * 60 * 1000) {
+      void fetch('https://api.github.com/repos/hongxin/dsh-tvision/releases/latest', {
+        headers: { 'user-agent': `dsh-tvision/${VERSION}`, accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(3000),
+      })
+        .then(response => response.json() as Promise<{ tag_name?: string }>)
+        .then(release => {
+          const tag = typeof release.tag_name === 'string' ? release.tag_name.replace(/^v/u, '') : ''
+          if (tag === '') throw new Error('no tag_name in the release payload')
+          input.settings.save?.({ update: { lastCheckAt: Date.now(), latest: tag } })
+          if (semverNewer(tag, VERSION)) {
+            app.setUpdateAvailable({ current: VERSION, latest: tag, firstSeen: state?.latest !== tag })
+          }
+        })
+        .catch(() => {
+          // Offline, rate-limited, or a payload we do not recognise: quiet.
+        })
+    } else if (state.latest !== undefined && semverNewer(state.latest, VERSION)) {
+      // A cached finding keeps its cell without re-asking the network.
+      app.setUpdateAvailable({ current: VERSION, latest: state.latest, firstSeen: false })
+    }
+  }
 
   // Session candidates for the @-completion: prefetched once so the first
   // popup paints from cache; the completion's opening keystroke refreshes.

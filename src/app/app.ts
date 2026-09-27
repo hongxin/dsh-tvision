@@ -85,6 +85,11 @@ export interface AppHost {
    */
   invokeSkill?(line: string): Promise<boolean>
   /**
+   * Install the latest release and restart the desktop into the current
+   * session. Resolves only in failure reports; success replaces the process.
+   */
+  applyUpdate?(): Promise<never>
+  /**
    * Offer other sessions for an `@` mention. Absent or empty means the
    * composition references no sessions; the file completion stands alone.
    */
@@ -912,6 +917,38 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * Whether one dotted version is strictly newer than another.
+ *
+ * Three numeric segments, prerelease ignored — this decides a status cell,
+ * not an install order, and a malformed answer of "not newer" is always the
+ * safe one.
+ * @param candidate - The version on offer.
+ * @param current - The version running.
+ * @returns True only when candidate is strictly newer.
+ */
+export function semverNewer(candidate: string, current: string): boolean {
+  const parse = (text: string): [number, number, number] | undefined => {
+    const parts = text.trim().replace(/^v/u, '').split('.')
+    if (parts.length < 3) return undefined
+    const segments: number[] = []
+    for (const part of parts.slice(0, 3)) {
+      const value = /^\d+$/u.test(part) ? Number(part) : Number.NaN
+      if (!Number.isSafeInteger(value)) return undefined
+      segments.push(value)
+    }
+    return [segments[0] ?? 0, segments[1] ?? 0, segments[2] ?? 0]
+  }
+  const left = parse(candidate)
+  const right = parse(current)
+  if (left === undefined || right === undefined) return false
+  return left[0] !== right[0]
+    ? left[0] > right[0]
+    : left[1] !== right[1]
+      ? left[1] > right[1]
+      : left[2] > right[2]
+}
+
+/**
  * The application.
  *
  * Owns the frame loop, the input decoder, and the keymap. `run()` is the only
@@ -999,6 +1036,9 @@ export class TvisionApp {
   private skills: readonly SkillRow[] = []
   /** Session candidates the seam last offered; the `@` completion reads the cache. */
   private sessionCandidates: readonly SessionCandidate[] = []
+  /** The newer release the seam announced, for the status cell. */
+  private updateAvailable: { current: string; latest: string } | undefined
+
   /** When the candidate cache was last refreshed; the popup throttles on it. */
   private sessionCandidatesAt = 0
 
@@ -1444,6 +1484,9 @@ export class TvisionApp {
     // that must never be lost, the context meter is the one that matters most
     // while a turn runs, and the window count is trivia that goes first.
     const cells: { text: string; priority?: number; tone?: 'normal' | 'warning' | 'error' | 'success' }[] = []
+    if (this.updateAvailable !== undefined) {
+      cells.push({ text: `↑${this.updateAvailable.latest}`, priority: 3, tone: 'success' })
+    }
     const model = this.options.host.modelLabel?.() ?? this.document.model
     if (model !== undefined) cells.push({ text: model, priority: 4 })
     if (window > 0) {
@@ -2594,6 +2637,20 @@ export class TvisionApp {
    * credentials service in this composition — nothing is shown, exactly as
    * before the feature existed.
    */
+  /**
+   * Publish the newest release the seam found. The status cell is permanent
+   * while an update is available; the notice fires once per distinct version,
+   * which is what `firstSeen` carries.
+   * @param update - The versions on offer, or undefined when current.
+   */
+  setUpdateAvailable(update: { current: string; latest: string; firstSeen: boolean } | undefined): void {
+    this.updateAvailable = update
+    if (update !== undefined && update.firstSeen) {
+      this.notify(`${update.latest} is available — /update installs it`, 'info')
+    }
+    this.windows.requestRender()
+  }
+
   setCredentialState(state: { configured: boolean; source?: string } | undefined): void {
     this.credential = state
     this.windows.requestRender()
