@@ -918,6 +918,29 @@ describe('markdown in the transcript', () => {
   })
 })
 
+describe('session references', () => {
+  /** A referenced-sessions snapshot shaped the way the service injects it. */
+  const recall = (): Parameters<typeof foldEvent>[1] => ({
+    type: 'user/message',
+    seq: 12,
+    time: 12_000,
+    data: {
+      content: [{ type: 'text', text: '## Referenced sessions' }],
+      source: { kind: 'session-reference', form: 'recall', version: 1, references: [{ sessionId: 'other', label: 'Fix the fence tokenizer' }] },
+    },
+  })
+
+  it('renders as Recall-labelled context, never in the user voice', () => {
+    const document = new SessionDocument()
+    foldEvent(document, recall())
+    const rows = buildRows(document.all, 60, resolvePalette(TURBO_VISION), {
+      gutterWidth: 2, collapsed: true, showReasoning: true,
+    }).map(row => row.text)
+    expect(rows).toContain('+ Recall')
+    expect(rows.join('\n')).not.toContain('> You')
+  })
+})
+
 describe('skill invocation', () => {
   /** A skill-invocation user message shaped the way the host injects it. */
   const injected = (name: string): Parameters<typeof foldEvent>[1] => ({

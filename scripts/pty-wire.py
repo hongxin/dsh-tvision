@@ -236,7 +236,12 @@ def main():
                     ('settle', b''),
                     ('skills-close', b'\x1b'),
                     ('settle', b''),
-                ], 100, 30, 20.0, 1.0,
+                    # The @-completion must still pop its file group on a
+                    # composition that now references sessions; the session
+                    # group rides when other sessions exist.
+                    ('at-complete', b'@'),
+                    ('settle', b''),
+                ], 100, 30, 24.0, 1.0,
             )
             screen2 = replay(capture2, 100, 30)
             skills_stream = capture2.decode('utf8', 'replace')
@@ -246,6 +251,8 @@ def main():
                            '⇄' in capture2.decode('utf8', 'replace')))
             checks.append(('the skills window opened over the resumed desktop',
                            'Skills —' in skills_stream))
+            checks.append(('the @-completion still pops with the session group mounted',
+                           '@src/' in skills_stream or 'file' in skills_stream))
         else:
             checks.append(('a resumed session shows its history on screen', False))
 

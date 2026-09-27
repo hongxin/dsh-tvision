@@ -42,11 +42,20 @@
 #
 # Only rows `@deepseek-ai/dsh-base` does not already provide appear here. That is
 # not a style preference: the loader rejects a duplicate id outright, so
-# re-inserting `storage`, `session-reference`, or `tool-ask-user` — all of which
-# base already mounts — makes the whole profile fail to boot. The patch was
-# checked against `dsh --profile tvision --dump-default-config`.
+# re-inserting a base-owned row (`storage`, `tool-ask-user`, …) makes the whole
+# profile fail to boot. Re-verify against `dsh --profile tvision --dump-config`
+# before adding one; that is how `session-reference` proved absent from base
+# despite an earlier note here claiming otherwise.
 
 - insert:
+    # Cross-session references: @-completion offers other sessions, and a
+    # canonical mention makes the service attach a bounded read-only snapshot
+    # of that session to the message. Not a dsh-base row (verified against
+    # `--dump-config`); if base ever mounts it under this id, the loader
+    # rejects the duplicate loudly and this row goes.
+    - id: session-reference
+      name: '@deepseek-ai/dsh-session-reference'
+
     # Command-line intake and session identity for the rows above.
     - id: tvision-startup
       name: '@dsh-tvision/dsh-tvision/startup'

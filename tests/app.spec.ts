@@ -218,6 +218,33 @@ describe('composer', () => {
     expect(host.sent).toEqual([])
   })
 
+  it('the @-completion offers sessions after files, inserting the canonical mention', async () => {
+    const { app } = build({
+      completeSessions: async () => [
+        { mention: '@[Fix the fence tokenizer](dsh-session:bWFpbi1zZXNzaW9uLWZpeA)', label: 'Fix the fence tokenizer', detail: 'session · this workspace' },
+        { mention: '@[Streaming the parser](dsh-session:bWFpbi1zZXNzaW9uLXBhcnNlcg)', label: 'Streaming the parser', detail: 'session · elsewhere' },
+      ],
+    })
+    app.start()
+    await app.setSessionCandidates([
+      { mention: '@[Fix the fence tokenizer](dsh-session:bWFpbi1zZXNzaW9uLWZpeA)', label: 'Fix the fence tokenizer', detail: 'session · this workspace' },
+      { mention: '@[Streaming the parser](dsh-session:bWFPbWItcGFyc2Vy)', label: 'Streaming the parser', detail: 'session · elsewhere' },
+    ])
+    type(app, '@')
+    app.windows.requestRender()
+    const popup = (app.windows.paint()).lines().join('\n')
+    expect(popup).toContain('@src/a.ts')
+    expect(popup).toContain('@Fix the fence tokenizer')
+    expect(popup).toContain('session · this workspace')
+    // A narrowed prefix filters the session group by label and keeps files.
+    app.feed('\x15'); app.flushInput()
+    type(app, '@fence')
+    app.windows.requestRender()
+    const narrowed = (app.windows.paint()).lines().join('\n')
+    expect(narrowed).toContain('@Fix the fence tokenizer')
+    expect(narrowed).not.toContain('@Streaming the parser')
+  })
+
   it('an unknown /name falls through to the skill seam before the notice', async () => {
     const invoked: string[] = []
     const { app } = build({

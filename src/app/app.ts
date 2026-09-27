@@ -84,6 +84,11 @@ export interface AppHost {
    * user-invocable skill, and the caller falls through to its unknown notice.
    */
   invokeSkill?(line: string): Promise<boolean>
+  /**
+   * Offer other sessions for an `@` mention. Absent or empty means the
+   * composition references no sessions; the file completion stands alone.
+   */
+  completeSessions?(prefix: string): Promise<readonly SessionCandidate[]>
   /** Run a slash command line; returns the text to show, or undefined when unknown. */
   runCommand?(line: string): Promise<{ text?: string; kind: 'success' | 'error' } | undefined>
   /** Ask the agent to stop. */
@@ -147,6 +152,16 @@ export interface PendingAttachment {
 export type AttachOutcome =
   | { readonly ok: true; readonly path: string; readonly id: string; readonly name: string; readonly bytes: number }
   | { readonly ok: false; readonly path: string; readonly error: string }
+
+/** One referencable session, as the `@` completion offers it. */
+export interface SessionCandidate {
+  /** Canonical `@[label](dsh-session:…)` mention, inserted verbatim. */
+  readonly mention: string
+  /** The session's latest title. */
+  readonly label: string
+  /** One line saying which workspace the session ran in. */
+  readonly detail: string
+}
 
 /** One user-invocable skill, as the Skills window and `/` completion show it. */
 export interface SkillRow {
@@ -982,6 +997,10 @@ export class TvisionApp {
 
   /** The user-invocable skills the seam last listed; `/`-completion and adjudication read it. */
   private skills: readonly SkillRow[] = []
+  /** Session candidates the seam last offered; the `@` completion reads the cache. */
+  private sessionCandidates: readonly SessionCandidate[] = []
+  /** When the candidate cache was last refreshed; the popup throttles on it. */
+  private sessionCandidatesAt = 0
 
   /** The catalog count the Subagents window's title last showed. */
   private subagentTitleCount = -1
@@ -1937,11 +1956,31 @@ export class TvisionApp {
     }
     if (token.startsWith('@')) {
       const prefix = token.slice(1)
-      return (this.options.host.files?.(prefix) ?? []).slice(0, 8).map(path => ({
+      const files = (this.options.host.files?.(prefix) ?? []).slice(0, 5).map(path => ({
         insert: `@${path} `,
         label: `@${path}`,
         detail: 'file',
       }))
+      // The session group rides after files, from the cache: an @-mention of
+      // another session carries the canonical URI in its insert, and the
+      // refresh behind the popup keeps the next one current.
+      const needle = prefix.toLowerCase()
+      const sessions = this.sessionCandidates
+        .filter(candidate => candidate.label.toLowerCase().includes(needle))
+        .slice(0, 4)
+        .map(candidate => ({
+          insert: `${candidate.mention} `,
+          label: `@${candidate.label}`,
+          detail: candidate.detail,
+        }))
+      // The refresh rides the popup's opening keystroke, throttled: the
+      // composer recomputes completions on every painted frame, and a
+      // wide-open popup would otherwise fetch once per frame.
+      if (prefix === '' && Date.now() - this.sessionCandidatesAt > 30_000) {
+        this.sessionCandidatesAt = Date.now()
+        void this.refreshSessionCandidates()
+      }
+      return [...files, ...sessions]
     }
     return []
   }
@@ -2454,6 +2493,31 @@ export class TvisionApp {
     })))
     this.setWindowTitle(WINDOW_IDS.skills, `Skills — ${rows.length}`)
     this.windows.requestRender()
+  }
+
+  /**
+   * Replace the session-candidate cache and refresh behind the popup: the
+   * `@` completion paints the cache immediately, so a fresh fetch never
+   * blocks the keystroke it was asked for.
+   * @param candidates - The offered sessions, or none.
+   */
+  setSessionCandidates(candidates: readonly SessionCandidate[]): void {
+    this.sessionCandidates = [...candidates]
+    // The completion popup computed its list before this fetch landed; a
+    // composer refresh recomputes it, so the popup grows the session group
+    // without waiting for the next keystroke.
+    this.composer.refresh()
+    this.windows.requestRender()
+  }
+
+  private async refreshSessionCandidates(): Promise<void> {
+    if (this.options.host.completeSessions === undefined) return
+    try {
+      this.setSessionCandidates(await this.options.host.completeSessions(''))
+    } catch {
+      // A listing that fails leaves the last-good cache; this is a hint
+      // surface, not a promise.
+    }
   }
 
   /**

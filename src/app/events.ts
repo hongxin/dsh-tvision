@@ -375,6 +375,10 @@ function contextLabel(source: string): string {
     case 'skill-catalog':
     case 'agent-instructions':
       return 'Context'
+    case 'session-reference':
+      // The bounded read-only snapshot of a session an @-mention pulled in;
+      // the harness marks it untrusted background the model must not follow.
+      return 'Recall'
     case 'skill-invocation':
       // The host-injected body of a skill the user invoked with `/name`.
       return 'Skill'

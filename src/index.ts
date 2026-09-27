@@ -34,6 +34,7 @@ import { createUserMessage, type FileBlock, type TextBlock } from '@deepseek-ai/
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { isUserInvocable, renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { formatSessionReferenceMention } from '@deepseek-ai/dsh-session-reference'
 import type { SkillDefinition, SkillSummary } from '@deepseek-ai/dsh-skill'
 import type { ContextPressureProjection, TokenUsageProjection } from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-subagent'
@@ -42,7 +43,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-tools'
-import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment, type SkillRow } from './app/app.ts'
+import { TvisionApp, WINDOW_IDS, type AppHost, type AttachOutcome, type PendingAttachment, type SessionCandidate, type SkillRow } from './app/app.ts'
 import type { BreakpointRule } from './app/breakpoints.ts'
 import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
@@ -286,6 +287,25 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         } catch (error) {
           return { ok: false, path, error: describe(error) }
         }
+      }))
+    },
+    async completeSessions(prefix: string): Promise<readonly SessionCandidate[]> {
+      // The resolver is composed by our own bundle patch (dsh-base does not
+      // mount it); a composition without it keeps the file-only completion.
+      // Called as a method — detaching it would read services off undefined.
+      const resolver = ctx.get('sessionReferenceResolver') as unknown as {
+        listCandidates?: (agent: unknown, query?: string, limit?: number) => Promise<{
+          sessionId: SessionId
+          label: string
+          cwd?: string
+          sameWorkspace: boolean
+        }[]>
+      } | undefined
+      const candidates = await resolver?.listCandidates?.(agent, prefix, 8) ?? []
+      return candidates.map(candidate => ({
+        mention: formatSessionReferenceMention({ sessionId: candidate.sessionId, label: candidate.label }),
+        label: candidate.label,
+        detail: `session · ${candidate.sameWorkspace ? 'this workspace' : candidate.cwd ?? 'elsewhere'}`,
       }))
     },
     async listSkills(): Promise<readonly SkillRow[]> {
@@ -695,6 +715,12 @@ export function mount(input: MountInput): () => void {
       .catch(error => { ctx.logger.warn(`tvision: skill listing failed: ${String(error)}`) })
   }
   refreshSkills()
+
+  // Session candidates for the @-completion: prefetched once so the first
+  // popup paints from cache; the completion's opening keystroke refreshes.
+  void handle.host.completeSessions?.('')
+    .then(candidates => app.setSessionCandidates(candidates))
+    .catch(error => { ctx.logger.warn(`tvision: session candidates failed: ${String(error).slice(0, 200)}`) })
 
   let projectTimer: ReturnType<typeof setTimeout> | undefined
 
