@@ -2073,6 +2073,7 @@ export class TvisionApp {
     const info = this.options.info
     this.openTextWindow(WINDOW_IDS.about, `About ${info.name}`, [
       `${info.name} ${info.version}`,
+      'Hongxin Zhang <Hongxin.zhang@gmail.com>',
       '',
       'A Turbo Vision-style character-cell window manager for',
       'DeepSeek Harness agents. Overlapping framed windows, a menu',
