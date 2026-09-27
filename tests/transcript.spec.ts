@@ -9,6 +9,7 @@
  * allowed to overflow its window.
  */
 import { describe, expect, it, vi } from 'vitest'
+import { isFileMutatingTool } from '../src/index.ts'
 import { CellBuffer, rect } from '../src/kit/cell.ts'
 import { Painter } from '../src/kit/painter.ts'
 import { TURBO_VISION, resolvePalette } from '../src/kit/skin.ts'
@@ -1047,5 +1048,64 @@ describe('the subagent catalog', () => {
     expect(document.setSubagentRunning('child-1', true)).toBe(false)
     expect(document.setSubagentRunning('child-1', false)).toBe(true)
     expect(document.all).toHaveLength(0)
+  })
+})
+
+describe('file-mutating tool detection', () => {
+  const call = (name: string, meta?: unknown) => ({
+    type: 'tool/result',
+    seq: 1,
+    time: 1,
+    data: { name, ...(meta === undefined ? {} : { meta }) },
+  })
+
+  it('the writer families trip it; readers and non-tool events do not', () => {
+    const document = new SessionDocument()
+    expect(isFileMutatingTool(call('bash'))).toBe(true)
+    expect(isFileMutatingTool(call('edit'))).toBe(true)
+    expect(isFileMutatingTool(call('apply_patch'))).toBe(true)
+    expect(isFileMutatingTool(call('read'))).toBe(false)
+    expect(isFileMutatingTool({ type: 'user/message', seq: 2, time: 2, data: { name: 'bash' } })).toBe(false)
+  })
+
+  it('a result whose only writer signal is tool-private metadata still trips it', () => {
+    // The meta branch is the nameless shape: a first-party tool the regex
+    // does not know, recognized by the diff it left behind.
+    expect(isFileMutatingTool({ type: 'tool/result', seq: 5, time: 5, data: { meta: { diff: '- a\n+ b' } } })).toBe(true)
+    expect(isFileMutatingTool({ type: 'tool/result', seq: 6, time: 6, data: { meta: 'not an object' } })).toBe(false)
+    expect(isFileMutatingTool({ type: 'tool/result', seq: 7, time: 7, data: {} })).toBe(false)
+  })
+})
+
+describe('diff metadata reading', () => {
+  /** Fold one call and its result, so the result finds its card. */
+  const settle = (meta?: unknown): SessionDocument => {
+    const document = new SessionDocument()
+    foldEvent(document, { type: 'tool/call', seq: 2, time: 2, data: { callId: 'c1', name: 'edit', arguments: '{}', turn: 1, step: 1 } })
+    foldEvent(document, {
+      type: 'tool/result', seq: 3, time: 3,
+      data: {
+        turn: 1, step: 1,
+        message: { source: { kind: 'tool', callId: 'c1' }, content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'edited' }], isError: false }] },
+        ...(meta === undefined ? {} : { meta }),
+      },
+    })
+    return document
+  }
+
+  it('string, array, and nested presentation shapes all reach the entry', () => {
+    for (const meta of [
+      { diff: '- one\n+ two' },
+      { patch: ['- one', '+ two'] },
+      { presentation: { unifiedDiff: '- one\n+ two' } },
+    ]) {
+      const entry = settle(meta).all.find(item => item.callId === 'c1')
+      expect(entry?.diff).toEqual(['- one', '+ two'])
+    }
+  })
+
+  it('metadata without a diff leaves the entry undecorated', () => {
+    const entry = settle({ note: 'no diff here' }).all.find(item => item.callId === 'c1')
+    expect(entry?.diff).toBeUndefined()
   })
 })

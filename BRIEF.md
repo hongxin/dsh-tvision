@@ -42,16 +42,18 @@ library that knows nothing about agents; everything above it is the application.
 | Area | Statements | What that means |
 |---|---|---|
 | `src/kit`, `src/views`, `src/widgets`, `src/session` | 90–100% | Well covered by unit tests plus a compositor suite that replays frames into a real terminal emulator. |
-| `src/app/app.ts` | 87% | The whole desktop is driven through its public surface by tests. |
-| **`src/app/events.ts`** | **56%** | **The adapter from DSH session events to the document. Tested only against the author's idea of the event shapes — never against a recorded real one.** |
-| **`src/index.ts`, `src/startup.ts`, `src/prompt.ts`** | **0%** | **The entire DSH integration. No *test* executes it. `scripts/pty-profile.py` does mount it against a real agent, so it is not untried — but the mount path is all that has run, and nothing has exercised the event fold, an approval, or a question against real payloads.** |
+| `src/app/app.ts` | 85% | The whole desktop is driven through its public surface by tests. |
+| `src/app/events.ts` | 80% | The event fold, pinned three ways: hand-written golden fixtures under `tests/golden/` (shapes verified against recorded real logs — the reasoner, tool, delegation, and plan-review turns), branch tests for the diff and mutation readers, and the wire rung folding real harness events end to end. |
+| `src/startup.ts` | 86% | The launch grammar and the `--resume` identity are unit-tested against a recording context; the handoff itself is execve and stays in the pty rungs. |
+| `src/index.ts` | ~8% | Still the rung-owned zone: the waterfall claims, the four-argument `execute`, and every seam (sessions, skills, references, meter, attachments) are exercised end to end by `verify:wire` against the real harness and a scripted endpoint — twelve scenarios, 22 checks — rather than by unit fakes. `isFileMutatingTool`, the one pure export, has unit tests. |
+| `src/prompt.ts` | 100% (branch) | Service boilerplate; the fragments it interpolates are pinned by the composer tests. |
 | `src/demo.ts` | 11% | The standalone demo; exercised only through the pty sweep. |
 
-**The single highest-value thing a reviewer can do is read `src/app/events.ts` and
-`src/index.ts` against the real DSH API and say where they are wrong.** Everything
-else in this project has been verified against a real terminal; those two have only
-been verified to *load and draw*, and they are what make it a DSH product rather
-than a terminal toy. Specifically:
+**The remaining highest-value review target is `src/index.ts`** — not because
+nothing runs it, but because the pty rungs assert outcomes, not mechanics. A seam
+can pass its scenario while reading a field no live payload ever carried. The
+refresh recipe when a provider update lands is in CLAUDE.md: extract, diff the
+golden fixtures, update by hand. Specifically:
 
 - `events.ts` reads event payloads through a structural subset rather than the real
   union, deliberately, so it does not have to be edited when an unrelated event
