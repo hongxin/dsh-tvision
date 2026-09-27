@@ -1851,6 +1851,11 @@ export class TvisionApp {
         description: 'leave tvision (same as Ctrl+Q)',
         run: () => { this.options.host.quit() },
       },
+      {
+        name: 'update',
+        description: 'install the latest release and restart into this session',
+        run: () => { void this.confirmUpdate() },
+      },
     ]
 
   /**
@@ -2393,6 +2398,38 @@ export class TvisionApp {
   openSkillsWindow(): void {
     this.openWindow(WINDOW_IDS.skills)
     void this.refreshSkills()
+  }
+
+  /**
+   * Confirm and run an update: the desktop hands the terminal to the update
+   * command and restarts into this session, so the only honest default is an
+   * explicit yes — Cancel leaves everything untouched.
+   */
+  private async confirmUpdate(): Promise<void> {
+    const latest = this.updateAvailable?.latest
+    const answer = await this.ask({
+      title: 'Update tvision',
+      question: latest === undefined
+        ? 'Install the latest release now?'
+        : `Install ${latest} now?`,
+      detail: [
+        'The desktop hands the terminal to the update command, then',
+        'restarts into this session — same conversation, new version.',
+        '',
+        'A git checkout is pulled and rebuilt in place; a registry',
+        'install goes through dsh plugin up.',
+      ].join('\n'),
+      choices: [
+        { value: 'install', label: 'Install' },
+        { value: 'cancel', label: 'Cancel', isDefault: true },
+      ],
+    })
+    if (answer.value !== 'install') return
+    try {
+      await this.options.host.applyUpdate?.()
+    } catch (error) {
+      this.notify(describeError(error), 'error')
+    }
   }
 
   /**

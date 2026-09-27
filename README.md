@@ -70,6 +70,16 @@ dsh --profile tvision --skin amber --no-mouse            # start options
 Once the package is published to npm, the clone-and-build steps collapse to
 `dsh plugin --profile tvision add dsh-tvision`.
 
+### Updating
+
+The desktop checks GitHub once a day at boot — a status cell (`↑0.4.0`) and a
+one-per-version notice appear when a newer release is out. `/update` confirms,
+hands the terminal to the update command, and restarts into the same session:
+a git checkout is pulled and rebuilt in place, a registry install goes through
+`dsh plugin --profile tvision up dsh-tvision`. A failed update prints the
+command's output and restarts the current version. Set `updateCheck: false` in
+the tvision row of the profile patch to disable the check.
+
 Set `DEEPSEEK_API_KEY` in the environment, or in a `.env` in the launch directory or `$DSH_HOME`. A local or self-hosted endpoint needs no code change — point `DEEPSEEK_BASE_URL` at it, or set `llm-deepseek.baseURL` in `$DSH_HOME/settings.yaml`.
 
 > **Status.** Verified: the desktop mounts against a real `dsh --profile tvision` agent and draws in a real terminal (`python3 scripts/pty-profile.py`); the full stack — streaming, reasoning, approvals, tool round trips — runs end to end against a scripted model endpoint (`python3 scripts/pty-wire.py`); the standalone demo passes an 18-scenario real-terminal sweep with zero invariant defects; and live model turns have been run against the real API. The golden corpus is hand-written synthetic content pinned to real event shapes — real transcripts are never committed. See [the design doc's scope section](docs/DESIGN.md#6-what-is-not-finished).

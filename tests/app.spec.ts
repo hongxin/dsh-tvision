@@ -218,6 +218,31 @@ describe('composer', () => {
     expect(host.sent).toEqual([])
   })
 
+  it('/update confirms before touching anything, and Cancel is default', async () => {
+    const applied: number[] = []
+    const { app } = build({ applyUpdate: async (): Promise<never> => { applied.push(1); throw new Error('replaced') } })
+    app.start()
+    type(app, '/update\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    app.windows.requestRender()
+    const dialog = (app.windows.paint()).lines().join('\n')
+    expect(dialog).toContain('Update tvision')
+    expect(applied).toEqual([])
+    // Enter takes the default — Cancel — and nothing is invoked.
+    app.handle({ type: 'key', key: 'enter' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(applied).toEqual([])
+    // An explicit Install — left arrow off the default, Enter — runs the
+    // host seam; the fake reports through the rejection the caller surfaces.
+    app.composer.insert('/update')
+    app.feed('\r')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    app.handle({ type: 'key', key: 'left' })
+    app.handle({ type: 'key', key: 'enter' })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(applied).toEqual([1])
+  })
+
   it('a newer release shows a status cell and announces itself once', () => {
     const { app } = build()
     app.start()

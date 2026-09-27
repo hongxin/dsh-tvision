@@ -23,7 +23,10 @@
  * @module dsh-tvision
  */
 
-import { basename, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -49,6 +52,7 @@ import { ProjectIndex } from './app/project.ts'
 import { createProjectWatcher } from './app/project-watch.ts'
 import { DEFAULT_SKIN_ID, findSkin, SKINS, skinOrDefault, type Skin } from './kit/skin.ts'
 import { ProcessTerminal } from './term/process-terminal.ts'
+import { launchedProfileName, restartIntoSession } from './startup.ts'
 
 export { TvisionApp } from './app/app.ts'
 export type {
@@ -144,6 +148,20 @@ export function isFileMutatingTool(event: { type: string; data?: unknown }): boo
  */
 function homeDirectory(): string | undefined {
   return process.env['HOME'] ?? process.env['USERPROFILE']
+}
+
+/**
+ * Block for one Enter after a failed update: the desktop is already torn
+ * down, the error is on screen, and racing a restart past the reader would
+ * scroll it away before it was read.
+ */
+function waitForEnter(): Promise<void> {
+  return new Promise(resolve => {
+    if (process.stdin.isTTY !== true) { resolve(); return }
+    process.stdin.setRawMode(false)
+    process.stdin.resume()
+    process.stdin.once('data', () => { resolve() })
+  })
 }
 
 /** The terminal-mode service a host may use to hand the screen over. */
@@ -294,6 +312,33 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
           return { ok: false, path, error: describe(error) }
         }
       }))
+    },
+    async applyUpdate(): Promise<never> {
+      // Two install shapes exist today and the package knows which it is: a
+      // git checkout linked by path (a .git beside package.json — Node
+      // resolves the link, so the module URL is the checkout itself) updates
+      // in place; a registry install defers to the launcher's pnpm plumbing.
+      const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+      const gitCheckout = existsSync(join(packageRoot, '.git'))
+      const profile = launchedProfileName()
+      const command = gitCheckout
+        ? { file: '/bin/sh', args: ['-c', 'git pull --ff-only && npm install && npm run build'], cwd: packageRoot }
+        : { file: 'dsh', args: ['plugin', '--profile', profile ?? 'tvision', 'up', 'dsh-tvision'], cwd: undefined }
+      // Release the terminal first, exactly as the resume handoff does: the
+      // child writes progress where the desktop's alternate screen was.
+      await ctx.root.fiber.dispose()
+      const code = await new Promise<number | null>(resolveExit => {
+        const child = spawn(command.file, command.args, { stdio: 'inherit', cwd: command.cwd, env: process.env })
+        child.on('error', error => { process.stderr.write(`tvision: ${String(error)}\n`); resolveExit(1) })
+        child.on('exit', status => resolveExit(status))
+      })
+      if (code !== 0) {
+        process.stdout.write(`\ntvision: the update command exited with ${code}; restarting the current version.\n`)
+        await waitForEnter()
+      }
+      // Either way the desktop restarts into this session — on the new
+      // version after a successful update, on the old one after a failure.
+      return restartIntoSession(ctx, String(agent.session.header.id))
     },
     async completeSessions(prefix: string): Promise<readonly SessionCandidate[]> {
       // The resolver is composed by our own bundle patch (dsh-base does not
