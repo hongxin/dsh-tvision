@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.3.0 — 2026-09-27
+
+The interactive seams close: every way the harness asks a human
+something — or a human asks the harness — now has a first-class
+character-cell surface.
+
+### Subagents, visible
+
+- **A delegated child is a window, not a buried tool card.** The parent
+  session's `subagent/catalog` events fold into a registry; the child's
+  own session rides the same event firehose into its own document; live
+  start/end events flip running markers. The Subagents window lists the
+  catalog, and Enter opens the child's transcript — the parent's
+  conversation and the child's in overlapping framed windows at once,
+  which is the thing a line renderer cannot do. A child that ran before
+  this boot loads lazily through the same primitive resume reads.
+- **Escape dismisses a raised panel** — the Borland reflex, asked-for by
+  name (`dismissable`), never the desktop itself, and never past a
+  composer holding a draft.
+
+### Plan mode, end to end
+
+- **The review dialog renders the plan as the markdown it is** —
+  heading ladder, lists, quote bars — instead of a flattened `# heading`
+  on screen.
+- **Questions take free-text answers**: every question offers `Other…`,
+  and the typed text rides the contract's `custom` field back — which is
+  what "keep planning, and here is why" was missing.
+- **Plan mode is visible and memorable**: the prompt reads `dsh plan>`
+  across turns, and the Plan window keeps the latest presented plan
+  readable long after the dialog that judged it closed.
+
+### Skills and cross-session references
+
+- **The workspace's skill catalog is browsable and callable**: a Skills
+  window (user-only entries marked), `/`-completion over the catalog,
+  and a `/name` line that loads the body and injects the canonical
+  skill-invocation message — the official semantics, which no
+  in-process host was providing.
+- **`@`-mentions reference other sessions**: the bundle patch composes
+  `dsh-session-reference`, the `@`-completion offers candidates labelled
+  by their titles, and the inserted canonical mention makes the harness
+  attach a bounded read-only snapshot. The transcript folds it in as
+  `Recall`-labelled context, never in the user's voice.
+
+### Under the hood
+
+- The wire rung tells the whole story now — twelve scripted turns
+  through the real harness, 22 checks, including delegation, plan
+  review with typed feedback, the Skills window, and a resume boot that
+  must show its history on screen.
+- The startup grammar, the mutation reader, and the diff metadata
+  branches gain unit pins; BRIEF's risk table says what is true today.
+
 ## 0.2.0 — 2026-09-25
 
 The transcript stops being a printout and starts being a terminal worth
