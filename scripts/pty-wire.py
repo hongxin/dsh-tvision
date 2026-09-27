@@ -63,6 +63,7 @@ SCRIPT = [
     ('dwell', b''),
     ('break-prompt', b'wire-break\r'),
     ('dwell', b''),
+    ('dwell', b''),
     ('break-allow', b'y'),
     ('dwell', b''),
     ('approve-or-noop', b'\r'),
@@ -70,8 +71,13 @@ SCRIPT = [
     ('dwell', b''),
     ('break-prompt-2', b'wire-deny\r'),
     ('dwell', b''),
+    ('dwell', b''),
     ('break-deny', b'n'),
     ('dwell', b''),
+    # One settle Enter: the denial check reads the mock's follow-up log, so a
+    # dialog that appeared late and took the letter's Enter as Run-once still
+    # completes the turn the check observes.
+    ('deny-settle', b'\r'),
     ('dwell', b''),
     # Delegation turn: the parent calls the composed subagent tool, the child
     # runs in the background, and its settlement arrives as a notice that
@@ -181,7 +187,7 @@ def replay(capture, columns, rows):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsh-home', default=None)
-    parser.add_argument('--seconds', type=float, default=110.0)
+    parser.add_argument('--seconds', type=float, default=135.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
     args = parser.parse_args()
 
@@ -218,13 +224,28 @@ def main():
         if goodbye is not None:
             capture2 = run(
                 [*argv, f'--resume={goodbye.group(1)}'],
-                [('settle', b'')], 100, 30, 10.0, 1.0,
+                [
+                    ('settle', b''),
+                    # The Skills window, on a quiet resumed desktop whose menu
+                    # state no earlier walk has touched: Window (5th menu),
+                    # nine downs to Skills, Enter, Escape.
+                    ('skills-menu', b'\x1b[21~'),
+                    ('skills-right', b'\x1b[C\x1b[C\x1b[C\x1b[C'),
+                    ('skills-item', b'\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B'),
+                    ('skills-pick', b'\r'),
+                    ('settle', b''),
+                    ('skills-close', b'\x1b'),
+                    ('settle', b''),
+                ], 100, 30, 20.0, 1.0,
             )
             screen2 = replay(capture2, 100, 30)
+            skills_stream = capture2.decode('utf8', 'replace')
             checks.append(('a resumed session shows its history on screen',
                            'The sleep is running' in screen2 or 'Round trip complete' in screen2))
             checks.append(('a resumed session shows the usage meter',
                            '⇄' in capture2.decode('utf8', 'replace')))
+            checks.append(('the skills window opened over the resumed desktop',
+                           'Skills —' in skills_stream))
         else:
             checks.append(('a resumed session shows its history on screen', False))
 
