@@ -32,6 +32,14 @@ desktop twice over — and the desktop now tells you when it is out of date.
   update restarts the current version — a dirty exit never leaves a dead
   screen.
 
+### The workspace as a tree
+
+- The Project window shows the index as a **folded tree**: directories
+  first with ▸/▾ markers, files after them, two spaces of indent per
+  depth, collated case-insensitively. Enter opens a directory or
+  references a file into the composer; a mid-session refresh keeps the
+  user's own folds, and a fresh index opens exactly the root level.
+
 ### Small
 
 - The About window names its author.
