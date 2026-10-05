@@ -46,6 +46,11 @@ function fakeHost(): AppHost & { sent: string[]; ran: string[] } {
       { name: 'compact', description: 'Compact the context' },
     ],
     files: () => ['src/parser.ts'],
+    indexFiles: async () => ({
+      rows: [{ label: 'src/', marker: '▾' }],
+      paths: ['src/app/app.ts', 'src/app/composer.ts', 'src/kit/text.ts', 'tests/app.spec.ts', 'README.md'],
+      summary: '5 files',
+    }),
     modelLabel: () => 'deepseek-official/deepseek-flash',
     contextWindow: () => 128_000,
   }
@@ -240,6 +245,13 @@ describe('desktop snapshots', () => {
     view.app.start()
     view.feed('/')
     expectSnapshot('composer-completions', await view.frame())
+  })
+
+  it('renders the Project window as a folded tree', async () => {
+    const view = scene(96, 26)
+    view.app.start()
+    await view.app.refreshProject()
+    expectSnapshot('project-tree', await view.frame())
   })
 
   it('renders the update-available status cell', async () => {

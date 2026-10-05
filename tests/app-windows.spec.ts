@@ -284,6 +284,9 @@ describe('the Project window', () => {
     await view.app.refreshProject()
     view.app.windows.focus(WINDOW_IDS.project)
     view.app.frame()
+    // The tree's first row is the expanded src/ directory; the file is the
+    // row beneath it. Enter on the directory would fold it instead.
+    view.app.feed('\x1b[B')
     view.app.feed('\r')
     expect(view.app.composer.value).toBe('@src/parser.ts ')
     // Focus returns to where the text will be typed.

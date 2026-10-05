@@ -126,6 +126,105 @@ export function scoreFile(file: ProjectFile, now: number): number {
  * inside {@link refresh}: the caller decides when to pay for the walk, and the
  * desktop's frame loop never calls it.
  */
+/** One node of the flattened project tree. */
+export interface ProjectNode {
+  /** Segment name; directories keep their trailing slash in `label`. */
+  readonly label: string
+  /** Full workspace-relative path, for activation and @-completion. */
+  readonly path: string
+  /** Whether this row is a directory that can expand. */
+  readonly directory: boolean
+}
+
+/**
+ * Flatten indexed paths into tree rows: directories first, then files, each
+ * alphabetically; two spaces of indent per depth; a ▸/▾ marker on every
+ * directory and a plain dot on files. The rows and nodes are index-aligned so
+ * the window's selection and the activation semantics share one cursor.
+ *
+ * Directories hold no interesting content of their own — what matters is the
+ * subtree — so a directory the walk excluded or the budget cut below is
+ * pruned by construction: only names a path actually contains enter the tree.
+ * @param paths - Workspace-relative file paths.
+ * @param expanded - Directory paths whose children are visible.
+ * @param limit - Maximum rows returned; the tree truncates like the index.
+ * @returns The rows to paint and the nodes they encode.
+ */
+export function buildTreeRows(
+  paths: readonly string[],
+  expanded: ReadonlySet<string>,
+  limit = 200,
+): { rows: { label: string; marker?: string }[]; nodes: ProjectNode[] } {
+  // The directory tree: path -> child names, split by kind. Building it once
+  // costs a pass over the paths; walking it costs nothing per repaint.
+  const children = new Map<string, { dirs: Set<string>; files: Set<string> }>()
+  const ensure = (dir: string): { dirs: Set<string>; files: Set<string> } => {
+    let slot = children.get(dir)
+    if (slot === undefined) {
+      slot = { dirs: new Set<string>(), files: new Set<string>() }
+      children.set(dir, slot)
+    }
+    return slot
+  }
+  ensure('')
+  for (const path of paths) {
+    const cut = path.lastIndexOf('/')
+    const dir = cut < 0 ? '' : path.slice(0, cut)
+    const name = cut < 0 ? path : path.slice(cut + 1)
+    if (name === '') continue
+    ensure(dir).files.add(name)
+    // Intermediate directories appear only as prefixes of deeper files.
+    let parent = dir
+    while (parent !== '') {
+      const slash = parent.lastIndexOf('/')
+      const grand = slash < 0 ? '' : parent.slice(0, slash)
+      const segment = slash < 0 ? parent : parent.slice(slash + 1)
+      ensure(grand).dirs.add(segment)
+      parent = grand
+    }
+  }
+  const rows: { label: string; marker?: string }[] = []
+  const nodes: ProjectNode[] = []
+  const walk = (dir: string, depth: number): void => {
+    if (rows.length >= limit) return
+    const slot = children.get(dir)
+    if (slot === undefined) return
+    const indent = '  '.repeat(depth)
+    for (const name of [...slot.dirs].sort((a, b) => a.localeCompare(b))) {
+      if (rows.length >= limit) return
+      const path = dir === '' ? name : `${dir}/${name}`
+      const open = expanded.has(path)
+      rows.push({ label: `${indent}${name}/`, marker: open ? '▾' : '▸' })
+      nodes.push({ label: `${name}/`, path, directory: true })
+      if (open) walk(path, depth + 1)
+    }
+    for (const name of [...slot.files].sort((a, b) => a.localeCompare(b))) {
+      if (rows.length >= limit) return
+      rows.push({ label: `${indent}${name}`, marker: '·' })
+      nodes.push({ label: name, path: dir === '' ? name : `${dir}/${name}`, directory: false })
+    }
+  }
+  walk('', 0)
+  return { rows, nodes }
+}
+
+/**
+ * Which directories a fresh index opens: the root's own directories, one
+ * level deep. Deeper levels start folded — a tree that opens everything is
+ * the flat list again.
+ * @param paths - Workspace-relative file paths.
+ * @returns The expanded set.
+ */
+export function defaultExpanded(paths: readonly string[]): Set<string> {
+  const roots = new Set<string>()
+  for (const path of paths) {
+    const cut = path.indexOf('/')
+    if (cut > 0) roots.add(path.slice(0, cut))
+  }
+  return roots
+}
+
+
 export class ProjectIndex {
   private readonly root: string
   private readonly options: Required<ProjectIndexOptions>

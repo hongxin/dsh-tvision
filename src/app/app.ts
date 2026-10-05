@@ -41,6 +41,7 @@ import {
 } from './questions.ts'
 import { buildSessionRows, describeSessionRow, type SessionRow } from './sessions.ts'
 import { buildJobRows, describeJobRow, type JobRow, type JobSummary } from './jobs.ts'
+import { buildTreeRows, defaultExpanded, type ProjectNode } from './project.ts'
 import {
   matchBreakpoint,
   parseBreakpointPattern,
@@ -1004,6 +1005,10 @@ export class TvisionApp {
   private readonly sessionCwd = new Map<string, string>()
   /** The file paths behind the Project window's rows. */
   private projectRows: readonly { path: string }[] = []
+  /** Directories the Project tree shows open; Enter toggles, refresh keeps. */
+  private projectExpanded = new Set<string>()
+  /** The tree rows' nodes, index-aligned with what the window paints. */
+  private projectNodes: readonly ProjectNode[] = []
   /** The credential state the harness pushed, when it has one. */
   private credential: { configured: boolean; source?: string } | undefined
 
@@ -1401,13 +1406,16 @@ export class TvisionApp {
       return
     }
     if (id === WINDOW_IDS.project) {
-      // Choosing a file references it, so the next prompt can point at it without
-      // retyping the path.
-      const row = this.projectRows[index]
-      if (row?.path !== undefined) {
-        this.composer.insert(`@${row.path} `)
-        this.windows.focus(WINDOW_IDS.transcript)
+      // A directory toggles its subtree; a file references it, so the next
+      // prompt can point at it without retyping the path.
+      const node = this.projectNodes[index]
+      if (node === undefined) return
+      if (node.directory) {
+        this.toggleProjectDir(node.path)
+        return
       }
+      this.composer.insert(`@${node.path} `)
+      this.windows.focus(WINDOW_IDS.transcript)
       return
     }
     this.notify(`Selected row ${index + 1}.`)
@@ -2542,18 +2550,35 @@ export class TvisionApp {
    * a frame that waits on a filesystem is a frame that stutters.
    * @returns The summary the window title reports, or undefined without a host index.
    */
+  /**
+   * Open or close one Project tree directory and repaint from the cached
+   * paths — no re-index, the walk already knows the whole tree.
+   * @param path - The directory's workspace-relative path.
+   */
+  private toggleProjectDir(path: string): void {
+    if (this.projectExpanded.has(path)) this.projectExpanded.delete(path)
+    else this.projectExpanded.add(path)
+    const tree = buildTreeRows(this.projectRows.map(row => row.path), this.projectExpanded)
+    this.setListRows(WINDOW_IDS.project, tree.rows)
+    this.projectNodes = tree.nodes
+  }
+
   async refreshProject(): Promise<string | undefined> {
     const index = this.options.host.indexFiles
     if (index === undefined) return undefined
     try {
       const result = await index()
-      this.setListRows(WINDOW_IDS.project, result.rows)
+      if (this.projectRows.length === 0) this.projectExpanded = defaultExpanded(result.paths)
+      const tree = buildTreeRows(result.paths, this.projectExpanded)
+      this.setListRows(WINDOW_IDS.project, tree.rows)
       this.projectRows = result.paths.map(path => ({ path }))
+      this.projectNodes = tree.nodes
       this.setWindowTitle(WINDOW_IDS.project, `Project — ${result.summary}`)
       return result.summary
     } catch (error) {
       this.setListRows(WINDOW_IDS.project, [])
       this.projectRows = []
+      this.projectNodes = []
       this.setWindowTitle(WINDOW_IDS.project, 'Project — unreadable')
       this.notify(`Could not index the workspace: ${describeError(error)}`, 'error')
       return undefined

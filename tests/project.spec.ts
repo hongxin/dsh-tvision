@@ -14,6 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DEFAULT_EXCLUDED_DIRECTORIES,
   ProjectIndex,
+  buildTreeRows,
+  defaultExpanded,
   formatSize,
   isInside,
   relativeTo,
@@ -334,5 +336,54 @@ describe('path helpers', () => {
   it('ships a default exclusion list with no duplicates', () => {
     expect(new Set(DEFAULT_EXCLUDED_DIRECTORIES).size).toBe(DEFAULT_EXCLUDED_DIRECTORIES.length)
     expect(DEFAULT_EXCLUDED_DIRECTORIES).toContain('node_modules')
+  })
+})
+
+describe('the project tree', () => {
+  it('directories come first with fold markers; files follow with plain dots', () => {
+    const PATHS = [
+      'README.md',
+      'package.json',
+      'src/app/app.ts',
+      'src/app/composer.ts',
+      'src/kit/text.ts',
+      'tests/app.spec.ts',
+    ]
+    const { rows, nodes } = buildTreeRows(PATHS, new Set(['src', 'src/kit']))
+    // The marker is its own column, so the depth indent lands inside the
+    // label — '▸ ' + '  app/' is a two-space-indented folded directory.
+    expect(rows.map(row => `${row.marker} ${row.label}`)).toEqual([
+      '▾ src/',
+      '▸   app/',
+      '▾   kit/',
+      '·     text.ts',
+      '▸ tests/',
+      // localeCompare collates case-insensitively — the friendly file order.
+      '· package.json',
+      '· README.md',
+    ])
+    expect(nodes.map(node => node.path)).toEqual([
+      'src', 'src/app', 'src/kit', 'src/kit/text.ts', 'tests', 'package.json', 'README.md',
+    ])
+    // src/app and src/kit are directories that hold files; text.ts sits in
+    // src/kit, so the tree derives intermediate directories from paths alone.
+  })
+
+  it('a collapsed directory hides its subtree; rows and nodes stay aligned', () => {
+    const PATHS = ['src/app/app.ts', 'tests/x.ts']
+    const { rows, nodes } = buildTreeRows(PATHS, new Set())
+    expect(rows.map(row => row.label)).toEqual(['src/', 'tests/'])
+    expect(nodes[0]).toMatchObject({ path: 'src', directory: true })
+    expect(rows.length).toBe(nodes.length)
+  })
+
+  it('defaultExpanded opens exactly the root directories', () => {
+    expect([...defaultExpanded(['src/a.ts', 'tests/b.ts', 'README.md'])].sort()).toEqual(['src', 'tests'])
+  })
+
+  it('the row limit truncates the walk like the index budget', () => {
+    const PATHS = ['src/app/app.ts', 'src/app/composer.ts', 'src/kit/text.ts', 'z.ts']
+    const { rows } = buildTreeRows(PATHS, new Set(['src', 'src/app']), 3)
+    expect(rows).toHaveLength(3)
   })
 })
