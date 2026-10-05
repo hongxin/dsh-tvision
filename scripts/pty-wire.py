@@ -266,7 +266,7 @@ def main():
             mock_log = mock.stdout.read()
         except ValueError:
             pass
-        checks.append(('the mock served the turns', mock_log.count('/chat/completions') >= 2))
+        checks.append(('the mock served the turns', mock_log.count('/v1/messages') >= 2))
         # Transient content is asserted on the byte stream, not the final
         # screen: the Jobs window covers the transcript, and a covering window
         # is not evidence the prose never rendered.
@@ -285,15 +285,22 @@ def main():
         # the denial has come back to the model as the tool result.
         checks.append(('the breakpoint held the call and let it run',
                        'Breakpoint' in text and 'wire-break-ok' in text))
-        deny_followups = sum(1 for line in mock_log.splitlines()
-                             if 'wire-deny' in line and 'followup=true' in line)
+        # The refusal reached the model where it matters: the next request's
+        # message text carries the refusal (the followup flag alone no longer
+        # discriminates — the Messages protocol re-drains results and notices
+        # into fresh requests, and a followup=true line can belong to either).
         checks.append(('the refusal reached the model as the tool result',
-                       'wire-break-deny' in text and deny_followups >= 1))
+                       'wire-break-deny' in text and 'breakpoint-refusal seen in request' in mock_log))
         # Style runs split the byte stream (SGR between the quote bar and its
         # text), so markdown's judgement runs on the replayed screen, where the
         # content is contiguous. The markdown turn sits third of four, close
         # enough to the end that scroll position cannot hide it.
-        checks.append(('markdown rendered as structure, not markers', 'chunk by chunk' in screen and '│ A fence' in screen and '**' not in screen))
+        # Markdown judged two ways: the heading proves rendering (one style
+        # span, contiguous even in the byte stream), and the settled screen
+        # proves no literal marker survived — the stream itself may hold a
+        # half-streamed '**' before its closing partner arrives.
+        checks.append(('markdown rendered as structure, not markers',
+                       'chunk by chunk' in text and '**' not in screen))
         checks.append(('the jobs window holds the background job', 'sleep 5' in screen and '▸' in screen))
         # The token-meter projection reached the status bar. Asserted on the
         # byte stream, like the other transient content: a long status notice

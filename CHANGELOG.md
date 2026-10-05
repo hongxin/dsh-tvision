@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.4.0 — 2026-09-29
+
+Adapted to DeepSeek Harness **0.1.7**, which changed the wire under the
+desktop twice over — and the desktop now tells you when it is out of date.
+
+### The dsh 0.1.7 adaptation
+
+- The DeepSeek adapter moved from OpenAI-style `/chat/completions` to the
+  **DeepSeek Messages API** (`/v1/messages`, Anthropic-style SSE with
+  `content_block` events). The mock endpoint — the wire rung's scripted
+  model — speaks the new protocol frame for frame, verified against the
+  adapter's own translator. Turn matching now scans user messages
+  end-first: the Messages protocol rides tool results, mode notices, and
+  injections in user messages, so "the last user message" stopped being
+  one thing.
+- The `bash` tool gained a required `description` argument (the scripted
+  calls carry one), `agent/created` became a waterfall, and the session
+  log format bumped to v4 — none of which moved a golden fixture, so the
+  fold's shapes are unchanged.
+- Every `@deepseek-ai/*` pin moves to `0.1.7-rc.2`, and the new
+  transitive peer lands in the closure.
+
+### Update awareness
+
+- The desktop checks GitHub once a day at boot — a status cell
+  (`↑0.4.0`) and a one-per-version notice appear when a newer release is
+  out. `/update` confirms, hands the terminal to the update command (a
+  git checkout is pulled and rebuilt in place; a registry install goes
+  through `dsh plugin up`), and restarts into the same session. A failed
+  update restarts the current version — a dirty exit never leaves a dead
+  screen.
+
+### Small
+
+- The About window names its author.
+
 ## 0.3.0 — 2026-09-27
 
 The interactive seams close: every way the harness asks a human

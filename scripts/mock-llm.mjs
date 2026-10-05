@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 /**
- * A scripted DeepSeek-compatible LLM endpoint, for testing the real profile.
+ * A scripted DeepSeek Messages endpoint, for testing the real profile.
  *
  * The last untestable seam used to be the wire: everything below the HTTP
  * request is the harness's own code, and exercising it against the real API
  * costs tokens and determinism. This server speaks the exact protocol
  * dsh-llm-deepseek speaks (verified against its adapter source):
  *
- * - POST {baseURL}/chat/completions with `stream: true` and
- *   `stream_options: {include_usage: true}`;
- * - SSE `data: {json}` events whose deltas carry `reasoning_content`,
- *   `content`, and accumulating `tool_calls[]` (indexed, arguments
- *   fragmented exactly like the real API);
- * - usage in a trailing chunk, and the stream closed by `data: [DONE]`.
+ * - POST {baseURL}/v1/messages with `stream: true`, Anthropic-style SSE
+ *   frames (`message_start`, `content_block_start` for `thinking` / `text` /
+ *   `tool_use`, `content_block_delta` for `text_delta` / `thinking_delta` /
+ *   `input_json_delta`, `message_delta` carrying the stop reason and usage,
+ *   `message_stop`), and the stream simply ends;
+ * - usage in `message_start` and the closing `message_delta`, with the
+ *   cache columns the token meter reads.
  *
  * The reply is chosen from the last user message, so a pty script drives the
  * scenario by typing. Scripted turns live in TURNS below; add one, type its
@@ -48,14 +49,14 @@ const TURNS = [
     // Jobs window holding a live row the harness's registry drives.
     match: 'wire-job',
     reasoning: 'The user asked for the background job turn. Start a sleep in the background.',
-    toolCall: { id: 'call_mock_sleep', name: 'bash', arguments: '{"command":"sleep 5","run_in_background":true}' },
+    toolCall: { id: 'call_mock_sleep', name: 'bash', arguments: '{"command":"sleep 5","run_in_background":true,"description":"Sleep in the background"}' },
     followupContent: 'The sleep is running in the background; the Jobs window holds it.',
     usage: { prompt_tokens: 210, completion_tokens: 28, total_tokens: 238 },
   },
   {
     match: 'wire-tool',
     reasoning: 'The user asked for the tool turn. Call bash with a harmless echo.',
-    toolCall: { id: 'call_mock_echo', name: 'bash', arguments: '{"command":"echo wire-tool-ok"}' },
+    toolCall: { id: 'call_mock_echo', name: 'bash', arguments: '{"command":"echo wire-tool-ok","description":"Echo the marker"}' },
     // The second request, after the tool result is fed back, gets this.
     followupContent: 'The command printed wire-tool-ok. Tool round trip complete.',
     usage: { prompt_tokens: 200, completion_tokens: 30, total_tokens: 230 },
@@ -64,7 +65,7 @@ const TURNS = [
     // Held by the breakpoint rule the wire script sets first; y lets it run.
     match: 'wire-break',
     reasoning: 'The user set a breakpoint on this call. Make it, and the hold becomes visible.',
-    toolCall: { id: 'call_mock_break', name: 'bash', arguments: '{"command":"echo wire-break-ok"}' },
+    toolCall: { id: 'call_mock_break', name: 'bash', arguments: '{"command":"echo wire-break-ok","description":"Echo the marker"}' },
     followupContent: '## Round trip complete\n\nThe breakpoint held the call, ran it once on approval, and the echo landed.',
     usage: { prompt_tokens: 205, completion_tokens: 32, total_tokens: 237 },
   },
@@ -82,6 +83,15 @@ const TURNS = [
     },
     followupContent: 'The plan was approved; carrying it out from this step.',
     usage: { prompt_tokens: 260, completion_tokens: 34, total_tokens: 294 },
+  },
+  {
+    // The delegated child's own request: a fresh context whose user message
+    // is the delegated prompt. Must precede wire-sub in the array — the
+    // prompt contains that keyword too, and the scan takes array order.
+    match: 'wire-sub-child',
+    reasoning: 'I am the delegated child. Answer briefly.',
+    content: 'delegated-done: the child finished its scoped task.',
+    usage: { prompt_tokens: 60, completion_tokens: 12, total_tokens: 72 },
   },
   {
     // Delegation: the parent calls the composed subagent tool (continuable,
@@ -115,7 +125,7 @@ const TURNS = [
     // model has to answer for, which is the whole point of a breakpoint.
     match: 'wire-deny',
     reasoning: 'The same breakpoint again. Make the call; expect the refusal.',
-    toolCall: { id: 'call_mock_break2', name: 'bash', arguments: '{"command":"echo wire-break-deny"}' },
+    toolCall: { id: 'call_mock_break2', name: 'bash', arguments: '{"command":"echo wire-break-deny","description":"Echo the marker"}' },
     followupContent: 'The call was refused at the breakpoint — the denial came back as the tool result, and the model saw it.',
     usage: { prompt_tokens: 210, completion_tokens: 34, total_tokens: 244 },
   },
@@ -129,7 +139,7 @@ const emittedTool = new Set()
 /**
  * Slice text into fixed-size code-point chunks, losslessly.
  *
- * A `/g` regex like /.{1,12}(\\s|$)/gu silently SKIPS spans that contain no
+ * A `/g` regex like /.{1,12}(\s|$)/gu silently SKIPS spans that contain no
  * whitespace within reach — the gap between matches never enters the result —
  * which corrupted the CJK reply mid-stream. Streaming must never drop what it
  * was asked to send.
@@ -143,44 +153,68 @@ function chunk(text, size) {
   return out
 }
 
-/** Stream one scripted turn as OpenAI-style SSE. */
+/** The text of one Messages-format message, joined across content blocks. */
+function messageText(message) {
+  const content = message?.content
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((block) => {
+    if (typeof block?.text === 'string') return block.text
+    if (block?.type === 'tool_result') return JSON.stringify(block.content ?? '')
+    if (block?.type === 'tool_use') return block.name ?? ''
+    return ''
+  }).join(' ')
+}
+
+/** Stream one scripted turn as Messages SSE. */
 async function streamTurn(turn, res, model) {
   const send = (payload) => res.write(`data: ${JSON.stringify(payload)}\n\n`)
-  const delta = (d) => send({ id: 'chatcmpl-mock', object: 'chat.completion.chunk', model, choices: [{ index: 0, delta: d, finish_reason: null }] })
-
+  let index = 0
+  send({
+    type: 'message_start',
+    message: { model, usage: { input_tokens: turn.usage.prompt_tokens } },
+  })
+  const openBlock = (content_block) => {
+    send({ type: 'content_block_start', index, content_block })
+    return index++
+  }
   if (turn.reasoning !== undefined) {
+    openBlock({ type: 'thinking', thinking: '' })
     for (const piece of chunk(turn.reasoning, 24)) {
-      delta({ reasoning_content: piece })
+      send({ type: 'content_block_delta', index: index - 1, delta: { type: 'thinking_delta', thinking: piece } })
       await sleep(15 + SLOW)
     }
+    send({ type: 'content_block_stop', index: index - 1 })
   }
   if (turn.toolCall !== undefined) {
-    // The first fragment carries id and name; the rest accumulate arguments,
-    // which is how the real API streams a call.
-    delta({ tool_calls: [{ index: 0, id: turn.toolCall.id, type: 'function', function: { name: turn.toolCall.name, arguments: '' } }] })
+    const block = openBlock({ type: 'tool_use', id: turn.toolCall.id, name: turn.toolCall.name, input: {} })
+    // The arguments JSON arrives as fragmented partial_json deltas — exactly
+    // how the real API streams a call — and the adapter reassembles them.
     for (const piece of chunk(turn.toolCall.arguments, 20)) {
-      delta({ tool_calls: [{ index: 0, function: { arguments: piece } }] })
+      send({ type: 'content_block_delta', index: block, delta: { type: 'input_json_delta', partial_json: piece } })
       await sleep(10 + SLOW)
     }
+    send({ type: 'content_block_stop', index: block })
   }
-  if (turn.content !== undefined) {
-    for (const piece of chunk(turn.content, 12)) {
-      delta({ content: piece })
+  const content = turn.content ?? turn.followupContent
+  if (content !== undefined) {
+    const block = openBlock({ type: 'text', text: '' })
+    for (const piece of chunk(content, 12)) {
+      send({ type: 'content_block_delta', index: block, delta: { type: 'text_delta', text: piece } })
       await sleep(12 + SLOW)
     }
+    send({ type: 'content_block_stop', index: block })
   }
-  delta({ content: '' })
   send({
-    id: 'chatcmpl-mock', object: 'chat.completion.chunk', model,
-    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    type: 'message_delta',
+    delta: { stop_reason: turn.toolCall !== undefined && content === undefined ? 'tool_use' : 'end_turn' },
     usage: {
-      prompt_tokens: turn.usage.prompt_tokens,
-      completion_tokens: turn.usage.completion_tokens,
-      total_tokens: turn.usage.total,
-      prompt_tokens_details: { cached_tokens: 96 },
+      output_tokens: turn.usage.completion_tokens,
+      cache_read_input_tokens: 96,
     },
   })
-  res.write('data: [DONE]\n\n')
+  send({ type: 'message_stop' })
+  res.end()
 }
 
 const server = createServer(async (req, res) => {
@@ -189,39 +223,53 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify({ object: 'list', data: [{ id: 'deepseek-reasoner' }, { id: 'deepseek-chat' }] }))
     return
   }
-  if (req.method !== 'POST' || !req.url.startsWith('/chat/completions')) {
+  if (req.method !== 'POST' || !req.url.startsWith('/v1/messages')) {
     res.writeHead(404).end()
     return
   }
   const body = await new Promise((resolve) => {
     let text = ''
-    req.on('data', (chunk) => { text += chunk })
+    req.on('data', (chunkPart) => { text += chunkPart })
     req.on('end', () => resolve(text))
   })
   const request = JSON.parse(body)
   const messages = request.messages ?? []
-  const lastUser = [...messages].reverse().find((message) => message.role === 'user')
-  const lastText = typeof lastUser?.content === 'string' ? lastUser.content : JSON.stringify(lastUser?.content ?? '')
-  const turn = TURNS.find((candidate) => lastText.includes(candidate.match)) ?? TURNS[0]
+  // The Messages protocol rides tool results, mode notices, and injections in
+  // user messages, so "the last user message" is not one thing. The keyword
+  // the script typed sits in the newest user message that matches a turn;
+  // scan from the end and take the first hit, so a fresh prompt always beats
+  // stale history.
+  let turn = TURNS[0]
+  let lastText = ''
+  for (const message of [...messages].reverse()) {
+    if (message.role !== 'user') continue
+    const text = messageText(message)
+    const hit = TURNS.find((candidate) => text.includes(candidate.match))
+    if (hit !== undefined) {
+      turn = hit
+      lastText = text
+      break
+    }
+    if (lastText === '') lastText = text
+  }
   // A tool turn's *second* request answers with prose. Detecting that from the
-  // message shape (any role:'tool' anywhere) misfires when a LATER turn runs
-  // after an earlier one already used a tool — the harness feeds the whole
-  // conversation back every time — so the server remembers which turn's call
-  // it already emitted instead.
+  // message shape misfires when a LATER turn runs after an earlier one already
+  // used a tool — the harness feeds the whole conversation back every time —
+  // so the server remembers which turn's call it already emitted instead.
   const followup = turn.followupContent !== undefined && emittedTool.has(turn.match)
   const chosen = followup
     ? { ...turn, reasoning: undefined, toolCall: undefined, content: turn.followupContent }
     : turn
   if (turn.toolCall !== undefined && !followup) emittedTool.add(turn.match)
-  // A marker for the wire rung: free-text answers ride back as tool
-  // results, which the one-line request log does not show.
+  // A marker for the wire rung: free-text answers ride back as tool results,
+  // which the one-line request log does not show.
   if (body.includes('tighten the fence case')) console.log('[mock-llm] feedback-tighten seen in request')
+  if (body.includes('stopped by a tvision breakpoint')) console.log('[mock-llm] breakpoint-refusal seen in request')
   console.log(`[mock-llm] ${req.url} model=${request.model} tools=${(request.tools ?? []).length} ` +
     `roles=${messages.map((message) => message.role).join(',')} ` +
     `turn="${turn.match}" followup=${followup} last="${lastText.slice(0, 40).replace(/\n/g, ' ')}"`)
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
   await streamTurn(chosen, res, request.model)
-  res.end()
 })
 
 server.listen(PORT, '127.0.0.1', () => {

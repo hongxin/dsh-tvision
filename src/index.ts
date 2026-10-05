@@ -690,7 +690,10 @@ export function mount(input: MountInput): () => void {
   //    refreshed on the events that can change them, never on the frame loop.
   void app.refreshProject()
   void refreshSessions()
-  const offCreated = ctx.on('agent/created', () => { void refreshSessions() })
+  const offCreated = ctx.on('agent/created', () => {
+    void refreshSessions()
+    return undefined
+  })
 
   // 7. The workspace watcher: external edits land in the Project window too.
   //    It rides the same coalescing refresh the tool trigger uses, so a burst
@@ -1006,9 +1009,10 @@ export function apply(ctx: Context, config: Config = {}): void {
     return
   }
   const off = ctx.on('agent/created', (payload) => {
-    if (payload.agent.id !== wanted) return
+    if (payload.agent.id !== wanted) return undefined
     off()
     mountFor(payload.agent)
+    return undefined
   })
   ctx.effect(() => off)
 }
