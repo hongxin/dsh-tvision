@@ -122,7 +122,9 @@ SCRIPT = [
     ('dwell', b''),
     ('dwell', b''),
     # Background-job turn, then open View ▸ Jobs through the menu bar: F10,
-    # right to View, and the &Jobs accelerator.
+    # right to View, and the &Jobs accelerator. The job sleeps past the whole
+    # script so the roster still holds a live row when the kill step below
+    # needs one.
     ('job-prompt', b'wire-job\r'),
     ('dwell', b''),
     ('dwell', b''),
@@ -150,7 +152,22 @@ SCRIPT = [
     ('dwell', b''),
     ('to-view', b'\x1b[C'),
     ('dwell', b''),
+    # `right` along the bar only moves between titles — `down` is what opens
+    # the menu. Without it the accelerator below lands in bar mode, where
+    # bare letters are swallowed and the window never opens.
+    ('open-view', b'\x1b[B'),
+    ('dwell', b''),
     ('pick-jobs', b'j'),
+    ('dwell', b''),
+    ('dwell', b''),
+    # Kill the running job from the roster — the registry call no other step
+    # covers: k asks, Left steps the selection off the default (Cancel) onto
+    # Kill, Enter confirms, and the settled row must show the killed marker.
+    ('job-kill', b'k'),
+    ('dwell', b''),
+    ('job-kill-pick', b'\x1b[D'),
+    ('dwell', b''),
+    ('job-kill-confirm', b'\r'),
     ('dwell', b''),
     ('dwell', b''),
     ('quit', b'\x11'),
@@ -301,7 +318,14 @@ def main():
         # half-streamed '**' before its closing partner arrives.
         checks.append(('markdown rendered as structure, not markers',
                        'chunk by chunk' in text and '**' not in screen))
-        checks.append(('the jobs window holds the background job', 'sleep 5' in screen and '▸' in screen))
+        # The roster's live state is transient — the kill step settles it — so
+        # "it was running" is judged on the byte stream (the window opened
+        # while the job was live) and "the kill settled it" on the final
+        # screen, where the settled row keeps its place in the roster.
+        checks.append(('the jobs window holds the running background job',
+                       'sleep 60' in screen and 'running · just now' in text))
+        checks.append(('killing from the roster settled the job',
+                       '×' in screen and 'killed · just now' in screen))
         # The token-meter projection reached the status bar. Asserted on the
         # byte stream, like the other transient content: a long status notice
         # (the breakpoint banner) legitimately evicts the token cell from the

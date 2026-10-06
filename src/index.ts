@@ -191,8 +191,8 @@ export interface MountInput {
    * service that may not exist in this composition.
    */
   readonly jobsSlot: {
-    list?: (caller: unknown) => unknown[]
-    kill?: (id: string, caller: unknown, reason?: string) => void
+    list?: (caller: SessionId) => unknown[]
+    kill?: (id: string, caller: SessionId, reason?: string) => void
   }
   /**
    * The settings seam: `read` yields the remembered preferences when the
@@ -491,7 +491,7 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         ctx.logger.warn(`tvision: no jobs registry; cannot kill ${id}`)
         return
       }
-      jobsSlot.kill(id, agent)
+      jobsSlot.kill(id, agent.id)
     },
     saveSettings: (patch: { skin?: string; breakpoints?: BreakpointRule[] }): void => {
       input.settings.save?.(patch)
@@ -709,18 +709,35 @@ export function mount(input: MountInput): () => void {
   //    outlives the turn that started it. The callback only runs when a
   //    registry exists, so a composition without one keeps the empty window.
   void ctx.inject(['jobs'], () => {
+    // dsh-jobs 0.2.0 fences access by the owner's id (typed `SessionId` in
+    // the API, but the producers register with the owning *agent's* id —
+    // dsh-tool-bash starts jobs with `owner: exec.agent.id`), so every
+    // registry call and the event filter take the main agent's id.
     const registry = ctx.get('jobs') as unknown as {
-      list: (caller: unknown) => unknown[]
-      kill: (id: string, caller: unknown, reason?: string) => void
-      onJobsChanged: (listener: () => void) => () => void
+      list: (caller?: SessionId) => unknown[]
+      kill: (id: string, caller?: SessionId, reason?: string) => void
+      events: {
+        subscribe: (
+          filter: { owner: SessionId },
+          listener: (event: { type: string }) => void,
+        ) => () => void
+      }
     }
-    input.jobsSlot.list = (caller) => registry.list(caller)
-    input.jobsSlot.kill = (id: string, caller: unknown, reason?: string) => { registry.kill(id, caller, reason) }
+    const caller = agent.id
+    input.jobsSlot.list = (listCaller) => registry.list(listCaller)
+    input.jobsSlot.kill = (id, killCaller, reason?) => { registry.kill(id, killCaller, reason) }
     const sync = (): void => {
-      app.setJobs(registry.list(agent) as readonly import('./app/jobs.ts').JobSummary[])
+      app.setJobs(registry.list(caller) as readonly import('./app/jobs.ts').JobSummary[])
     }
     sync()
-    return registry.onJobsChanged(sync)
+    // The 0.2.0 event stream delivers per commit, not per visible-set change.
+    // Re-list on the lifecycle commits the roster renders — registered,
+    // stopping, settled, removed — and skip `output` (fires per appended
+    // chunk) and `progress` (the roster shows no progress line), or every
+    // chunk of output would pay a full re-read.
+    return registry.events.subscribe({ owner: caller }, event => {
+      if (event.type !== 'output' && event.type !== 'progress') sync()
+    })
   })
 
   // The token meter is a dsh-base projection, not a service we own: when the

@@ -1,12 +1,13 @@
 /**
  * The job list: background work the agent started, folded into rows.
  *
- * A structural subset of the harness's `JobSnapshot` — every field here
- * exists on the real record with the same name, so live snapshots pass
- * through with no mapping and this module stays free of harness imports
- * (the same discipline `sessions.ts` follows). A job is born when a tool
- * such as bash runs with `run_in_background`; it outlives the turn that
- * started it, which is exactly why it deserves a window of its own.
+ * A structural subset of the harness's `JobView` (the `JobSnapshot` of
+ * dsh-jobs 0.1.x, renamed in 0.2.0) — every field here exists on the real
+ * record with the same name, so live projections pass through with no
+ * mapping and this module stays free of harness imports (the same
+ * discipline `sessions.ts` follows). A job is born when a tool such as
+ * bash runs with `run_in_background`; it outlives the turn that started
+ * it, which is exactly why it deserves a window of its own.
  * @module dsh-tvision/app/jobs
  */
 

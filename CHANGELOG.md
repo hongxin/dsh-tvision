@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.5.0 — 2026-10-06
+
+Adapted to DeepSeek Harness **0.2.0**. The break surface was small and is
+now verified: the session-event map, the Messages wire, and the four-argument
+`execute` are byte-identical between 0.1.7 and 0.2.0, so the fold, the golden
+fixtures, and the mock endpoint are untouched.
+
+### The dsh 0.2.0 adaptation
+
+- **The peer gate.** dsh 0.2.0 checks every `@deepseek-ai/dsh-*` peer of a
+  plugin against the running dsh and refuses to load it on mismatch (with
+  `dsh plugin allow-version` as the explicit escape hatch). Every pin —
+  dependencies, devDependencies, peerDependencies — moves to `0.2.0-rc.2`,
+  so the plugin loads on its own compatibility again.
+- **The jobs seam.** dsh-jobs 0.2.0 rewrote the registry: `list`/`kill` now
+  take the owner's **id** (typed `SessionId` in the API; producers register
+  with the owning agent's id) instead of the Agent object, the
+  `onJobsChanged` visible-set listener is gone in favour of a per-commit
+  `events.subscribe`, and `JobSnapshot` became `JobView` (a structural
+  superset of what the roster reads, so rows still pass through unmapped).
+  The Jobs window re-lists on the lifecycle commits it renders —
+  `registered`, `stopping`, `settled`, `removed` — and skips `output` and
+  `progress`, which fire far more often than the roster changes.
+- The wire rung's job scenario now also kills the background job from the
+  Jobs window, covering the new `kill` caller end to end — and writing it
+  exposed two latent bugs: the scenario's menu walk never opened the View
+  menu (`right` moves along the bar without opening; a `down` was missing,
+  and the old check passed vacuously on the transcript card's text plus the
+  Project tree's `▸`), and the scripted job slept five seconds, settling
+  long before the roster ever showed it. The job now sleeps past the whole
+  script and the checks assert the running row and the killed row by their
+  roster detail text.
+
 ## 0.4.0 — 2026-09-29
 
 Adapted to DeepSeek Harness **0.1.7**, which changed the wire under the

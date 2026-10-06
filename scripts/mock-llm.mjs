@@ -49,7 +49,7 @@ const TURNS = [
     // Jobs window holding a live row the harness's registry drives.
     match: 'wire-job',
     reasoning: 'The user asked for the background job turn. Start a sleep in the background.',
-    toolCall: { id: 'call_mock_sleep', name: 'bash', arguments: '{"command":"sleep 5","run_in_background":true,"description":"Sleep in the background"}' },
+    toolCall: { id: 'call_mock_sleep', name: 'bash', arguments: '{"command":"sleep 60","run_in_background":true,"description":"Sleep in the background"}' },
     followupContent: 'The sleep is running in the background; the Jobs window holds it.',
     usage: { prompt_tokens: 210, completion_tokens: 28, total_tokens: 238 },
   },

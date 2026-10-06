@@ -5,4 +5,4 @@
  */
 
 /** The published version. Kept in step with `package.json` by the release task. */
-export const VERSION = '0.4.0'
+export const VERSION = '0.5.0'
