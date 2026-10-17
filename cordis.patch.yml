@@ -21,10 +21,14 @@
         cwd: !!js process.cwd()
 
 # Keep the persona to identity and behaviour; the tool plugins own tool
-# guidance. The loop resolves {{model}} from this agent's configuration.
+# guidance. The key is `personaPrefix` (dsh ≥ 0.2 renamed it from `persona`,
+# and the old key composed but was silently dropped by the config schema —
+# the custom persona never reached the prompt). The loop resolves {{model}}
+# from this agent's configuration; unknown template variables fail the turn,
+# so this reference is verified by the wire rung.
 - id: system-prompt
   config:
-    persona: |
+    personaPrefix: |
       You are a coding agent powered by the {{model}} model.
 
       Verify your work by running the code or tests. Keep answers brief and

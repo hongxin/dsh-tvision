@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.6.0 — 2026-10-17
+
+Adapted to DeepSeek Harness **0.2.1**. The API surface the desktop touches
+survived intact — the jobs seam, the four-argument `execute`, every
+waterfall, and the session-event map (which only gained the log-only
+`job/registered`/`job/settled` pair) — so this adaptation is mostly the peer
+gate plus two pieces of ecosystem cleanup.
+
+### The dsh 0.2.1 adaptation
+
+- **The peer gate.** Every `@deepseek-ai/*` pin moves to `0.2.1-rc.2`, so the
+  plugin loads on its own compatibility again (the 0.2.0 pins were denied by
+  the runtime's exact-version check).
+- **The persona, actually applied.** dsh 0.2.0 renamed the system-prompt row's
+  `persona` key to `personaPrefix`; the old key composed into the config tree
+  but was silently dropped by the schema, so the desktop's custom persona has
+  been absent from every prompt since the 0.2.0 adaptation. The patch now uses
+  `personaPrefix` — `{{model}}` still resolves (the agent loop provides it),
+  and an unknown variable would fail the turn loudly, which the wire rung
+  covers.
+- **The invariants companion is gone.** dsh 0.2.1 removed the cross-package
+  invariants mechanism entirely (the `dsh-invariants` package and every
+  sibling's `invariant.*`): the dependency, the `src/invariant.ts` placeholder,
+  and its bundle entry are removed.
+
 ## 0.5.0 — 2026-10-06
 
 Adapted to DeepSeek Harness **0.2.0**. The break surface was small and is

@@ -13,7 +13,6 @@ export default defineConfig({
     'src/index.ts',
     'src/startup.ts',
     'src/prompt.ts',
-    'src/invariant.ts',
     'src/demo.ts',
   ],
   outDir: 'lib',
