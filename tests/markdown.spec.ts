@@ -287,3 +287,101 @@ describe('the segment-aware wrapper', () => {
     expect(rows.map(row => row.text)).toEqual(['Title', 'body here'])
   })
 })
+
+describe('web parity — constructs the web profile renders structured', () => {
+  // The web client renders full GFM (micromark). These pin the constructs an
+  // agent actually emits where the terminal idiom can match it, each named
+  // for what the web does with the same source.
+
+  it('a setext underline is a heading, not prose or a stray rule', () => {
+    // The web renders `Title\n=====` as an h1; before this was fixed the
+    // paragraph loop joined the marker into the text (`Title =====`) and a
+    // `---` underline came out as a horizontal rule under one word.
+    expect(rowsOf('Title\n=====\nbody')[0]).toBe('Title')
+    expect(rowsOf('Sub\n---\nbody')[0]).toBe('Sub')
+    // And the heading ladder still applies: a setext heading is styled.
+    const [h1] = markdownRows('Title\n=====', 60, base, palette)
+    expect(h1?.segments[0]?.style.bold).toBe(true)
+  })
+
+  it('a rule between paragraphs is still a rule', () => {
+    // A setext underline needs a paragraph above it; alone between blanks it
+    // is what it always was.
+    const rows = rowsOf('one\n\n---\n\ntwo')
+    expect(rows.some(row => /^─+$/.test(row))).toBe(true)
+    expect(rows[0]).toBe('one')
+    expect(rows.at(-1)).toBe('two')
+  })
+
+  it('an image renders as a named placeholder, not a literal bang', () => {
+    // The web shows the picture; a terminal cannot, so it names the picture
+    // instead of leaking the source syntax.
+    expect(rowsOf('before ![logo](https://x/y.png) after')).toContain('before [img: logo] after')
+    expect(rowsOf('a ![](https://x/y.png) b')).toContain('a [img] b')
+  })
+
+  it('a link title is dropped from the rendering', () => {
+    expect(rowsOf('[text](https://x.com "the title")')).toContain('text (https://x.com)')
+  })
+
+  it('a label keeps its own markdown inside a link', () => {
+    const rows = markdownRows('[**bold** and `code`](https://x.com)', 60, base, palette)
+    const segs = rows[0]?.segments ?? []
+    expect(rows[0]?.text).toBe('bold and code (https://x.com)')
+    expect(segs.some(seg => seg.style.bold === true && seg.text.includes('bold'))).toBe(true)
+    // The shown URL is plain text: a URL full of asterisks is never emphasis.
+    const star = markdownRows('[x](https://a.com/*b*/*c*)', 60, base, palette)
+    expect(star[0]?.text).toBe('x (https://a.com/*b*/*c*)')
+    expect((star[0]?.segments ?? []).every(seg => seg.style.bold !== true)).toBe(true)
+  })
+
+  it('a reference link resolves against its definition, wherever it sits', () => {
+    expect(rowsOf('see [the docs][1] here\n\n[1]: https://x.com')).toEqual(['see the docs (https://x.com) here'])
+    // The definition renders nothing at all.
+    expect(rowsOf('[1]: https://x.com')).toEqual([])
+  })
+
+  it('a reference whose definition has not arrived stays literal', () => {
+    // The streaming rule the web's incremental renderer also documents: an
+    // unresolved reference renders as source and self-heals when the
+    // definition lands.
+    expect(rowsOf('see [the docs][1] here')).toContain('see [the docs][1] here')
+  })
+
+  it('a shortcut reference resolves when its label is defined', () => {
+    expect(rowsOf('see [docs] now\n\n[docs]: https://x.com')).toEqual(['see docs (https://x.com) now'])
+    // Undefined, it is ordinary bracketed text.
+    expect(rowsOf('see [docs] now')).toEqual(['see [docs] now'])
+  })
+
+  it('an autolink drops its angle brackets', () => {
+    expect(rowsOf('see <https://example.com> now')).toContain('see https://example.com now')
+  })
+
+  it('a hard break breaks: two trailing spaces or a backslash', () => {
+    expect(rowsOf('line1  \nline2')).toEqual(['line1', 'line2'])
+    expect(rowsOf('line1\\\nline2')).toEqual(['line1', 'line2'])
+    // A single trailing space is nothing.
+    expect(rowsOf('line1 \nline2')).toEqual(['line1 line2'])
+  })
+
+  it('a CJK-strong span closes before CJK punctuation, as the web extends it', () => {
+    // The web ships a micromark extension exactly because CommonMark will not
+    // close `**…**` when CJK follows punctuation without whitespace; the
+    // scanner here is deliberately looser, so the same source bolds.
+    const rows = markdownRows('他说**不行**，然后走了', 60, base, palette)
+    expect(rows[0]?.text).toBe('他说不行，然后走了')
+    expect((rows[0]?.segments ?? []).some(seg => seg.style.bold === true)).toBe(true)
+  })
+
+  it('a footnote reference stays literal — a documented deviation', () => {
+    // The web collects footnotes into a section. A transcript rarely carries
+    // them and a terminal has no good idiom for the section, so the source is
+    // shown as written — reference and definition both.
+    expect(rowsOf('claim[^1] here\n\n[^1]: the note')).toEqual(['claim[^1] here', '[^1]: the note'])
+  })
+
+  it('raw html stays literal — a documented deviation', () => {
+    expect(rowsOf('before <b>bold</b> after')).toEqual(['before <b>bold</b> after'])
+  })
+})

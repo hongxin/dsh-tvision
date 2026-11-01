@@ -157,6 +157,18 @@ Drag a title bar to move a window · drag the bright bottom-right corner to resi
 
 ---
 
+## Running a superagent
+
+tvision is the front end a long-running agent session needs, so
+[`dsh-session-superagent`](https://npm.im/dsh-session-superagent) works with it
+out of the box: install the plugin into the same profile (it needs the same
+DSH ≥ 0.2.1-rc.5 this release targets), call `watch_start`, and leave tvision
+running. When a poll hits, the session is woken in place — the wake message
+(`【主理鱼】…`) arrives as an ordinary turn, the watcher tools render as tool
+cards, and `watch_ack` settles each item. The wake→turn→ack round trip is
+pinned by a golden fixture (`tests/golden/superagent.jsonl`), so the fold
+cannot silently drift from the plugin's documented shapes.
+
 ## Skins
 
 | `--skin` | |

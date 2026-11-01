@@ -63,13 +63,16 @@ export function markdownRows(
 ): MdRow[] {
   if (width <= 0) return [{ text: '', segments: [{ text: '', style: base }] }]
   const rows: MdRow[] = []
+  // Reference definitions may sit after their uses, so the targets are a
+  // whole-document scan the inline pass consults.
+  const references = collectReferenceTargets(text)
   for (const block of parseBlocks(text)) {
     // A heading is a break in the prose; give it a blank line of air unless
     // it opens the text, where a leading blank would float it off the top.
     if (block.kind === 'heading' && rows.length > 0) {
       rows.push({ text: '', segments: [{ text: '', style: base }] })
     }
-    rows.push(...blockRows(block, width, base, palette))
+    rows.push(...blockRows(block, width, base, palette, references))
   }
   return rows
 }
@@ -138,8 +141,14 @@ export function parseBlocks(text: string): Block[] {
       index++
       continue
     }
-    if (/^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$/u.test(line)) {
+    if (/^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$/u.test(line) && !isSetextUnderline(lines, index)) {
       blocks.push({ kind: 'hr' })
+      index++
+      continue
+    }
+    // A link-reference definition renders nothing; its target is collected
+    // for the inline pass, so `[text][1]` resolves wherever it appears.
+    if (REFERENCE_DEFINITION.test(line)) {
       index++
       continue
     }
@@ -175,18 +184,106 @@ export function parseBlocks(text: string): Block[] {
       index = table.next
       continue
     }
-    // Paragraph: until a blank line or the start of another block.
+    // Paragraph: until a blank line or the start of another block. A setext
+    // underline closes the paragraph as a heading — `Sub\n---` is an h2, not
+    // prose followed by a stray rule, which is what the web renders and what
+    // the literal markers otherwise leave on screen.
     const paragraph: string[] = [line]
     index++
     while (index < lines.length) {
       const current = lines[index] ?? ''
+      if (isSetextUnderline(lines, index)) {
+        blocks.push({
+          kind: 'heading',
+          level: (current ?? '').trim().startsWith('=') ? 1 : 2,
+          text: paragraph.join(' '),
+        })
+        index++
+        paragraph.length = 0
+        break
+      }
       if (current.trim() === '' || isBlockStart(current) || isTableStart(lines, index)) break
       paragraph.push(current)
       index++
     }
-    blocks.push({ kind: 'paragraph', text: paragraph.join(' ') })
+    if (paragraph.length > 0) {
+      blocks.push({ kind: 'paragraph', text: joinParagraph(paragraph) })
+    }
   }
   return blocks
+}
+
+/**
+ * Whether the line at `index` is a setext underline for the paragraph text
+ * above it: up to three spaces, then only `=` or only `-`.
+ *
+ * Checked by the rule branch too, so a `---` under a paragraph is a heading
+ * and not a rule — the two readings are ambiguous in the source and GFM
+ * resolves them the same way.
+ * @param lines - The whole document.
+ * @param index - The candidate underline line.
+ * @returns True when the line underlines the preceding paragraph.
+ */
+function isSetextUnderline(lines: readonly string[], index: number): boolean {
+  if (index <= 0) return false
+  const previous = lines[index - 1] ?? ''
+  if (previous.trim() === '') return false
+  const current = lines[index] ?? ''
+  return /^\s{0,3}(={3,}|-{3,})\s*$/u.test(current)
+}
+
+/**
+ * Join paragraph lines, honouring hard breaks.
+ *
+ * A trailing backslash or two trailing spaces mean what they say in GFM — the
+ * break is visible — and everything else flows together with a space, which is
+ * how the web reflows soft-wrapped source.
+ * @param lines - The paragraph's source lines.
+ * @returns The joined text with hard breaks kept as `\n`.
+ */
+function joinParagraph(lines: readonly string[]): string {
+  let out = ''
+  for (const line of lines) {
+    if (out === '') {
+      out = line
+      continue
+    }
+    // The break marker belongs to the line ABOVE the break: two trailing
+    // spaces or a backslash there end the line, and the next line starts
+    // below it rather than flowing on.
+    const hard = /[ \t]{2,}$|\\$/u.test(out)
+    // Trailing whitespace is insignificant once the hard-break test has had
+    // its say, and keeping it would leave double spaces at the join.
+    const above = hard ? out.replace(/([ \t]{2,}|\\)$/u, '') : out.replace(/[ \t]+$/u, '')
+    out = `${above}${hard ? '\n' : ' '}${line.replace(/[ \t]+$/u, '')}`
+  }
+  return out
+}
+
+/** A link-reference definition line: `[label]: destination "optional title"`. */
+const REFERENCE_DEFINITION = /^ {0,3}\[([^\]]+)\]:\s*(\S+)(?:\s+"[^"]*")?\s*$/u
+
+/**
+ * Collect the document's link-reference definitions.
+ *
+ * Definitions may appear after their uses, so this is a whole-document scan
+ * the inline pass consults; while a message streams, a reference whose
+ * definition has not arrived renders literally and self-heals exactly when
+ * the definition does — the same documented deviation the web's incremental
+ * renderer carries.
+ * @param text - The markdown source.
+ * @returns Normalised label (lowercased) to destination.
+ */
+export function collectReferenceTargets(text: string): Map<string, string> {
+  const targets = new Map<string, string>()
+  for (const line of text.split('\n')) {
+    const match = REFERENCE_DEFINITION.exec(line)
+    if (match === null) continue
+    const label = match[1]?.trim().toLowerCase()
+    const url = match[2]
+    if (label !== undefined && label !== '' && url !== undefined) targets.set(label, url)
+  }
+  return targets
 }
 
 /** Whether a line begins a construct the paragraph loop must yield to. */
@@ -349,7 +446,12 @@ function parseList(lines: string[], index: number, indent: string): [ListItem[],
  * @param code - The palette's code style; its foreground colour is adopted.
  * @returns Styled segments covering the whole line.
  */
-export function parseInline(text: string, base: Style, code: Style): MdSeg[] {
+export function parseInline(
+  text: string,
+  base: Style,
+  code: Style,
+  references: ReadonlyMap<string, string> = new Map(),
+): MdSeg[] {
   const segments: MdSeg[] = []
   // The scanning cursor over the raw source; plain text between constructs
   // accumulates in `pending`.
@@ -381,7 +483,7 @@ export function parseInline(text: string, base: Style, code: Style): MdSeg[] {
       const span = matchSpan(rest, '**')
       if (span !== undefined) {
         flush(base)
-        segments.push(...parseInline(span, { ...base, bold: true }, code))
+        segments.push(...parseInline(span, { ...base, bold: true }, code, references))
         cursor += span.length + 4
         continue
       }
@@ -392,21 +494,61 @@ export function parseInline(text: string, base: Style, code: Style): MdSeg[] {
       const span = matchSpan(rest, '~~')
       if (span !== undefined && !/^~+$/u.test(span.trim()) && span.trim() !== '') {
         flush(base)
-        segments.push(...parseInline(span, { ...base, strike: true }, code))
+        segments.push(...parseInline(span, { ...base, strike: true }, code, references))
         cursor += span.length + 4
         continue
       }
     }
-    const link = /^\[([^\]]{1,80})\]\(([^()\s]{1,200})\)/u.exec(rest)
-    if (link !== null) {
-      const label = link[1] ?? ''
-      const url = link[2] ?? ''
+    // An image is not a link wearing a hat: the web renders the picture, and
+    // the terminal's honest equivalent is a named placeholder rather than the
+    // source's literal bang and destination.
+    const image = /^!\[([^\]\n]{0,120})\]\(([^()\s]{1,400})(?:\s+"[^"]*")?\)/u.exec(rest)
+    if (image !== null) {
+      const alt = image[1]?.trim() ?? ''
       flush(base)
-      // The shown URL in parentheses is the affordance; an underline on top
-      // of it is visual noise across a whole paragraph.
-      const shown = label === url || url === '' ? label : `${label} (${url})`
-      segments.push({ text: shown, style: base })
-      cursor += link[0].length
+      segments.push({ text: alt === '' ? '[img]' : `[img: ${alt}]`, style: { ...base, fg: code.fg } })
+      cursor += image[0].length
+      continue
+    }
+    // An autolink's angle brackets are syntax, not content: the web shows the
+    // bare destination as the link.
+    const autolink = /^<(https?:\/\/[^>\s]{3,400})>/u.exec(rest)
+    if (autolink !== null) {
+      flush(base)
+      segments.push({ text: autolink[1] ?? '', style: base })
+      cursor += autolink[0].length
+      continue
+    }
+    const inline = /^\[([^\]\n]{1,200})\]\(([^()\s]{1,400})(?:\s+"[^"]*")?\)/u.exec(rest)
+    if (inline !== null) {
+      const label = inline[1] ?? ''
+      const url = inline[2] ?? ''
+      flush(base)
+      segments.push(...linkSegments(label, url, base, code, references))
+      cursor += inline[0].length
+      continue
+    }
+    // A reference link resolves against the document's definitions; one whose
+    // definition has not arrived stays literal and self-heals when it does —
+    // the same streaming deviation the web's renderer documents.
+    const reference = /^\[([^\]\n]{1,200})\]\[([^\]\n]{0,200})\]/u.exec(rest)
+    if (reference !== null) {
+      const label = reference[1] ?? ''
+      const named = (reference[2]?.trim() || label).toLowerCase()
+      const url = references.get(named)
+      if (url !== undefined) {
+        flush(base)
+        segments.push(...linkSegments(label, url, base, code, references))
+        cursor += reference[0].length
+        continue
+      }
+    }
+    const shortcut = /^\[([^\]\n]{2,80})\]/u.exec(rest)
+    if (shortcut !== null && references.has((shortcut[1] ?? '').toLowerCase())) {
+      const label = shortcut[1] ?? ''
+      flush(base)
+      segments.push(...linkSegments(label, references.get(label.toLowerCase()) ?? '', base, code, references))
+      cursor += shortcut[0].length
       continue
     }
     if (rest.startsWith('*') || (rest.startsWith('_') && !/\w|$/u.test(source[cursor - 1] ?? ''))) {
@@ -414,7 +556,7 @@ export function parseInline(text: string, base: Style, code: Style): MdSeg[] {
       const span = matchSpan(rest, marker, source[cursor - 1])
       if (span !== undefined) {
         flush(base)
-        segments.push(...parseInline(span, { ...base, italic: true }, code))
+        segments.push(...parseInline(span, { ...base, italic: true }, code, references))
         cursor += span.length + 2
         continue
       }
@@ -459,7 +601,23 @@ function matchSpan(rest: string, opener: string, before?: string, closeIndexHint
 /* ------------------------------------------------------------------ */
 
 /** Render one block as rows. */
-function blockRows(block: Block, width: number, base: Style, palette: ResolvedPalette): MdRow[] {
+/**
+ * Rows for one block.
+ * @param block - The block to render.
+ * @param width - The column budget.
+ * @param base - The body style.
+ * @param palette - The active skin.
+ * @param references - The document's link-reference targets, consulted by the
+ * inline pass; empty when a caller has none.
+ * @returns One row per visual line.
+ */
+function blockRows(
+  block: Block,
+  width: number,
+  base: Style,
+  palette: ResolvedPalette,
+  references: ReadonlyMap<string, string>,
+): MdRow[] {
   switch (block.kind) {
     case 'heading': {
       // The ladder is one colour descending by attribute: `##` underlines as
@@ -473,7 +631,7 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
         : block.level === 3
           ? palette.heading
           : { ...palette.heading, dim: true }
-      return wrapSegments(parseInline(block.text, style, palette.code), width).map(toRow)
+      return wrapSegments(parseInline(block.text, style, palette.code, references), width).map(toRow)
     }
     case 'hr':
       return [{ text: '─'.repeat(width), segments: [{ text: '─'.repeat(width), style: base }] }]
@@ -481,7 +639,7 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
       const quoteStyle = { ...palette.reasoning, italic: true }
       const rows: MdRow[] = []
       for (const line of block.lines) {
-        const inner = wrapSegments(parseInline(line, quoteStyle, palette.code), Math.max(1, width - 2))
+        const inner = wrapSegments(parseInline(line, quoteStyle, palette.code, references), Math.max(1, width - 2))
         for (const line2 of inner) {
           rows.push({
             text: `│ ${line2.map(seg => seg.text).join('')}`,
@@ -492,11 +650,14 @@ function blockRows(block: Block, width: number, base: Style, palette: ResolvedPa
       return rows
     }
     case 'paragraph':
-      return wrapSegments(parseInline(block.text, base, palette.code), width).map(toRow)
+      // A hard break inside the paragraph is a real line break; each stretch
+      // between breaks wraps on its own.
+      return block.text.split('\n').flatMap(stretch =>
+        wrapSegments(parseInline(stretch, base, palette.code, references), width).map(toRow))
     case 'table':
-      return tableRows(block, width, base, palette)
+      return tableRows(block, width, base, palette, references)
     case 'list':
-      return listRows(block.items, width, base, palette, 0)
+      return listRows(block.items, width, base, palette, references, 0)
     /* c8 ignore next 2 -- the union is exhaustive. */
     default:
       return []
@@ -509,6 +670,7 @@ function listRows(
   width: number,
   base: Style,
   palette: ResolvedPalette,
+  references: ReadonlyMap<string, string>,
   depth: number,
 ): MdRow[] {
   const rows: MdRow[] = []
@@ -525,7 +687,7 @@ function listRows(
     // first logical line carries the marker, every later visual row hangs by
     // the marker's width so content stays aligned.
     for (const [lineIndex, line] of item.lines.entries()) {
-      const wrapped = wrapSegments(parseInline(line, base, palette.code), room)
+      const wrapped = wrapSegments(parseInline(line, base, palette.code, references), room)
       for (const [wrapIndex, segs] of wrapped.entries()) {
         const carriesMarker = lineIndex === 0 && wrapIndex === 0
         const prefixText = carriesMarker ? `${indent}${item.marker}` : `${indent}${hang}`
@@ -538,7 +700,7 @@ function listRows(
         })
       }
     }
-    if (item.children.length > 0) rows.push(...listRows(item.children, width, base, palette, depth + 1))
+    if (item.children.length > 0) rows.push(...listRows(item.children, width, base, palette, references, depth + 1))
   }
   return rows
 }
@@ -578,12 +740,13 @@ function tableRows(
   width: number,
   base: Style,
   palette: ResolvedPalette,
+  references: ReadonlyMap<string, string>,
 ): MdRow[] {
   // Cells parse in full and are measured after parsing, because links expand
   // (`label` → `label (url)`) and the seam dressing adds thin spaces — a cap
   // applied to the source text would measure the wrong string.
   const parseCell = (cell: string, style: Style): MdSeg[] =>
-    parseInline(cell, style, palette.code)
+    parseInline(cell, style, palette.code, references)
   const headerSegs = block.header.map(cell => parseCell(cell, { ...base, bold: true }))
   const rowSegs = block.rows.map(row =>
     block.header.map((_name, column) => parseCell(row[column] ?? '', base)))
@@ -780,6 +943,45 @@ function stackedTableRows(
     })
   }
   return rows
+}
+
+/**
+ * The segments for one rendered link.
+ *
+ * The label is parsed as markdown — `[**bold**](url)` bolds — and the
+ * destination is shown beside it, which is the terminal's stand-in for the
+ * web's clickable text: the URL is the affordance a terminal has.
+ * @param label - The link text, markers included.
+ * @param url - The resolved destination.
+ * @param base - The style the label composes over.
+ * @param code - The palette's code style, for nested spans.
+ * @param references - The document's reference targets, for nested links.
+ * @returns Segments covering the whole rendered link.
+ */
+function linkSegments(
+  label: string,
+  url: string,
+  base: Style,
+  code: Style,
+  references: ReadonlyMap<string, string>,
+): MdSeg[] {
+  const bare = label === url || url === ''
+  const shown = bare ? label : `${label} (${url})`
+  // The label keeps its nested markers; the shown URL is plain text, so a URL
+  // containing asterisks is never re-parsed as emphasis.
+  const head = parseInline(bare ? shown : label, base, code, references)
+  if (bare) return head
+  // Merge the shown URL into the label's last run when their styles match, so
+  // a plain link stays one segment — the same coalescing the wrapper applies,
+  // kept here because parseInline's output is its own contract.
+  const last = head[head.length - 1]
+  if (last !== undefined && last.style.fg === base.fg && last.style.bg === base.bg
+    && last.style.bold === base.bold && last.style.italic === base.italic
+    && last.style.strike === base.strike && last.style.underline === base.underline
+    && last.verbatim !== true) {
+    return [...head.slice(0, -1), { text: `${last.text} (${url})`, style: last.style }]
+  }
+  return [...head, { text: ` (${url})`, style: base }]
 }
 
 /* ------------------------------------------------------------------ */

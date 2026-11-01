@@ -225,10 +225,14 @@ def main():
         env['DEEPSEEK_BASE_URL'] = f'http://127.0.0.1:{MOCK_PORT}'
         env['DEEPSEEK_API_KEY'] = 'test-mock-key'
         os.environ.update(DEEPSEEK_BASE_URL=env['DEEPSEEK_BASE_URL'], DEEPSEEK_API_KEY=env['DEEPSEEK_API_KEY'])
+        # DSH_HOME is an environment variable, not a launcher flag: `dsh` hands
+        # anything it does not recognise to the app, and the app's commander
+        # rejects `--dsh-home` and exits before drawing a frame — which is how
+        # this script once reported every check missing.
+        if args.dsh_home is not None:
+            os.environ['DSH_HOME'] = args.dsh_home
 
         argv = ['dsh', '--profile', 'tvision']
-        if args.dsh_home is not None:
-            argv += ['--dsh-home', args.dsh_home]
         capture = run(argv, SCRIPT, 100, 30, args.seconds, SCRIPT_GAP)
         screen = replay(capture, 100, 30)
         # Resume: the goodbye line names the session; a second boot with

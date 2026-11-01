@@ -471,6 +471,30 @@ subagent) are not ours to hold in v1.
 
 ---
 
+## 5½. Parity with the web transcript, and where it deliberately stops
+
+The web profile renders assistant prose as full GFM (micromark + KaTeX). The
+terminal cannot render pictures, footnotes sections, or TeX, so parity is a
+line-by-line decision rather than a blanket "render everything":
+
+| Construct | Web | tvision |
+|---|---|---|
+| Headings, lists (nested, task), quotes, rules, tables | structured | structured, same constructs |
+| Emphasis, strong, strike, inline code | attributes | attributes (bold/strike/italic + the code colour) |
+| Fenced code | highlighted card | framed box with a language label |
+| Links | clickable label | `label (url)` — the URL is the affordance a terminal has |
+| Link titles, reference links (full + shortcut) | resolved | resolved, definitions collected document-wide |
+| Autolinks | bare destination | bare destination |
+| Images | the picture | `[img: alt]` — a named placeholder, never the source's bang |
+| Hard breaks | line break | line break (two spaces or a backslash above it) |
+| Setext headings | h1/h2 | h1/h2 — previously `Sub\n---` rendered as prose plus a stray rule |
+| CJK strong before punctuation | a micromark extension the web ships | works: the scanner is deliberately looser than CommonMark |
+| Footnotes, raw HTML | footnote section / omitted | literal source — **documented deviations**, rare in agent prose and with no honest terminal idiom |
+
+The reference-link rule carries the same streaming deviation the web's
+incremental renderer documents: a reference whose definition has not arrived
+renders literally and self-heals when it does.
+
 ## 6. What is not finished
 
 Honest scope, so the gaps are not mistaken for decisions.

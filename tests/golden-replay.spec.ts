@@ -105,3 +105,33 @@ describe('golden replay: a delegation turn', () => {
     ])
   })
 })
+
+describe('golden replay: a session-superagent round trip', () => {
+  // The fixture follows dsh-session-superagent's documented wake shape: the
+  // watcher registers via its tools, the session sits idle, and a poll hit
+  // arrives much later as a user-role followup whose text opens with the
+  // 【主理鱼】 marker. The turn then runs watch_ack to advance the watermark.
+  const rows = replay('superagent')
+
+  it('renders the registration turn and the wake as distinct turns', () => {
+    expect(rows.some(row => row === '> You')).toBe(true)
+    expect(rows.some(row => row.includes('用 watch_start 盯住'))).toBe(true)
+    expect(rows.some(row => row.includes('【主理鱼】owner/name 有 1 条新动态'))).toBe(true)
+  })
+
+  it('renders the watcher tools as ordinary tool cards', () => {
+    expect(rows.some(row => row.startsWith('~ watch_start'))).toBe(true)
+    expect(rows.some(row => row.startsWith('~ watch_ack'))).toBe(true)
+    // Both settled: a running card would carry the running state instead of ok.
+    expect(rows.some(row => row.includes('watching owner/name every 300s'))).toBe(false)
+  })
+
+  it('keeps the wake turn and the ack turn separated by a blank row', () => {
+    const wake = rows.findIndex(row => row.includes('【主理鱼】'))
+    const ack = rows.findIndex(row => row.startsWith('~ watch_ack'))
+    expect(wake).toBeGreaterThan(-1)
+    expect(ack).toBeGreaterThan(wake)
+    // Somewhere between the two the transcript took a breath.
+    expect(rows.slice(wake, ack)).toContain('')
+  })
+})

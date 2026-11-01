@@ -141,6 +141,15 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 
 ---
 
+## 跑一个 superagent
+
+tvision 正是长驻会话需要的前端，因此
+[`dsh-session-superagent`](https://npm.im/dsh-session-superagent) 可以直接配合使用：把插件装进同一个
+profile（它要求的 DSH ≥ 0.2.1-rc.5 与本版本一致），调 `watch_start`
+登记 watcher，然后让 tvision 一直开着。轮询命中时会话被就地唤醒——唤醒消息（`【主理鱼】…`）作为普通回合到来，watcher
+工具渲染成工具卡片，`watch_ack` 逐条打标收尾。唤醒→回合→ack
+这条链路有 golden 夹具钉着（`tests/golden/superagent.jsonl`），折叠逻辑不会悄悄偏离插件声明的形状。
+
 ## 皮肤
 
 | `--skin` | |
