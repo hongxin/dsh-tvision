@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.7.0 — 2026-11-02
+
+Three strands asked for together — adapt to the *installed* dsh, bring the
+text output closer to the web profile, and support the superagent ecosystem —
+plus two fixes that only a real shell could surface.
+
+### Adapted to dsh 0.2.1-rc.5 — and to every 0.2.x at once
+
+- **The pins move to `0.2.1-rc.5`** with zero code change; the API surface the
+  desktop touches did not move between rc.2 and rc.5. Verified on the full
+  ladder: L0 (795 tests), L2 (mount), L3 (all 23 wire checks).
+- **One build passes the plugin gate on every 0.2.x runtime.** A stale shell
+  on this machine resolves dsh 0.2.1-rc.2 while a fresh one resolves rc.5, and
+  the rc.5 pins made the older runtime's gate refuse the plugin outright. The
+  gate reads `engines.dsh` first and, when that field exists, decides alone —
+  so `engines.dsh: ">=0.2.1-rc.2 <0.3.0"` passes both runtimes without the
+  exact-version exemption this profile once needed.
+- **`engines.node` relaxes to `>=22.18`.** The `^22.19` floor was inherited
+  from the upstream TUI lineage, not required by us; the demo and the full
+  suite run on 22.18.
+
+### Markdown parity with the web transcript
+
+The web renders assistant prose as full GFM; a construct-by-construct survey
+against tvision's renderer found the real gaps. Fixed — each pinned by a test
+named for what the web does with the same source:
+
+- **Setext headings.** `Sub` + `---` rendered as prose followed by a stray
+  horizontal rule; it is an h2 now, as GFM and the web read it.
+- **Images** render as a named `[img: alt]` placeholder instead of the
+  source's literal bang and destination — the terminal's honest stand-in for a
+  picture.
+- **Link titles** are dropped; **labels parse their own markdown**
+  (`[**bold**](url)` bolds) while the shown URL is never re-parsed as
+  emphasis.
+- **Reference links** (full and shortcut) resolve against definitions
+  collected document-wide; unresolved ones stay literal and self-heal — the
+  same streaming deviation the web's incremental renderer documents.
+- **Autolinks** drop their angle brackets; **hard breaks** (two spaces or a
+  backslash above the break) break.
+- Deliberate deviations, both recorded in DESIGN.md §5½: footnotes and raw
+  HTML stay literal.
+- CJK strong before punctuation already worked — our scanner is deliberately
+  looser than CommonMark, which is the same problem the web ships a micromark
+  extension for.
+
+### dsh-superagent support
+
+[`dsh-session-superagent`](https://npm.im/dsh-session-superagent) is a
+tools-only plugin that wakes a live session with a user-role followup, so no
+new seam was needed — but the round trip is now pinned:
+`tests/golden/superagent.jsonl` records the documented wake shape (the
+【主理鱼】 marker, `watch_start` registration, the idle gap, the wake turn,
+`watch_ack` settling the item) and the replay asserts each stage renders.
+README (EN+zh) explains how to run one against tvision.
+
+### Fixed — found by running verify:all in a real shell
+
+- **The goodbye printed twice on quit.** `requestExit` calls the mount
+  disposer directly, and disposing the root fiber then runs the same disposer
+  again; the host's dispose had no guard, so the resume hint was written on
+  each pass.
+- **verify:wire was silent for five minutes** and looked stuck; it now prints
+  `boot 1 of 2` / `boot 2 of 2` up front with the expected silence, and the
+  byte counts before the checks.
+- **The verification ladder stopped minting sessions in the real `~/.dsh`.**
+  Every boot creates a session in the home it uses; the rungs now default to a
+  repo-local sandbox home, built on demand with the profile linked to the
+  checkout — the same shape `dsh plugin add` of a local path produces.
+  `--real-home` boots the real home deliberately.
+- **pty-wire passed `--dsh-home` as a launcher flag**, which `dsh` hands to
+  the app, whose commander rejected it and exited before drawing — the rung
+  reported every check missing when nothing was wrong with the app.
+
 ## 0.6.0 — 2026-10-17
 
 Adapted to DeepSeek Harness **0.2.1**. The API surface the desktop touches
