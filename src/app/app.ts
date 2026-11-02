@@ -270,13 +270,12 @@ function sideRects(plan: LayoutPlan): { project: Rect; tasks: Rect } {
 const MIN_TRANSCRIPT_HEIGHT = 4
 
 /**
- * The input rows the composer pane would like.
+ * The largest share of the pane the composer may take when its content grows.
  *
- * Two: the input line and one row above it for a completion popup to open into.
- * The pane adds its own separator row on top, so the whole composer is three
- * rows on an ordinary terminal and two when the transcript needs the row more.
+ * A draft can be long, but the transcript is the product: past this share the
+ * composer scrolls inside itself instead, the trade Claude Code's box makes.
  */
-const COMPOSER_INPUT_ROWS = 2
+const COMPOSER_MAX_SHARE = 0.4
 
 /**
  * The smallest terminal this desktop is worth drawing in.
@@ -459,10 +458,10 @@ class TranscriptPane implements Widget {
    */
   cursor(): CursorState | undefined {
     if (this.composerRect.width <= 0 || this.composerRect.height <= 0) return undefined
+    const offset = this.composer.caretOffset()
     return {
-      x: this.origin.x + this.composerRect.x
-        + this.composer.caretColumn(this.composerRect.width),
-      y: this.origin.y + this.composerRect.y + this.composerRect.height - 1,
+      x: this.origin.x + this.composerRect.x + offset.x,
+      y: this.origin.y + this.composerRect.y + offset.y,
       visible: true,
     }
   }
@@ -482,7 +481,13 @@ class TranscriptPane implements Widget {
     // The search bar, while open, takes the row above the composer rule — next
     // to where the reader is typing, occluding nothing.
     const searchBar = this.view.searchActive ? 1 : 0
-    const wanted = COMPOSER_INPUT_ROWS + this.composer.completionRows + searchBar
+    // The composer's block is exactly as tall as its wrapped content — one row
+    // for a one-line prompt, more as the draft grows — plus the popup. The cap
+    // keeps a long draft from owning the pane: the transcript keeps at least
+    // its floor and the better part of the window.
+    const composerCap = Math.max(1, Math.floor(painter.height * COMPOSER_MAX_SHARE))
+    const contentRows = Math.min(this.composer.contentRows(painter.width), composerCap)
+    const wanted = contentRows + this.composer.completionRows + searchBar
     const inputHeight = Math.max(
       1,
       Math.min(wanted, Math.max(1, painter.height - MIN_TRANSCRIPT_HEIGHT - 1)),
@@ -537,7 +542,13 @@ class TranscriptPane implements Widget {
     const inside = event.x >= rect.x && event.x < rect.x + rect.width
       && event.y >= rect.y && event.y < rect.y + rect.height
     // The composer works in its own columns, so translate before handing over.
-    if (inside) return this.composer.onMouse({ ...event, x: event.x - origin.x })
+    if (inside) {
+      return this.composer.onMouse({
+        ...event,
+        x: event.x - origin.x,
+        y: event.y - origin.y - this.composerRect.y,
+      })
+    }
     return this.view.onMouse(event)
   }
 }

@@ -1184,6 +1184,12 @@ describe('the composer caret', () => {
     return match === null ? undefined : Number(match[1])
   }
 
+  /** The hardware cursor's screen row from the frame's final CUP, if shown. */
+  const cursorRow = (frame: string): number | undefined => {
+    const match = /\u001B\[(\d+);\d+H\u001B\[\?25h/u.exec(frame)
+    return match === null ? undefined : Number(match[1])
+  }
+
   it('is shown on the input line and advances by display width', () => {
     const { app, terminal } = build()
     app.start()
@@ -1201,16 +1207,34 @@ describe('the composer caret', () => {
     expect(col3 - col2).toBe(1)
   })
 
-  it('clamps to the composer edge when the text scrolls', () => {
+  it('stays inside the composer when a long line soft-wraps', () => {
     const { app } = build()
     app.start()
     app.composer.insert('y'.repeat(300))
-    const column = cursorColumn(app.renderForTest())
-    if (column === undefined) throw new Error('the hardware cursor was not positioned')
-    // The interior is at most the transcript window's width; one column of
-    // slack keeps the caret inside the border.
-    expect(column).toBeLessThanOrEqual(100 - 2)
-    expect(column).toBeGreaterThan(50)
+    const frame = app.windows.lastFrame()
+    const window = app.windows.get(WINDOW_IDS.transcript)
+    /* c8 ignore next -- the window exists. */
+    if (window === undefined) throw new Error('no transcript window')
+    const interior = window.interior
+    const output = app.renderForTest()
+    const column = cursorColumn(output)
+    const row = cursorRow(output)
+    if (column === undefined || row === undefined) throw new Error('the hardware cursor was not positioned')
+    // The cursor is inside the composer's block, which is inside the window,
+    // which is inside the screen — and on a wrapped row, not pinned to an edge.
+    expect(column).toBeLessThan(interior.x + interior.width)
+    expect(column).toBeGreaterThan(interior.x)
+    expect(row).toBeLessThanOrEqual(window.rect.y + window.rect.height - 1)
+    expect(row).toBeGreaterThanOrEqual(window.rect.y)
+    // The wrap happened at all: the block grew past one row.
+    expect(app.composer.contentRows(interior.width)).toBeGreaterThan(1)
+    // And the proof it is editable as rows: Up moves the caret one display
+    // row up, and the hardware cursor follows it there.
+    app.feed('\u001B[A')
+    const rowAfterUp = cursorRow(app.renderForTest())
+    if (rowAfterUp === undefined) throw new Error('the hardware cursor was not positioned')
+    expect(rowAfterUp).toBeLessThan(row)
+    void frame
   })
 })
 

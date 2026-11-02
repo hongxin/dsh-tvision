@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.7.1 — 2026-11-02
+
+Three refinements from a live session screenshot, all about respecting the
+screen the reader actually has.
+
+### The command a tool ran is no longer cut twice
+
+A tool card's summary truncated its command to a fixed 60 columns and *then*
+fitted it to the card, so a 100-column window still showed at most 60. The card
+now asks for exactly the room it has, and the width rides through the argument
+recursion (where a first fix silently dropped it).
+
+### Consecutive tool cards pack together
+
+A run of tool calls is one operation being scanned, not a list of separate
+ones: no blank row between consecutive cards, the way a shell transcript packs
+its commands. Every other kind boundary keeps its air.
+
+### The composer is multi-line, the way Claude Code's is
+
+The box edits a buffer with explicit newlines, soft-wrapped at the window edge:
+
+- **Enter submits; `\`+Enter breaks the line** (Alt+Enter and Shift+Enter too),
+  and a paste keeps its breaks.
+- **The block grows with the content** up to 40% of the pane, then scrolls
+  inside itself with `↑n`/`↓n` markers — a long draft never shoves the
+  transcript off the screen.
+- **Up/Down walk the display rows** while the buffer spans more than one —
+  wrapped or broken alike — and fall through to the history while it does not,
+  so the common case is unchanged.
+- **The readline keys went line-wise** (Home/End, Ctrl+A/E, Ctrl+U/K, Ctrl+W):
+  on a single line every one coincides with the old whole-buffer behaviour, so
+  nothing anyone already types changed; on a broken line they act on the line
+  the caret is on, and Ctrl+W no longer eats the break.
+- The hardware cursor follows the caret onto its display row, and a click
+  places the caret by row and column.
+
+Verified at L0 (829 tests, 34 new), L1 (the 18-scenario pty sweep, zero
+defects), and a live terminal session that typed a two-line draft through
+`\`+Enter, watched the block grow, and submitted both lines.
+
 ## 0.7.0 — 2026-11-02
 
 Three strands asked for together — adapt to the *installed* dsh, bring the

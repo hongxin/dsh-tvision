@@ -566,9 +566,15 @@ export function buildRows(
   const rows: TranscriptRow[] = []
   const bodyWidth = Math.max(8, width - theme.gutterWidth)
   let first = true
+  let previousKind: Entry['kind'] | undefined
   for (const entry of entries) {
-    if (!first) rows.push(blankRow(entry.id, palette))
+    // A run of tool calls is one operation the reader is scanning, not a list
+    // of separate ones: no blank between consecutive cards, the way a shell
+    // transcript packs its commands. Every other kind boundary keeps its air.
+    const packsTight = entry.kind === 'tool' && previousKind === 'tool'
+    if (!first && !packsTight) rows.push(blankRow(entry.id, palette))
     first = false
+    previousKind = entry.kind
     // `entryRows` is per-entry pure (the only cross-entry facts — the blank
     // spacers and the first-entry rule — live outside the memo), so a cache
     // hit skips the re-wrap. A streaming frame then re-wraps exactly the one
@@ -827,12 +833,11 @@ function toolRows(
     : state === 'ok' ? palette.toolSuccess : palette.toolRunning
   const stateLabel = state === 'error' ? 'failed' : state === 'ok' ? 'ok' : 'running'
   const elapsed = entry.endedAt === undefined ? '' : ` · ${formatDuration(entry.endedAt - entry.time)}`
-  const summary = summarizeArgs(entry.args)
   const heading = `~ ${entry.title ?? 'tool'}`
   const room = Math.max(0, width - textWidth(heading) - textWidth(stateLabel) - 6)
-  const shownSummary = takeColumns(summary, room)
+  const summary = summarizeArgs(entry.args, room)
   rows.push({
-    text: `${heading}  ${shownSummary}`.trimEnd(),
+    text: `${heading}  ${summary}`.trimEnd(),
     gutterStyle: palette.toolHeader,
     style: palette.toolHeader,
     entryId: entry.id,
@@ -925,9 +930,13 @@ function piecesFromEntry(entry: Entry): ContentPiece[] {
  * already parsed — both go through here, so every consumer (the transcript
  * card, the breakpoint matcher) agrees on what a call's label says.
  * @param args - The arguments: parsed JSON, the raw JSON text, or undefined.
+ * @param maxWidth - The columns the caller can actually show. The historic
+ *   fixed 60 was a second, earlier cut on top of the card's own fit, so a
+ *   command truncated at 60 even on a 100-column window with room for more;
+ *   callers now pass the room they have.
  * @returns A short label.
  */
-export function summarizeArgs(args: unknown): string {
+export function summarizeArgs(args: unknown, maxWidth = 60): string {
   if (args === undefined || args === '') return ''
   if (typeof args === 'string') {
     let parsed: unknown
@@ -935,19 +944,19 @@ export function summarizeArgs(args: unknown): string {
       parsed = JSON.parse(args)
     } catch {
       /* c8 ignore next -- a non-JSON argument string is shown as-is. */
-      return takeColumns(args.replace(/\s+/gu, ' '), 60)
+      return takeColumns(args.replace(/\s+/gu, ' '), maxWidth)
     }
-    return summarizeArgs(parsed)
+    return summarizeArgs(parsed, maxWidth)
   }
-  if (args === null || typeof args !== 'object') return takeColumns(String(args), 60)
+  if (args === null || typeof args !== 'object') return takeColumns(String(args), maxWidth)
   const record = args as Record<string, unknown>
   for (const key of ['command', 'path', 'file_path', 'query', 'pattern', 'url', 'prompt', 'name']) {
     const value = record[key]
-    if (typeof value === 'string' && value !== '') return takeColumns(value.replace(/\s+/gu, ' '), 60)
+    if (typeof value === 'string' && value !== '') return takeColumns(value.replace(/\s+/gu, ' '), maxWidth)
   }
   const keys = Object.keys(record)
   if (keys.length === 0) return ''
-  return takeColumns(keys.join(', '), 60)
+  return takeColumns(keys.join(', '), maxWidth)
 }
 
 /**
