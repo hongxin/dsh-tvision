@@ -13,9 +13,9 @@ first; this file is only about verifying changes cheaply.
 |---|---|---|---|---|
 | L0 | `npm test` | units, whole-desktop tests with a fake host, snapshots, **golden-log replay** (`tests/golden-replay.spec.ts`) | ~1 s, free | fold bugs against real event shapes, width/color/rendering invariants, regressions of everything below |
 | L1 | `npm run sweep:pty && npm test` | demo under a real pty, 18 scenarios, invariant assertions on the captures | ~2 min, free | real-terminal rendering drift, teardown modes, scroll/overflow |
-| L2 | `npm run verify:profile` | boots `dsh --profile tvision` for real; no key needed | ~15 s, free | profile install, dependency closure, patch composition, mount/teardown |
+| L2 | `npm run verify:profile` | boots `dsh --profile tvision` for real against the repo-local sandbox home; no key needed | ~15 s, free | profile install, dependency closure, patch composition, mount/teardown |
 | L2b | `PATH=~/.nvm/versions/node/v22.18.0/bin:$PATH npm run verify:profile` | same, under the *older* installed dsh (0.2.1-rc.2) | ~15 s, free | the engines.dsh gate and cross-rc loading — a stale shell resolving an older dsh must still mount |
-| L3 | `npm run verify:wire` | real profile + `scripts/mock-llm.mjs` scripted endpoint: a reasoner turn, a CJK turn, a tool round trip (approval answered with Enter), a breakpoint held then run (`y`) and refused (`n`) | ~30 s, free | adapter contract drift, waterfall/approval end-to-end, streaming shapes |
+| L3 | `npm run verify:wire` | two full boots (turns, then resume) + `scripts/mock-llm.mjs`: a reasoner turn, a CJK turn, a tool round trip (approval answered with Enter), a breakpoint held then run (`y`) and refused (`n`), jobs, delegation, plan mode, attachments | **~5 min**, free; prints `boot 1 of 2` / `boot 2 of 2` and is silent while each runs | adapter contract drift, waterfall/approval end-to-end, streaming shapes |
 | L4 | manual | one real model turn: cheapest model, `max_tokens` low, one short prompt | ~cents | the only unmockable residue — whether real DeepSeek matches the mock's wire assumptions |
 
 `npm run verify:all` = L0 + L2 + L3 and prints one line per check.
@@ -28,6 +28,12 @@ first; this file is only about verifying changes cheaply.
   **L1** (what a real terminal agrees to).
 - Boot/install/profile wiring → **L2**. Run it after any `package.json` or
   `cordis.patch.yml` change.
+- Both rungs boot against `.tools/dsh-home`, a sandbox `ensure_sandbox_home`
+  builds on demand with the profile linked to this checkout — because every
+  boot mints a session in the home it uses, and the user's real `~/.dsh` should
+  not accumulate mock ones. Pass `--real-home` to either script to boot the
+  real `$DSH_HOME` deliberately (a reality check, at the cost of test sessions
+  landing in the real session list).
 - Anything the harness does between HTTP and our event subscription → **L3**.
   The mock speaks the adapter's verified protocol; add a scenario to `TURNS`
   in `scripts/mock-llm.mjs`, type its keyword, assert on the replayed screen.

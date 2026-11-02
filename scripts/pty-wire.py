@@ -20,7 +20,7 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pty_common import run  # noqa: E402  (sibling script)
+from pty_common import ensure_sandbox_home, run  # noqa: E402  (sibling script)
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOCK_PORT = 8931
@@ -203,7 +203,9 @@ def replay(capture, columns, rows):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dsh-home', default=None)
+    parser.add_argument('--dsh-home', default=None, help=argparse.SUPPRESS)
+    parser.add_argument('--real-home', action='store_true',
+                        help='boot the user\'s real $DSH_HOME instead of the repo sandbox')
     parser.add_argument('--seconds', type=float, default=135.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
     args = parser.parse_args()
@@ -228,11 +230,15 @@ def main():
         # DSH_HOME is an environment variable, not a launcher flag: `dsh` hands
         # anything it does not recognise to the app, and the app's commander
         # rejects `--dsh-home` and exits before drawing a frame — which is how
-        # this script once reported every check missing.
-        if args.dsh_home is not None:
-            os.environ['DSH_HOME'] = args.dsh_home
+        # this script once reported every check missing. Default to the repo
+        # sandbox so the ladder never mints mock sessions in the real ~/.dsh.
+        home = args.dsh_home or (os.environ.get('DSH_HOME') if args.real_home else ensure_sandbox_home(REPO))
+        if home is not None:
+            os.environ['DSH_HOME'] = home
 
         argv = ['dsh', '--profile', 'tvision']
+        print('pty-wire: boot 1 of 2 — the scripted turns (silent for up to '
+              f'{int(args.seconds)}s, this is normal)')
         capture = run(argv, SCRIPT, 100, 30, args.seconds, SCRIPT_GAP)
         screen = replay(capture, 100, 30)
         # Resume: the goodbye line names the session; a second boot with
@@ -243,6 +249,8 @@ def main():
         # transcript.
         goodbye = re.search(r'--resume=([a-z0-9-]+)', capture.decode('utf8', 'replace'))
         if goodbye is not None:
+            print('pty-wire: boot 2 of 2 — resume, the Skills window, the '
+                  '@-completion (silent again)')
             capture2 = run(
                 [*argv, f'--resume={goodbye.group(1)}'],
                 [
@@ -266,6 +274,7 @@ def main():
             )
             screen2 = replay(capture2, 100, 30)
             skills_stream = capture2.decode('utf8', 'replace')
+            print(f'pty-wire: {len(capture)} + {len(capture2)} bytes captured; checks:')
             checks.append(('a resumed session shows its history on screen',
                            'The sleep is running' in screen2 or 'Round trip complete' in screen2))
             checks.append(('a resumed session shows the usage meter',

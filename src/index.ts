@@ -509,9 +509,16 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
     },
   }
 
+  // The teardown path runs this disposer twice by design: requestExit calls it
+  // directly so the goodbye lands before the tree unwinds, and disposing the
+  // root fiber then runs the effect's own disposer. Without the guard the
+  // goodbye printed twice — once per pass.
+  let disposed = false
   return {
     host,
     dispose: () => {
+      if (disposed) return
+      disposed = true
       for (const controller of controllers) controller.abort()
       controllers.clear()
       if (config.goodbye !== undefined) terminal.write(`\n${config.goodbye}\n`)

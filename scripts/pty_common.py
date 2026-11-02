@@ -19,7 +19,9 @@ Import from a sibling script with the repository's own layout in mind: these
 are run as `python3 scripts/<name>.py`, which puts this directory on `sys.path`.
 """
 import fcntl
+import json
 import os
+import shutil
 import pty
 import select
 import signal
@@ -120,3 +122,41 @@ def run(argv, script, columns, rows, timeout, script_gap_seconds):
             next_at = time.time() + script_gap_seconds
     terminate(pid)
     return bytes(out)
+
+
+def ensure_sandbox_home(repo):
+    """Create the repo-local DSH home the ladder boots against, if absent.
+
+    Every L2/L3 boot mints a session in whatever home it uses, so the ladder
+    defaults to a sandbox under .tools/ rather than the user's real ~/.dsh —
+    which would accumulate mock sessions and, should the user's settings ever
+    pin a model route the env override does not win, could spend real tokens.
+
+    The profile links the plugin at this checkout, exactly as a `dsh plugin add`
+    of a local path does, so the ladder always tests the current code with no
+    manual sync step. The plugin's own dependencies resolve from the repo's
+    node_modules; dsh-base resolves from the dsh installation.
+    """
+    home = os.path.join(repo, '.tools', 'dsh-home')
+    profile = os.path.join(home, 'profiles', 'tvision')
+    os.makedirs(os.path.join(profile, 'node_modules', '@dsh-tvision'), exist_ok=True)
+    manifest = os.path.join(profile, 'package.json')
+    if not os.path.exists(manifest):
+        with open(manifest, 'w') as handle:
+            handle.write(json.dumps({
+                'name': 'dsh-profile-tvision',
+                'private': True,
+                'dependencies': {'@dsh-tvision/dsh-tvision': f'link:{repo}'},
+                'dsh': {'profile': {'bundles': ['@deepseek-ai/dsh-base', '@dsh-tvision/dsh-tvision']}},
+            }, indent=2) + '\n')
+    for name in ('cordis.yml', 'cordis.patch.yml'):
+        path = os.path.join(profile, name)
+        if not os.path.exists(path):
+            with open(path, 'w') as handle:
+                handle.write('[]\n')
+    link = os.path.join(profile, 'node_modules', '@dsh-tvision', 'dsh-tvision')
+    if not os.path.islink(link):
+        if os.path.isdir(link):
+            shutil.rmtree(link)
+        os.symlink(repo, link)
+    return home

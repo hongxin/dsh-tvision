@@ -27,7 +27,9 @@ import sys
 import termios
 import time
 
-from pty_common import configure_pty, terminate  # noqa: E402  (sibling script)
+from pty_common import configure_pty, ensure_sandbox_home, terminate  # noqa: E402  (sibling script)
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # What a mounted desktop must have written by the time it has drawn a frame.
 MOUNT_EVIDENCE = [
@@ -120,7 +122,9 @@ def run(entry, profile, dsh_home, columns, rows, seconds):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile', default='tvision')
-    parser.add_argument('--dsh-home', default=None, help='defaults to $DSH_HOME or ~/.dsh')
+    parser.add_argument('--dsh-home', default=None, help=argparse.SUPPRESS)
+    parser.add_argument('--real-home', action='store_true',
+                        help='boot the user\'s real $DSH_HOME instead of the repo sandbox')
     parser.add_argument('--seconds', type=float, default=14.0)
     parser.add_argument('--columns', type=int, default=100)
     parser.add_argument('--rows', type=int, default=30)
@@ -132,7 +136,10 @@ def main():
         print('pty-profile: no dsh entry point found; install it or put it on PATH', file=sys.stderr)
         return 0
 
-    dsh_home = args.dsh_home or os.environ.get('DSH_HOME')
+    # Default to the repo sandbox: every boot mints a session in the home it
+    # uses, and the user's real ~/.dsh should not accumulate mock ones.
+    dsh_home = args.dsh_home or (
+        os.environ.get('DSH_HOME') if args.real_home else ensure_sandbox_home(REPO))
     try:
         raw, status = run(entry, args.profile, dsh_home, args.columns, args.rows, args.seconds)
     except OSError as error:
