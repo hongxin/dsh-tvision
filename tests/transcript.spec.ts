@@ -275,6 +275,12 @@ describe('wrapText', () => {
     expect(wrapText('中中中', 4)).toEqual(['中中', '中'])
   })
 
+  it('still advances when a wide glyph cannot fit the budget', () => {
+    // One two-column glyph in a one-column budget: a cut that takes no columns
+    // used to leave the same slice in place, so the loop never ended.
+    expect(wrapText('中', 1)).toEqual(['中'])
+  })
+
   it('returns one empty line for empty input', () => {
     expect(wrapText('', 10)).toEqual([''])
   })
@@ -885,6 +891,34 @@ describe('markdown in the transcript', () => {
     expect(header?.segments?.some(seg => seg.style.bold === true && seg.text.includes('layer'))).toBe(true)
     const rule = rows.find(row => row.text.includes('──'))
     expect(rule?.segments?.every(seg => seg.style.dim === true)).toBe(true)
+  })
+
+  it('a status table keeps every value instead of cutting it at the frame', () => {
+    const document = new SessionDocument()
+    document.beginAssistant({ turn: 0, step: 0 }, 1)
+    document.settleAssistant({ turn: 0, step: 0 }, [{
+      kind: 'text',
+      text: [
+        '当前状态：',
+        '',
+        '| 维度 | 状态与证据 |',
+        '|---|---|',
+        '| 版本 | `0.6.0`（package.json、src/version.ts 与 CHANGELOG 三处一致） |',
+        '| 分支 | `main`，与本地记录的 `origin/main` 同步，工作区干净 |',
+      ].join('\n'),
+    }], 2)
+    const rows = buildRows(document.all, 60, palette, { gutterWidth: 2, collapsed: true, showReasoning: true })
+    expect(rows.map(row => row.text).join('')).not.toContain('…')
+    // Re-join the value column across wrapped lines; a hard cut can land
+    // mid-word, so only the whole column proves nothing was dropped.
+    const values = rows
+      .filter(row => row.text.includes('│ '))
+      .map(row => row.text.slice(row.text.indexOf('│ ') + 2))
+      .join('')
+    for (const token of ['0.6.0', 'package.json', 'src/version.ts', 'CHANGELOG', '三处一致', 'origin/main', '工作区干净']) {
+      expect(values, token).toContain(token)
+    }
+    for (const row of rows) expect(textWidth(row.text)).toBeLessThanOrEqual(60)
   })
 
   it('a streamed fence gets its box before settle — the gap fix', () => {

@@ -27,7 +27,7 @@
 
 import type { Style } from '../kit/cell.ts'
 import type { ResolvedPalette } from '../kit/skin.ts'
-import { NO_LINE_END, NO_LINE_START, splitUnits, spreadCjkLatin, textWidth, truncate } from '../kit/text.ts'
+import { NO_LINE_END, NO_LINE_START, splitUnits, spreadCjkLatin, textWidth } from '../kit/text.ts'
 
 /** One styled run of text; consecutive runs with equal style are merged. */
 export interface MdSeg {
@@ -91,11 +91,11 @@ type Block =
 type TableAlign = 'left' | 'center' | 'right'
 
 /**
- * The widest a single table column may grow before its cells truncate.
- * Without a cap one long cell stretches every column's padding until the
- * table no longer fits and the whole thing collapses to stacked cards.
+ * The narrowest a table column may be squeezed before the grid stops reading
+ * as a table. Below this the records stack instead — a five-column grid carved
+ * into forty cells is a screen of fragments, not a table.
  */
-const TABLE_CELL_CAP = 24
+const MIN_TABLE_COLUMN = 10
 
 /** The rendered width of the column separator, ` │ `. */
 const TABLE_GAP = 3
@@ -548,17 +548,30 @@ function listRows(
 /* ------------------------------------------------------------------ */
 
 /**
- * Render a table: columns truly aligned, or stacked when they cannot fit.
+ * Render a table: a grid when the measure can hold the columns, stacked cards
+ * when it cannot.
  *
  * This is the one place the transcript buys real tabular reading — a model's
  * comparison of five options against three criteria carries meaning only
  * when the columns line up. The strategy follows what terminal renderers
  * (Claude Code among them) converged on: measure every column to its widest
  * cell, pad each cell to that width respecting the delimiter row's
- * alignment, and separate columns with a dim `│`. When the aligned grid is
- * wider than the measure, the table does not wrap into mush — it stacks:
- * one card per record, `header: value` down the screen, which preserves the
- * pairing the table was asserting in the first place.
+ * alignment, and separate columns with a dim `│`.
+ *
+ * Two rules decide the layout, and the first one is not negotiable:
+ *
+ * - **No cell is ever cut.** A cell wider than the measure is wrapped inside
+ *   its column, so a record grows a line instead of losing characters. The
+ *   earlier fixed 24-column cap kept more tables in grid form by truncating
+ *   their cells, which is exactly what a reader sees as "the text is cut".
+ * - **A grid that would turn to mush stacks instead.** Columns shrink, but
+ *   only down to {@link MIN_TABLE_COLUMN}; past that the records are worth
+ *   more than the grid, and the pairing becomes one card per record.
+ * @param block - The parsed table.
+ * @param width - The body measure in columns.
+ * @param base - The body style.
+ * @param palette - The active skin, for the code and dim roles.
+ * @returns One row per visual line.
  */
 function tableRows(
   block: { header: string[]; align: TableAlign[]; rows: string[][] },
@@ -566,12 +579,11 @@ function tableRows(
   base: Style,
   palette: ResolvedPalette,
 ): MdRow[] {
-  // Cells truncate to the cap on the source text, then parse inline, so a
-  // cell may still carry bold or a code colour — measured after parsing,
-  // because links expand (`label` → `label (url)`) and the seam dressing
-  // adds thin spaces.
+  // Cells parse in full and are measured after parsing, because links expand
+  // (`label` → `label (url)`) and the seam dressing adds thin spaces — a cap
+  // applied to the source text would measure the wrong string.
   const parseCell = (cell: string, style: Style): MdSeg[] =>
-    parseInline(truncate(cell, TABLE_CELL_CAP, '…'), style, palette.code)
+    parseInline(cell, style, palette.code)
   const headerSegs = block.header.map(cell => parseCell(cell, { ...base, bold: true }))
   const rowSegs = block.rows.map(row =>
     block.header.map((_name, column) => parseCell(row[column] ?? '', base)))
@@ -580,10 +592,53 @@ function tableRows(
     for (const row of rowSegs) widest = Math.max(widest, textWidth(segsText(row[column] ?? [])))
     return widest
   })
-  const alignedWidth = columnWidths.reduce((sum, w) => sum + w, 0) + TABLE_GAP * (block.header.length - 1)
-  return alignedWidth <= width
-    ? alignedTableRows(headerSegs, rowSegs, block.align, columnWidths, base)
-    : stackedTableRows(headerSegs, rowSegs, base, width)
+  const gaps = TABLE_GAP * (block.header.length - 1)
+  const naturalWidth = columnWidths.reduce((sum, w) => sum + w, 0)
+  // A table that fits renders one line per record, exactly as it was written.
+  if (naturalWidth + gaps <= width) {
+    return alignedTableRows(headerSegs, rowSegs, block.align, columnWidths, base)
+  }
+  // It does not fit at its natural width: shrink the long columns and wrap
+  // their cells, so the grid survives and every character is still shown.
+  const fitted = fitTableColumns(columnWidths, width - gaps)
+  if (fitted !== undefined) {
+    return wrappedTableRows(headerSegs, rowSegs, block.align, fitted, base)
+  }
+  return stackedTableRows(headerSegs, rowSegs, base, width)
+}
+
+/**
+ * Shrink a table's columns to a total budget, keeping every one of them wide
+ * enough to read.
+ *
+ * The widest column gives way first — that is where the measure is being
+ * spent and where a wrap costs the reader least — until the total fits.
+ * Short columns (a status word, a count) keep their natural width.
+ * @param widths - Natural column widths.
+ * @param budget - Columns available for the cells, gaps already removed.
+ * @returns The fitted widths, or undefined when even the floors do not fit.
+ */
+function fitTableColumns(widths: readonly number[], budget: number): number[] | undefined {
+  if (budget <= 0) return undefined
+  const floors = widths.map(width => Math.min(width, MIN_TABLE_COLUMN))
+  if (floors.reduce((sum, width) => sum + width, 0) > budget) return undefined
+  const fitted = [...widths]
+  let total = fitted.reduce((sum, width) => sum + width, 0)
+  // Bounded: every pass removes at least one column from the total, and the
+  // floor sum is already known to fit.
+  while (total > budget) {
+    let widest = 0
+    for (let column = 1; column < fitted.length; column++) {
+      if ((fitted[column] ?? 0) > (fitted[widest] ?? 0)) widest = column
+    }
+    const current = fitted[widest] ?? 0
+    const floor = floors[widest] ?? 0
+    if (current <= floor) return undefined
+    const reduce = Math.min(current - floor, total - budget)
+    fitted[widest] = current - reduce
+    total -= reduce
+  }
+  return fitted
 }
 
 /** The joined plain text of a segment list, as a row's `text` will read it. */
@@ -615,6 +670,17 @@ function padCell(segments: readonly MdSeg[], width: number, align: TableAlign, f
   return out
 }
 
+/** The dim rule under a header: column dashes joined at the crossings. */
+function ruleRow(columnWidths: readonly number[], base: Style): MdRow {
+  const dim = { ...base, dim: true }
+  const segments: MdSeg[] = []
+  columnWidths.forEach((width, column) => {
+    if (column > 0) segments.push({ text: '─┼─', style: dim })
+    segments.push({ text: '─'.repeat(width), style: dim })
+  })
+  return toRow(mergeSegs(segments))
+}
+
 /** The aligned grid: header, a dim rule, then rows with dim separators. */
 function alignedTableRows(
   headerSegs: MdSeg[][],
@@ -635,14 +701,52 @@ function alignedTableRows(
     return toRow(mergeSegs(segments))
   }
   rows.push(joinCells(headerSegs))
-  // The rule under the header: column dashes joined at the crossings.
-  const ruleSegs: MdSeg[] = []
-  columnWidths.forEach((w, column) => {
-    if (column > 0) ruleSegs.push({ text: '─┼─', style: dim })
-    ruleSegs.push({ text: '─'.repeat(w), style: dim })
-  })
-  rows.push(toRow(mergeSegs(ruleSegs)))
+  rows.push(ruleRow(columnWidths, base))
   for (const row of rowSegs) rows.push(joinCells(row))
+  return rows
+}
+
+/**
+ * The wrapped grid: the same columns, with cells that overflow the measure
+ * wrapped onto continuation lines instead of cut.
+ *
+ * One record occupies as many visual lines as its tallest cell needs; the
+ * other cells pad on the blank lines so the `│` separators stay in one
+ * column down the record. No character is dropped, which is the whole point.
+ * @param headerSegs - The header cells, parsed.
+ * @param rowSegs - The body cells, parsed.
+ * @param align - Per-column alignment from the delimiter row.
+ * @param columnWidths - The fitted column widths.
+ * @param base - The body style.
+ * @returns One row per visual line.
+ */
+function wrappedTableRows(
+  headerSegs: MdSeg[][],
+  rowSegs: readonly MdSeg[][][],
+  align: readonly TableAlign[],
+  columnWidths: readonly number[],
+  base: Style,
+): MdRow[] {
+  const rows: MdRow[] = []
+  const dim = { ...base, dim: true }
+  const separator: MdSeg = { text: ' │ ', style: dim }
+  const renderRecord = (cells: readonly MdSeg[][]): void => {
+    const wrapped = columnWidths.map((columnWidth, column) =>
+      wrapSegments(cells[column] ?? [], Math.max(1, columnWidth)))
+    const height = wrapped.reduce((tallest, lines) => Math.max(tallest, lines.length), 1)
+    for (let lineIndex = 0; lineIndex < height; lineIndex++) {
+      const segments: MdSeg[] = []
+      columnWidths.forEach((columnWidth, column) => {
+        if (column > 0) segments.push(separator)
+        const line = wrapped[column]?.[lineIndex] ?? []
+        segments.push(...padCell(line, columnWidth, align[column] ?? 'left', base))
+      })
+      rows.push(toRow(mergeSegs(segments)))
+    }
+  }
+  renderRecord(headerSegs)
+  rows.push(ruleRow(columnWidths, base))
+  for (const record of rowSegs) renderRecord(record)
   return rows
 }
 
@@ -748,7 +852,8 @@ export function wrapSegments(segments: readonly MdSeg[], width: number): MdSeg[]
       if (wordW > width) {
         let rest = word
         while (sumWidth(rest) > width) {
-          const head = takeUnitsKinsoku(rest, width)
+          const head = cutUnits(rest, width)
+          if (head.length === 0) break
           lines.push(head)
           rest = rest.slice(head.length)
         }
@@ -769,7 +874,8 @@ export function wrapSegments(segments: readonly MdSeg[], width: number): MdSeg[]
         lineW = 0
       }
       while (sumWidth(rest) > width) {
-        const head = takeUnitsKinsoku(rest, width)
+        const head = cutUnits(rest, width)
+        if (head.length === 0) break
         lines.push(head)
         rest = rest.slice(head.length)
       }
@@ -802,6 +908,25 @@ function sumWidth(units: readonly Unit[]): number {
   let total = 0
   for (const unit of units) total += unit.width
   return total
+}
+
+/**
+ * The longest prefix a hard cut may take, guaranteed to make progress.
+ *
+ * The kinsoku pull-back can legitimately leave nothing to cut — a run of
+ * closing punctuation at the break, or a wide glyph in a one-column budget —
+ * and a cut that takes nothing would spin the wrapper on the same slice
+ * forever. The leading cluster then goes on a line of its own and the painter
+ * clips it, which loses at most the one column no layout could have given it.
+ * @param units - The remaining units.
+ * @param width - The column budget.
+ * @returns At least one unit whenever the input is non-empty.
+ */
+function cutUnits(units: readonly Unit[], width: number): Unit[] {
+  const head = takeUnitsKinsoku(units, width)
+  if (head.length > 0) return head
+  const first = units[0]
+  return first === undefined ? [] : [first]
 }
 
 /**

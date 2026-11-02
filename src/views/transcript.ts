@@ -975,7 +975,8 @@ export function prettyJson(args: string): string {
  * or two early. Width is never exceeded, so the frame cannot overflow.
  * @param rest - The text to cut.
  * @param width - The column budget.
- * @returns The longest prefix that may end a line.
+ * @returns The longest prefix that may end a line; `''` only when not even one
+ * glyph fits, which the caller resolves with {@link firstGlyph}.
  */
 function cutRespectingKinsoku(rest: string, width: number): string {
   let head = takeColumns(rest, width)
@@ -996,6 +997,16 @@ function cutRespectingKinsoku(rest: string, width: number): string {
     }
     return head
   }
+}
+
+/**
+ * The first glyph of `text`, whatever its width — the fallback that keeps the
+ * cutter moving when the budget cannot hold even one glyph.
+ * @param text - A non-empty string.
+ * @returns The leading cluster (a wide glyph included).
+ */
+function firstGlyph(text: string): string {
+  return takeColumns(text, 2)
 }
 
 /** The string minus its final glyph, by columns. */
@@ -1040,15 +1051,24 @@ export function wrapText(text: string, width: number): string[] {
       if (wordWidth > width && line === '') {
         let rest = word
         while (textWidth(rest) > width) {
-          out.push(cutRespectingKinsoku(rest, width))
-          rest = rest.slice(out[out.length - 1]?.length ?? 0)
+          const head = cutRespectingKinsoku(rest, width)
+          // A cut can fit nothing at all — one wide glyph in a one-column
+          // budget — and taking no columns would leave this loop on the same
+          // slice forever. The glyph goes on its own line; the painter clips
+          // it, which is the only honest render at that width.
+          const piece = head === '' ? firstGlyph(rest) : head
+          out.push(piece)
+          rest = rest.slice(piece.length)
         }
+        // A word that ends exactly on the budget has already been emitted
+        // line by line; leaving `line` empty and pushing it would add a blank
+        // row the source never contained.
         line = rest
         continue
       }
       line += word
     }
-    out.push(line)
+    if (line !== '') out.push(line)
   }
   return out.length === 0 ? [''] : out
 }

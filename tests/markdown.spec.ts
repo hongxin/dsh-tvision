@@ -101,14 +101,48 @@ describe('block parsing', () => {
     expect(rows).toEqual(['module: kit', '  role: substrate'])
   })
 
-  it('cells truncate at the cap and may carry inline styling', () => {
+  it('a cell that fits the measure is shown in full', () => {
     const rows = markdownRows(
       '| name | notes |\n|---|---|\n| `x` | a-very-long-cell-that-will-not-fit |',
       60, base, palette,
     )
-    const data = rows[2]?.text ?? ''
-    expect(data).toContain('…')
-    expect(data).toContain('x')
+    // The cell is 33 columns in a 60-column measure: nothing to cut, and the
+    // old fixed 24-column cap used to end it in an ellipsis anyway.
+    expect(rows[2]?.text).toBe('x    │ a-very-long-cell-that-will-not-fit')
+    expect(rows[2]?.segments?.some(segment => segment.style.fg === code.fg)).toBe(true)
+  })
+
+  it('a cell wider than the measure wraps inside its column instead of being cut', () => {
+    const rows = rowsOf('| name | notes |\n|---|---|\n| `x` | a-very-long-cell-that-will-not-fit |', 24)
+    expect(rows.join('')).not.toContain('…')
+    // The value continues on a continuation line, still under its own column.
+    expect(rows[2]).toBe('x    │ a-very-long-cell-')
+    expect(rows[3]).toBe('     │ that-will-not-fit')
+    for (const row of rows) expect(textWidth(row)).toBeLessThanOrEqual(24)
+  })
+
+  it('a wide status table keeps every value when the window is narrow', () => {
+    // The shape a real answer takes: a two-column status table whose values
+    // are longer than the narrow window. Every one of them must survive.
+    const table = [
+      '| 维度 | 状态与证据 |',
+      '|---|---|',
+      '| 版本 | `0.6.0`（package.json、src/version.ts 与 CHANGELOG 三处一致） |',
+      '| 分支 | `main`，与本地记录的 `origin/main` 同步，工作区干净 |',
+    ].join('\n')
+    const rows = rowsOf(table, 40)
+    expect(rows.join('')).not.toContain('…')
+    // Read the value column back across the continuation lines. A hard cut can
+    // land mid-word, so only the re-joined column proves the characters made
+    // it to the screen.
+    const valueColumn = rows
+      .filter(row => row.includes('│ '))
+      .map(row => row.slice(row.indexOf('│ ') + 2))
+      .join('')
+    for (const token of ['0.6.0', 'package.json', 'src/version.ts', 'CHANGELOG', '三处一致', 'origin/main', '工作区干净']) {
+      expect(valueColumn, token).toContain(token)
+    }
+    for (const row of rows) expect(textWidth(row)).toBeLessThanOrEqual(40)
   })
 
   it('a header without its delimiter yet renders as prose (streaming rule)', () => {
@@ -224,6 +258,17 @@ describe('the segment-aware wrapper', () => {
         expect(text, `width ${width}: line starts with closing punctuation`).not.toMatch(/^[，。、！？；：）」』…]/u)
       }
     }
+  })
+
+  it('a hard cut that fits no cluster still advances', () => {
+    // One wide glyph in a one-column budget used to empty the cut; the
+    // wrapper then re-cut the same slice forever and the app froze.
+    expect(wrapSegments([{ text: '中中', style: base }], 1)
+      .map(line => line.map(segment => segment.text).join(''))).toEqual(['中', '中'])
+    // The same no-progress path from the kinsoku pull-back: the break sits
+    // right before closing punctuation, so the cut pulls itself back to empty.
+    expect(wrapSegments([{ text: '……', style: base }], 1)
+      .map(line => line.map(segment => segment.text).join(''))).toEqual(['…', '…'])
   })
 
   it('equal adjacent styles merge into one segment', () => {
