@@ -284,7 +284,14 @@ export function foldEvent(document: SessionDocument, event: FoldableEvent): Fold
       const createdAt = num(data, 'childCreatedAt', event.time)
       const mode = str(data, 'mode') ?? 'one-shot'
       const label = str(data, 'label')
-      const grew = document.addSubagent({ id, mode, createdAt, ...(label === undefined ? {} : { label }) })
+      const name = str(data, 'name')
+      const grew = document.addSubagent({
+        id,
+        mode,
+        createdAt,
+        ...(label === undefined ? {} : { label }),
+        ...(name === undefined ? {} : { name }),
+      })
       return grew ? { changed: true } : UNCHANGED
     }
     case 'compaction/start': {

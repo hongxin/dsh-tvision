@@ -1277,7 +1277,9 @@ export class TvisionApp {
       widget: this.listWindow(
         WINDOW_IDS.subagents,
         () => this.document.subagentList.map(entry => ({
-          label: entry.label ?? entry.id.slice(0, 8),
+          // A dsh 0.2.2 name beats the delegation label, which beats the id —
+          // the name is what send_message and every receipt will say.
+          label: entry.name ?? entry.label ?? entry.id.slice(0, 8),
           detail: `${entry.mode} · ${entry.running ? '● running' : '· settled'}`,
           marker: entry.running ? '●' : '·',
         })),
@@ -1405,7 +1407,7 @@ export class TvisionApp {
     }
     if (id === WINDOW_IDS.subagents) {
       const entry = this.document.subagentList[index]
-      if (entry !== undefined) void this.openSubagentView(entry.id, entry.label)
+      if (entry !== undefined) void this.openSubagentView(entry.id, entry.name ?? entry.label)
       return
     }
     if (id === WINDOW_IDS.skills) {

@@ -101,8 +101,24 @@ describe('golden replay: a delegation turn', () => {
       void foldEvent(document, JSON.parse(line))
     }
     expect(document.subagentList).toEqual([
-      { id: 'child-fixture-1', mode: 'continuable', label: 'Delegate a scoped reply', createdAt: 1790408570280, running: false },
+      { id: 'child-fixture-1', mode: 'continuable', label: 'Delegate a scoped reply', name: 'reviewer', createdAt: 1790408570280, running: false },
     ])
+  })
+})
+
+describe('golden replay: a delegation with a name', () => {
+  const document = new SessionDocument()
+  const text = readFileSync(join(HERE, 'golden', 'subagent.jsonl'), 'utf8')
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue
+    void foldEvent(document, JSON.parse(line))
+  }
+
+  it('keeps the dsh 0.2.2 name beside the child', () => {
+    const entry = document.subagentList[0]
+    expect(entry?.name).toBe('reviewer')
+    expect(entry?.label).toBe('Delegate a scoped reply')
+    expect(entry?.id).toBe('child-fixture-1')
   })
 })
 

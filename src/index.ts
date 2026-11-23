@@ -1027,7 +1027,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       return disposer
     })
   }
-  const existing = ctx.agents.roots().find(candidate => candidate.id === wanted)
+  // dsh 0.2.2: the registry's live-agent set is `get`/`list` by name or id —
+  // `roots()` went when agents became a named tree.
+  const existing = ctx.agents.get(wanted)
   if (existing !== undefined) {
     mountFor(existing)
     return

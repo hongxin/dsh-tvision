@@ -123,6 +123,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--profile', default='tvision')
     parser.add_argument('--dsh-home', default=None, help=argparse.SUPPRESS)
+    parser.add_argument('--expect-refusal', action='store_true',
+                        help='pass when the plugin gate REFUSES the boot (a runtime the pins do not target)')
     parser.add_argument('--real-home', action='store_true',
                         help='boot the user\'s real $DSH_HOME instead of the repo sandbox')
     parser.add_argument('--seconds', type=float, default=14.0)
@@ -166,6 +168,15 @@ def main():
         print(plain[-4000:])
 
     # A crash is worth showing: the whole point is to catch a mount that fails.
+    if args.expect_refusal:
+        # The gate must refuse a runtime the pins do not target — cleanly, at
+        # boot, naming the version — rather than crashing mid-import.
+        refused = 'is incompatible with dsh' in plain or 'did not activate' in plain
+        if refused:
+            print('\nOK: the gate refused the plugin, naming the version')
+            return 0
+        print('\nFAIL: the boot was expected to be refused at the gate but was not', file=sys.stderr)
+        return 1
     if failures:
         print(f'\nFAIL: {len(failures)} checks failed', file=sys.stderr)
         print(plain[:2000], file=sys.stderr)

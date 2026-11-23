@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.8.0 — 2026-11-24
+
+Adapted to dsh **0.2.2-rc.5**, plus the first full review of the interaction
+logs from three weeks of real use.
+
+### The dsh 0.2.2 adaptation
+
+- **Every `@deepseek-ai/*` pin moves to `0.2.2-rc.5` — all 46 of them this
+  time.** The 0.7.x bumps touched `dependencies` and `peerDependencies` but
+  never `devDependencies` (28 pins), and with `legacy-peer-deps` npm resolves
+  that drift by silently installing the *older* version for the overlapping
+  set: the tree boots, typechecks against stale types, and the first symptom
+  is a missing export at profile boot. A new guard (`tests/deps.spec.ts`)
+  pins the rule — every section agrees, and the `dsh-*` family stays exact —
+  so the next bump cannot recreate the afternoon that found this.
+- **`agents.roots()` became `agents.get(id)`** — the registry is a named tree
+  now (`list_agents` returns `{name, status, description}`); the lookup by id
+  we needed is a first-class method.
+- **Subagent names are surfaced.** dsh 0.2.2 assigns sibling-unique names
+  (`reviewer`, `reviewer/checker`) and writes catalog payload v3; the fold
+  keeps the name beside the child, and the Subagents window and the child
+  transcript title prefer it — the name is what `send_message` and every
+  receipt will say. Pinned by the golden fixture, now in the v3 shape.
+- **`engines.dsh` narrows to `>=0.2.2-rc.5 <0.3.0`.** 0.2.2's internal
+  packages cross-import new exports (`AgentModel`), so one build can no
+  longer span 0.2.1-era and 0.2.2 runtimes; a stale shell resolving an older
+  dsh now gets a clean gate refusal naming the version instead of an import
+  crash. L2b in the ladder automates exactly that refusal.
+- New host-provided peer `@deepseek-ai/dsh-error` carries a dev copy, like
+  every other runtime-provided peer.
+
+### What three weeks of interaction logs say
+
+`scripts/log-audit.py` (new) aggregated every session log in the tvision cwd:
+70 sessions, 257 real turns. The findings that changed code:
+
+- **Real usage was clean** — zero model errors, zero interrupts on human
+  turns; every error turn in the corpus was a leftover `wire-*` verification
+  session polluting the real home. The sandbox-home default from 0.7.1
+  stopped new ones.
+- **The deep seams earned their keep**: plan mode 15×, delegation 17×,
+  background jobs 119 registrations, all on the cheapest model. Median turn
+  under a second; the longest ran 282s across 34 steps, which is what the
+  running indicator and streaming cards are for.
+- **Fold coverage held against the real corpus**: the highest-volume events
+  we do not render (`agent/inbox/spliced`, `system/message`) are queue
+  surgery and system-prompt delivery — plumbing whose content arrives again
+  as the events we do render. Nothing a reader missed.
+- Mid-turn submits go through `agent.steer` and surface immediately as user
+  rows — verified in code and in the corpus.
+
+Verified: L0 832 tests (the guard and the v3-name fixture included), L2
+mount, L2b refusal, L3 all 23 wire checks — the delegation check green against
+the real 0.2.2 event shapes.
+
 ## 0.7.1 — 2026-11-02
 
 Three refinements from a live session screenshot, all about respecting the

@@ -3,7 +3,7 @@
 {"type":"user/message","seq":3,"time":1790408570100,"data":{"content":[{"type":"text","text":"delegate a scoped reply"}],"source":{"kind":"user"},"role":"user"}}
 {"type":"assistant/message","seq":4,"time":1790408570200,"data":{"turn":2,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"Offload the scoped work to a child."},{"type":"tool-use","id":"call_fixture_sub","name":"subagent","input":{"prompt":"say delegated-done","description":"Delegate a scoped reply"}}]}}}
 {"type":"tool/call","seq":5,"time":1790408570250,"data":{"turn":2,"step":1,"callId":"call_fixture_sub","name":"subagent","arguments":"{\"prompt\":\"say delegated-done\",\"description\":\"Delegate a scoped reply\"}"}}
-{"type":"subagent/catalog","seq":6,"time":1790408570300,"data":{"version":0,"childId":"child-fixture-1","childCreatedAt":1790408570280,"mode":"continuable","label":"Delegate a scoped reply"}}
+{"type":"subagent/catalog","seq":6,"time":1790408570300,"data":{"version":3,"childId":"child-fixture-1","childCreatedAt":1790408570280,"mode":"continuable","label":"Delegate a scoped reply","name":"reviewer"}}
 {"type":"tool/result","seq":7,"time":1790408570350,"data":{"turn":2,"step":1,"message":{"source":{"kind":"tool","callId":"call_fixture_sub"},"content":[{"type":"tool-result","toolCallId":"call_fixture_sub","content":[{"type":"text","text":"started subagent child-fixture-1"}],"isError":false}],"role":"user"}}}
 {"type":"step/end","seq":8,"time":1790408570400,"data":{"turn":2,"step":1}}
 {"type":"step/start","seq":9,"time":1790408572400,"data":{"turn":2,"step":2}}

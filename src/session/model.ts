@@ -98,6 +98,11 @@ export interface SubagentEntry {
   readonly id: string
   readonly mode: string
   readonly label?: string
+  /**
+   * The sibling-unique name dsh 0.2.2 assigns (`reviewer`, or a path like
+   * `reviewer/checker`); historical children predate it and have none.
+   */
+  readonly name?: string
   readonly createdAt: number
   running: boolean
 }
