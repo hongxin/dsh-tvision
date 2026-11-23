@@ -31,7 +31,7 @@ describe('the transcript selection', () => {
     const document = new SessionDocument()
     document.addUser(text, 1)
     document.beginAssistant({ turn: 1, step: 1 }, 1)
-    document.streamChunk({ turn: 1, step: 1 }, { type: 'text', text: 'the reply' }, 2)
+    document.streamChunk({ turn: 1, step: 1 }, { kind: 'text', text: 'the reply' }, 2)
     document.settleAssistant({ turn: 1, step: 1 }, [{ kind: 'text', text: 'the reply' }], 3)
     const theme = { gutterWidth: 2, collapsed: true, showReasoning: true }
     const view = new TranscriptView(document, theme)

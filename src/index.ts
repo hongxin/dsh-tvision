@@ -547,6 +547,69 @@ function describe(error: unknown): string {
 }
 
 /**
+ * The resume boot's splash screen, painted before the agent exists.
+ *
+ * The desktop mounts when the harness raises `agent/created`; a resumed agent
+ * appears only after the store opens the log, which for a busy lock or a very
+ * large session can take a long while — and until then nothing else draws.
+ * The splash owns the screen first: a status line that updates, an existence
+ * check that fails fast on an unknown id instead of waiting forever, and
+ * Ctrl+C restored to its terminal meaning for the duration.
+ * @param ctx - Plugin context, for the sessions service and exit.
+ * @param sessionId - The id being resumed.
+ * @returns A handle whose `dismiss` hands the screen to the desktop.
+ */
+function installResumeSplash(ctx: Context, sessionId: string): { dismiss(): void } {
+  const out = process.stdout
+  const started = Date.now()
+  out.write('\u001B[?1049h\u001B[?25l\u001B[2J\u001B[H')
+  const short = sessionId.length > 24 ? `${sessionId.slice(0, 21)}…` : sessionId
+  const paint = (status: string): void => {
+    const elapsed = Math.round((Date.now() - started) / 1000)
+    out.write(`\u001B[Htvision — resuming ${short}\r\n\r\n  ${status} (${elapsed}s)\r\n\r\n  Ctrl+C gives up and restores the terminal.\u001B[K`)
+  }
+  paint('asking the harness for the session')
+  let dismissed = false
+  const timer = setInterval(() => {
+    if (dismissed) return
+    paint('the harness is still loading the session — a busy lock or a very large log takes a while')
+  }, 5000)
+  const onInterrupt = (): void => {
+    out.write('\u001B[?25h\u001B[?1049l')
+    process.exit(130)
+  }
+  process.on('SIGINT', onInterrupt)
+  // Fail fast on an id the store has never heard of: waiting for an agent
+  // that will never be created is the silent hang this splash exists to end.
+  setTimeout(() => {
+    if (dismissed) return
+    try {
+      const sessions = ctx.get('sessions') as unknown as {
+        get?: (id: string) => unknown
+      } | undefined
+      if (sessions?.get?.(sessionId) === undefined) {
+        dismissed = true
+        clearInterval(timer)
+        process.off('SIGINT', onInterrupt)
+        out.write(`\u001B[?25h\u001B[?1049l`)
+        process.stderr.write(`tvision: no session "${sessionId}" in this DSH home — check the id the goodbye printed.\n`)
+        ctx.appExit?.(1)
+      }
+    } catch {
+      /* The service not being up yet is ordinary; the watchdog keeps waiting. */
+    }
+  }, 3000)
+  return {
+    dismiss(): void {
+      if (dismissed) return
+      dismissed = true
+      clearInterval(timer)
+      process.off('SIGINT', onInterrupt)
+    },
+  }
+}
+
+/**
  * Mount the desktop against one agent and start reading the terminal.
  * @param input - Context, agent, config, and terminal.
  * @returns A disposer that releases the terminal.
@@ -998,6 +1061,14 @@ function createCredentialsSeam(ctx: Context): MountInput['credentials'] {
 }
 
 export function apply(ctx: Context, config: Config = {}): void {
+  // A resume boot used to show nothing until the harness produced the agent —
+  // and for a locked store or a very large log that could be tens of seconds
+  // or forever, which reads as a hung terminal. The splash paints first: the
+  // reader sees life, an honest status, and a way out.
+  const startup = ctx.tvisionStartup
+  const splash = startup?.resume === true
+    ? installResumeSplash(ctx, String(startup.sessionId))
+    : undefined
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     // Not a terminal: nothing here can work, and frame-drawing into a pipe is
     // worse than saying so.
@@ -1007,6 +1078,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   const wanted = (config.sessionId ?? 'main') as SessionId
   const mountFor = (agent: Agent): void => {
     ctx.effect(() => {
+      splash?.dismiss()
       const terminal = new ProcessTerminal({ mouse: config.mouse ?? true })
       const disposer = mount({
         ctx,

@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.8.2 — 2026-11-24
+
+### A resume boot paints before the agent exists
+
+`--resume` used to show nothing until the harness raised `agent/created`, and
+a resumed agent appears only after the store opens the log. For a busy lock,
+a very large log, or an id the store has never heard of, that wait could run
+tens of seconds or forever — which reads as a hung terminal, because it is
+one. Measured: a synthetic 20k-event session produced no agent in **95
+seconds** (the process idle in `kevent` the whole time — an evented wait, not
+a busy loop), and an unknown id waited forever with zero feedback.
+
+The splash owns the screen first:
+
+- **A status line paints immediately** — "resuming \<id\>" with a running
+  elapsed count, and a watchdog line after five seconds that names the honest
+  causes (a busy lock, a very large log).
+- **Ctrl+C works for the whole wait** and restores the terminal, including the
+  alternate screen — SIGINT is fielded until the desktop takes over.
+- **An unknown id fails in seconds, not forever**: three seconds in, the
+  sessions service is asked whether the id exists; when it does not, the boot
+  says so, names the DSH home, and exits 1. Verified in a real pty: 4 seconds
+  end to end, screen restored.
+- When the agent does arrive, the splash dismisses and the desktop paints as
+  before — a normal resume still mounts in ~4s, L2 still green.
+
+Two findings recorded for upstream, both outside this profile's reach: the
+runtime's agent creation can stall indefinitely on the event loop for some
+sessions (the 95s sample shows the idle wait), and a bundled plugin that
+waits for a service a TUI never provides (`dsh-session-superagent`'s panel
+waiting for `webServer`) logs a pending warning on every boot of a profile
+that carries it.
+
 ## 0.8.1 — 2026-11-24
 
 ### Copy and paste, three ways
