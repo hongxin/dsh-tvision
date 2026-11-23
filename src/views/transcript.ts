@@ -97,6 +97,12 @@ export class TranscriptView implements Widget {
   /** The palette of the last paint, for the same reason. */
   private lastPalette: ResolvedPalette | undefined
   private lastLimit = 0
+  /** Selection over the built row list: closed row range, or none. */
+  private selection: { from: number; to: number } | undefined
+  /** The row a press anchored, while a drag may still extend. */
+  private selectionAnchor: number | undefined
+  /** Whether a drag extended the current gesture beyond its press row. */
+  private selectionMoved = false
   /** Which entries are individually expanded, overriding the theme default. */
   private readonly expanded = new Set<number>()
   /** The active search query, or '' when the search bar is closed. */
@@ -399,10 +405,13 @@ export class TranscriptView implements Widget {
       const hitIndex = this.searchActive
         ? this.searchHits.indexOf(this.scrollTop + row)
         : -1
+      const absoluteRow = this.scrollTop + row
+      const selected = this.selection !== undefined
+        && absoluteRow >= this.selection.from && absoluteRow <= this.selection.to
       const style = hitIndex < 0
         ? undefined
         : hitIndex === this.searchCursor ? palette.searchHit : palette.searchHitDim
-      this.paintRow(painter, row, source, painter.width, style)
+      this.paintRow(painter, row, source, painter.width, selected ? undefined : style, selected)
     }
     // A "scrolled up" indicator in the bottom-right, so a reader knows there is
     // more below without the title bar having to say so.
@@ -419,14 +428,22 @@ export class TranscriptView implements Widget {
    * @param source - The row to paint.
    * @param width - Available columns.
    */
-  private paintRow(painter: Painter, row: number, source: TranscriptRow, width: number, hitStyle?: Style): void {
+  private paintRow(
+    painter: Painter,
+    row: number,
+    source: TranscriptRow,
+    width: number,
+    hitStyle?: Style,
+    flip?: boolean,
+  ): void {
     const gutterWidth = Math.min(this.theme.gutterWidth, width)
     const gutter = takeColumns(source.text, gutterWidth)
-    painter.text(0, row, gutter, gutterWidth, source.gutterStyle)
+    const flipStyle = (style: Style): Style => ({ ...style, fg: style.bg === undefined ? style.fg : style.bg, bg: style.fg })
+    painter.text(0, row, gutter, gutterWidth, flip ? flipStyle(source.gutterStyle) : source.gutterStyle)
     // A search hit flattens the row to one style — finding beats typography.
     // Otherwise a segmented row paints run by run; the wrapper guarantees no
     // run splits a wide glyph, so advancing by measured width is exact.
-    if (hitStyle === undefined && source.segments !== undefined) {
+    if (hitStyle === undefined && source.segments !== undefined && flip !== true) {
       let column = gutterWidth
       for (const segment of source.segments) {
         const segmentWidth = textWidth(segment.text)
@@ -439,7 +456,8 @@ export class TranscriptView implements Widget {
       return
     }
     const body = source.text.slice(gutter.length)
-    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), hitStyle ?? source.style)
+    const chosen = flip === true ? flipStyle(source.style) : hitStyle ?? source.style
+    painter.text(gutterWidth, row, body, Math.max(0, width - gutterWidth), chosen)
   }
 
   /**
@@ -492,9 +510,90 @@ export class TranscriptView implements Widget {
    * @returns Whether the event was consumed.
    */
   onMouse(event: MouseEvent): Consumed {
-    if (event.kind !== 'wheel') return Consumed.No
-    this.scrollBy((event.delta ?? 1) * 3)
-    return Consumed.Yes
+    if (event.kind === 'wheel') {
+      this.scrollBy((event.delta ?? 1) * 3)
+      return Consumed.Yes
+    }
+    return this.selectionMouse(event)
+  }
+
+  /**
+   * Mouse selection over the rendered rows.
+   *
+   * The app takes the pointer (mouse reporting is on), so the terminal's own
+   * drag-select is gone unless the reader holds Shift — which is why the view
+   * owns a selection of its own. A press anchors, a drag extends, and a
+   * release with no movement clears: a click is a cursor, not a choice.
+   * @param event - The mouse event, in the view's own coordinates.
+   * @returns Whether the event was consumed.
+   */
+  private selectionMouse(event: MouseEvent): Consumed {
+    if (event.button !== 'left') return Consumed.No
+    if (event.kind === 'press') {
+      const row = this.rowAt(event.y)
+      if (row === undefined) return Consumed.No
+      this.selectionAnchor = row
+      this.selectionMoved = false
+      this.selection = { from: row, to: row }
+      return Consumed.Yes
+    }
+    if (event.kind === 'drag' || event.kind === 'move') {
+      if (this.selectionAnchor === undefined) return Consumed.No
+      const row = this.rowAt(event.y)
+      this.selectionMoved = true
+      if (row === undefined) return Consumed.Yes
+      this.selection = {
+        from: Math.min(this.selectionAnchor, row),
+        to: Math.max(this.selectionAnchor, row),
+      }
+      return Consumed.Yes
+    }
+    if (event.kind === 'release') {
+      if (this.selectionAnchor === undefined) return Consumed.No
+      // A press-and-release that never moved selected nothing — that was a
+      // click, and a click is a cursor, not a choice.
+      if (!this.selectionMoved) this.clearSelection()
+      this.selectionAnchor = undefined
+      return Consumed.Yes
+    }
+    return Consumed.No
+  }
+
+  /**
+   * The absolute row index under a view row, or undefined off the end.
+   * @param y - The view row, 0-based.
+   * @returns The row index into the built list.
+   */
+  private rowAt(y: number): number | undefined {
+    const index = this.scrollTop + y
+    if (y < 0 || index < 0 || index >= this.rows.length) return undefined
+    return index
+  }
+
+  /** Whether a selection of one-or-more rows is currently fixed on screen. */
+  get selectionActive(): boolean {
+    return this.selection !== undefined
+  }
+
+  /** Drop the selection; Escape and a fresh click both land here. */
+  clearSelection(): void {
+    this.selection = undefined
+    this.selectionAnchor = undefined
+  }
+
+  /**
+   * The selected rows' visible text, trailing blanks trimmed.
+   *
+   * What you see is what you copy: the rendered rows, gutter included, are
+   * the reader's proof of what the selection holds.
+   * @returns The joined text, or undefined when nothing is selected.
+   */
+  selectedText(): string | undefined {
+    if (this.selection === undefined || this.lastPalette === undefined) return undefined
+    const rows = this.rowsFor(this.lastWidth, this.lastPalette)
+    const slice = rows.slice(this.selection.from, this.selection.to + 1)
+    if (slice.length === 0) return undefined
+    return slice.map(row => row.text.trimEnd()).join('\n')
   }
 
   /**

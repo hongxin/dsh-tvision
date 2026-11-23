@@ -521,7 +521,9 @@ describe('TranscriptView scrolling', () => {
     view.onKey({ key: 'home' })
     expect(view.onMouse({ x: 0, y: 0, kind: 'wheel', button: 'none', delta: 1 })).toBe(Consumed.Yes)
     expect(view.offset).toBe(3)
-    expect(view.onMouse({ x: 0, y: 0, kind: 'press', button: 'left' })).toBe(Consumed.No)
+    // A press now anchors a text selection instead of being ignored; the
+    // wheel keeps its scroll, and the press is the selection's beginning.
+    expect(view.onMouse({ x: 0, y: 0, kind: 'press', button: 'left' })).toBe(Consumed.Yes)
   })
 
   it('reports scroll metrics for the scrollbar', () => {

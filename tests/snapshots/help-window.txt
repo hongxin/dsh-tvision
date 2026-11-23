@@ -12,7 +12,7 @@
 │                  ║F4         tool cards         F9   cycle skin               ║                  │
 │                  ║F5         focus composer     F10  menu bar                 ║                  │
 │                  ║                                                            ║  Tasks ──────────┐
-│                  ║Ctrl+Q  quit            Ctrl+C  cancel the turn             ║                  │
+│                  ║Ctrl+Q  quit   Ctrl+C  copy selection / cancel   Ctrl+V  pa…║                  │
 │                  ║Ctrl+O  expand tools    Ctrl+R  show reasoning              ║                  │
 │                  ║Ctrl+Z  zoom window     Ctrl+L  redraw                      ║                  │
 │                  ║Ctrl+B  breakpoints     /breakpoint <pattern> adds one      ║                  │

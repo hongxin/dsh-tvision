@@ -1282,7 +1282,10 @@ export class WindowManager {
       }
       return true
     }
-    if (part === 'inside' && (event.kind === 'release' || event.button !== 'left')) {
+    // A drag over a window's interior belongs to the window's content — the
+    // transcript's text selection is exactly this gesture, and dropping it
+    // here meant a selection could anchor but never extend.
+    if (part === 'inside' && (event.kind === 'release' || event.kind === 'drag' || event.button !== 'left')) {
       return this.forwardMouse(window, normalized)
     }
     return false

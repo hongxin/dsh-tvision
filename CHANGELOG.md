@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.8.1 — 2026-11-24
+
+### Copy and paste, three ways
+
+Mouse reporting took the terminal's own drag-select away (Shift recovers it),
+so the app now owns the gesture end to end:
+
+- **Drag over the transcript to select.** A press anchors, a drag extends,
+  the selected rows flip colours, and a click — a press-release that never
+  moved — selects nothing. Escape drops the selection. This needed one fix in
+  the window manager itself: interior drags were dropped on the floor, so a
+  selection could anchor but never extend.
+- **Ctrl+C copies when a selection is fixed, and still interrupts when one is
+  not.** The copy lands in two places on purpose: a session clipboard that
+  Ctrl+V pastes no matter what the terminal supports, and an **OSC 52** write
+  that offers the same text to the system clipboard — on iTerm2, kitty,
+  WezTerm, and Alacritty the next ⌘V anywhere works. (Terminals that honour
+  OSC 52 may ask once before allowing it.)
+- **Ctrl+V pastes the session clipboard** into the composer, newlines and
+  all. With nothing copied it says so and points at the terminal's own paste
+  key. The terminal's native paste (⌘V / Ctrl+Shift+V) keeps arriving as
+  bracketed paste regardless.
+- Shift+drag plus the terminal's own copy (⌘C) remains available beside all
+  of this — that path bypasses the app entirely.
+
+Verified: 841 unit tests (a selection suite, the Ctrl+C priority over
+cancelling, the OSC 52 bytes, the paste round trip), the 18-scenario pty
+sweep, and a live terminal run that dragged, copied (OSC 52 in the capture,
+`Copied 16 rows` on screen), and pasted the rows back into the composer.
+
 ## 0.8.0 — 2026-11-24
 
 Adapted to dsh **0.2.2-rc.5**, plus the first full review of the interaction

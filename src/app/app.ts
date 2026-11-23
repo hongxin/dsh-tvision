@@ -549,7 +549,31 @@ class TranscriptPane implements Widget {
         y: event.y - origin.y - this.composerRect.y,
       })
     }
-    return this.view.onMouse(event)
+    // The view's rows start at the pane's top; the mouse arrives in screen
+    // coordinates, and a selection needs the row it landed on.
+    return this.view.onMouse({
+      ...event,
+      x: event.x - origin.x,
+      y: event.y - origin.y,
+    })
+  }
+
+  /**
+   * The view's selection text, when a selection is fixed.
+   * @returns The copied text, or undefined when nothing is selected.
+   */
+  selectionText(): string | undefined {
+    return this.view.selectedText()
+  }
+
+  /** Whether a selection is fixed on screen. */
+  get selectionIsActive(): boolean {
+    return this.view.selectionActive
+  }
+
+  /** Drop the selection. */
+  clearPaneSelection(): void {
+    this.view.clearSelection()
   }
 }
 
@@ -1548,7 +1572,7 @@ export class TvisionApp {
           { id: 'open', label: '&Open session…', shortcut: 'F3', action: run(() => this.toggleWindow(WINDOW_IDS.sessions)), hint: 'List resumable sessions' },
           { id: 'sep1', label: '', separator: true },
           { id: 'send', label: '&Send message', shortcut: 'Enter', action: run(() => { void this.composer.submit() }), hint: 'Send the composer contents' },
-          { id: 'cancel', label: '&Cancel turn', shortcut: 'Ctrl+C', action: run(() => this.cancel()), hint: 'Ask the agent to stop' },
+          { id: 'cancel', label: '&Cancel turn', shortcut: 'Ctrl+C', action: run(() => this.cancel()), hint: 'With a selection, Ctrl+C copies it instead' },
           { id: 'sep2', label: '', separator: true },
           { id: 'quit', label: 'E&xit', shortcut: 'Ctrl+Q', action: run(() => this.options.host.quit()), hint: 'Leave tvision' },
         ],
@@ -1694,13 +1718,24 @@ export class TvisionApp {
       void this.deleteSelectedBreakpoint()
       return true
     }
+    if (event.key === 'escape' && this.pane.selectionIsActive) {
+      this.pane.clearPaneSelection()
+      return true
+    }
     if (ctrl) {
       switch (key) {
         case 'q':
           this.options.host.quit()
           return true
         case 'c':
+          // Copy when a selection is fixed on screen; interrupt when it is
+          // not. The terminal owns Cmd+C outright, so within the app this is
+          // the key a selection answers to.
+          if (this.copySelection()) return true
           this.cancel()
+          return true
+        case 'v':
+          this.pasteClipboard()
           return true
         case 'l':
           this.renderer.invalidate()
@@ -1753,6 +1788,48 @@ export class TvisionApp {
     if (this.windows.isOpen(id)) this.windows.focus(id)
     else this.windows.setOpen(id, true)
     this.windows.requestRender()
+  }
+
+  /** The session's own clipboard: what Ctrl+C last copied here. */
+  private sessionClipboard = ''
+
+  /**
+   * Copy the transcript selection.
+   *
+   * Two destinations, on purpose: the session clipboard serves Ctrl+V inside
+   * the app no matter what the terminal supports, and an OSC 52 write offers
+   * the same text to the system clipboard — the terminals that honour it
+   * (iTerm2, kitty, WezTerm, Alacritty) make the next Cmd+V anywhere work.
+   * Shift+drag plus the terminal's own copy stays available beside this.
+   * @returns True when a selection was copied.
+   */
+  private copySelection(): boolean {
+    const text = this.pane.selectionText()
+    if (text === undefined) return false
+    this.sessionClipboard = text
+    const bytes = Buffer.from(text, 'utf8')
+    // Terminals cap what they accept; past that they ignore the sequence, so
+    // an over-long copy keeps the in-app clipboard and skips the broadcast.
+    if (bytes.length <= 48 * 1024) {
+      this.options.terminal.write(`\x1b]52;c;${bytes.toString('base64')}\x07`)
+    }
+    const lines = text.split('\n').length
+    this.notify(`Copied ${lines} row${lines === 1 ? '' : 's'} · Ctrl+V pastes here`, 'info', 3000)
+    return true
+  }
+
+  /**
+   * Paste the session clipboard into the composer.
+   *
+   * The terminal's own paste (⌘V / Ctrl+Shift+V) arrives as bracketed paste
+   * regardless; this key answers the in-app copy above.
+   */
+  private pasteClipboard(): void {
+    if (this.sessionClipboard === '') {
+      this.notify('Nothing copied in this session — paste with your terminal\u2019s key (⌘V)', 'info', 3000)
+      return
+    }
+    this.composer.insert(this.sessionClipboard)
   }
 
   /** Ask the host to stop the current turn. */
@@ -2065,7 +2142,7 @@ export class TvisionApp {
       'F4         tool cards         F9   cycle skin',
       'F5         focus composer     F10  menu bar',
       '',
-      'Ctrl+Q  quit            Ctrl+C  cancel the turn',
+      'Ctrl+Q  quit   Ctrl+C  copy selection / cancel   Ctrl+V  paste',
       'Ctrl+O  expand tools    Ctrl+R  show reasoning',
       'Ctrl+Z  zoom window     Ctrl+L  redraw',
       'Ctrl+B  breakpoints     /breakpoint <pattern> adds one',
