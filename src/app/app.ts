@@ -1471,7 +1471,7 @@ export class TvisionApp {
     }
     if (id === WINDOW_IDS.subagents) {
       const entry = this.document.subagentList[index]
-      if (entry !== undefined) void this.openSubagentView(entry.id, entry.name ?? entry.label)
+      if (entry !== undefined) void this.openSubagentView(entry.id, entry.label, entry.name)
       return
     }
     if (id === WINDOW_IDS.model) {
@@ -1884,6 +1884,18 @@ export class TvisionApp {
   private cancel(): void {
     this.options.host.cancel?.()
     this.notify('Cancellation requested.', 'warning', 3000)
+  }
+
+  /**
+   * The child-transcript title: both names when there are two, one otherwise.
+   * @param id - The child session id, the fallback.
+   * @param label - The delegation label.
+   * @param name - The dsh 0.2.2 name.
+   * @returns The title text.
+   */
+  private subagentTitle(id: string, label?: string, name?: string): string {
+    if (name !== undefined && label !== undefined && name !== label) return `Subagent — ${name} · ${label}`
+    return `Subagent — ${name ?? label ?? id.slice(0, 8)}`
   }
 
   /** Flip tool-card expansion. */
@@ -2532,12 +2544,23 @@ export class TvisionApp {
    * @param id - The child session id.
    * @param label - The catalog label, for the window title.
    */
-  private async openSubagentView(id: string, label?: string): Promise<void> {
+  /**
+   * Open a child's transcript.
+   *
+   * The title carries both names a child answers to: the dsh 0.2.2 name,
+   * which is what `send_message` and every receipt address, and the
+   * delegation label, which is what the reader remembers asking for. When
+   * they coincide — or a historical child predates names — one is shown.
+   * @param id - The child session id.
+   * @param label - The delegation label, when the catalog recorded one.
+   * @param name - The dsh 0.2.2 name, when the catalog recorded one.
+   */
+  private async openSubagentView(id: string, label?: string, name?: string): Promise<void> {
     this.subagentPane.show(this.subagentDocumentFor(id))
     // The window is registered once at boot; re-opening keeps its geometry,
     // so only the title follows the selection.
     this.windows.setOpen(WINDOW_IDS.subagentView, true)
-    this.setWindowTitle(WINDOW_IDS.subagentView, `Subagent — ${label ?? id.slice(0, 8)}`)
+    this.setWindowTitle(WINDOW_IDS.subagentView, this.subagentTitle(id, label, name))
     this.windows.focus(WINDOW_IDS.subagentView)
     this.syncSubagentWindow()
     const existing = this.subagentDocument(id)

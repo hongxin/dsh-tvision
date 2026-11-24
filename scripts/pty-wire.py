@@ -208,6 +208,7 @@ def main():
                         help='boot the user\'s real $DSH_HOME instead of the repo sandbox')
     parser.add_argument('--seconds', type=float, default=135.0)
     parser.add_argument('--show', action='store_true', help='print the replayed screen for diagnosis')
+    parser.add_argument('--save', default=None, help='write the raw first-boot capture to this file for diagnosis')
     args = parser.parse_args()
 
     mock = subprocess.Popen(
@@ -240,6 +241,9 @@ def main():
         print('pty-wire: boot 1 of 2 — the scripted turns (silent for up to '
               f'{int(args.seconds)}s, this is normal)')
         capture = run(argv, SCRIPT, 100, 30, args.seconds, SCRIPT_GAP)
+        if args.save is not None:
+            with open(args.save, 'wb') as handle:
+                handle.write(capture)
         screen = replay(capture, 100, 30)
         # Resume: the goodbye line names the session; a second boot with
         # --resume must show the persisted history on screen. The session
@@ -369,9 +373,12 @@ def main():
                        'feedback-tighten seen in request' in mock_log))
         checks.append(('the plan window holds the plan after review',
                        'keep the tests green' in text))
+        # The child's transcript title carries both names a child answers to
+        # since dsh 0.2.2: the assigned name (`agent-1`) first, then the
+        # delegation label — so the label is asserted with the name wildcarded.
         checks.append(('the subagents catalog and child transcript opened',
                        'Subagents — 1' in text and 'Delegate a scoped reply' in text
-                       and 'Subagent — Delegate a scoped reply' in text
+                       and re.search(r'Subagent — [^\r\n│║]*Delegate a scoped reply', text) is not None
                        and 'wire-sub-child: say delegated-done' in text))
         checks.append(('the attached file reached the model as handle text',
                        'package.json' in attach_line and 'model-visible' in text))

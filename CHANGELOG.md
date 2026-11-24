@@ -28,6 +28,16 @@ Two things learned the hard way, both now load-bearing: the provider list is
 and listed nothing); and the config editor deletes a profile row whose value
 equals the inherited default, which is correct and looked like a lost save.
 
+### The child-transcript title carries both names
+
+dsh 0.2.2 names subagents (`agent-1`, `reviewer/checker`), and 0.8.0 made the
+child window's title prefer that name — which dropped the delegation label the
+reader remembers asking for, and tripped the wire rung's subagents check. The
+title now reads `Subagent — agent-1 · Delegate a scoped reply`: the name first,
+because it is what `send_message` and every receipt address; the label beside
+it, because it is what the reader asked for. One of the two when there is only
+one.
+
 ### GLM-5.4 in tvision
 
 The route is composition, not code: dsh-base mounts `llm-pi-ai` dormant, and a
