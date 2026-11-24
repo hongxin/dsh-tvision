@@ -141,6 +141,47 @@ dsh --profile tvision --skin amber --no-mouse            # 启动选项
 
 ---
 
+## 切换模型 —— GLM-5.4 与任何其他路由
+
+`/model` 是一个选择器：列出组合里注册的每条路由、标出正在运行的那条，
+在某行按 Enter 即把它存为该 profile 的默认（与 web 的 Models 页面是同一次
+保存）。运行中的路由不会在会话中途改变——新默认从下次启动生效，提示里
+会明说。
+
+有哪些路由是组合决定的。dsh-base 把 `llm-pi-ai` 以休眠状态挂载（零路由），
+provider profiles 由 profile 提供；没有的 profile——比如一个新装的
+tvision profile——只会列出 DeepSeek。要加 GLM，把 web profile 里已有的那段
+放进 `~/.dsh/profiles/tvision/cordis.patch.yml`（密钥按请求从同名环境变量解析）：
+
+```yaml
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      zai:
+        apiKeyEnv: ZAI_API_KEY
+        models:
+          - id: glm-5.4
+            name: GLM-5.4
+            contextWindow: 1000000
+            maxTokens: 131072
+            input: [ text, image ]
+            reasoningEfforts: { low: low, high: high, max: max }
+            compat:
+              supportsStore: false
+              supportsReasoningEffort: true
+              maxTokensField: max_tokens
+              thinkingFormat: zai
+              supportsStrictMode: true
+          - id: glm-5.3
+          - id: glm-5.3-flash
+```
+
+`models` 列表会**整体替换**该路由的已装目录，所以要把想列出的模型都写上，
+而不只是新的那个。然后重启、`/model`，`zai/glm-5.4` 就在一次 Enter 之外。
+（被 `--patch` 覆盖层持有的路由无法从选择器重新保存——运行时会拒绝，
+选择器会把这件事报出来。）
+
 ## 跑一个 superagent
 
 tvision 正是长驻会话需要的前端，因此

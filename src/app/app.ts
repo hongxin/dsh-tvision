@@ -106,6 +106,22 @@ export interface AppHost {
   /** A one-line label for the current model route. */
   modelLabel?(): string | undefined
   /**
+   * One selectable model, as the harness catalog describes it. `current`
+   * marks the route the agent is running.
+   */
+  // eslint-disable-next-line no-unused-vars -- the type is exported for the host
+  /**
+   * List the models the picker can switch to, grouped by provider route.
+   * Returns undefined when the composition offers no catalog — then `/model`
+   * stays the read-only label it always was.
+   */
+  listModels?(): Promise<readonly ModelChoice[] | undefined>
+  /**
+   * Persist a model selection as the profile's default, the way the web
+   * Models page does. Resolves with the error text when the save fails.
+   */
+  selectModel?(choice: ModelChoice): Promise<{ ok: true } | { ok: false; error: string }>
+  /**
    * Resume a persisted session, replacing this process. Rejects when the
    * handoff could not be committed, in which case the desktop is still alive.
    */
@@ -189,6 +205,20 @@ export interface MeterSnapshot extends TokenTotals {
   readonly pressure?: number
   /** The capacity the newest request was sized against, when known. */
   readonly contextWindow?: number
+}
+
+/** A model the picker can switch to. */
+export interface ModelChoice {
+  /** The provider route, e.g. `zai` or `deepseek-official`. */
+  readonly provider: string
+  /** The model id as the route names it. */
+  readonly id: string
+  /** Display name; the id when the catalog has none. */
+  readonly name: string
+  /** Whether the agent is running this route right now. */
+  readonly current: boolean
+  /** Request modalities the endpoint accepts, when the catalog records them. */
+  readonly modalities?: readonly string[]
 }
 
 /** Options for {@link TvisionApp}. */
@@ -328,6 +358,7 @@ export const WINDOW_IDS = {
   subagentView: 'subagent-view',
   plan: 'plan',
   skills: 'skills',
+  model: 'model',
   help: 'help',
   about: 'about',
 } as const
@@ -1341,6 +1372,15 @@ export class TvisionApp {
       dismissable: true,
     })
     this.windows.close(WINDOW_IDS.skills)
+    this.windows.open({
+      id: WINDOW_IDS.model,
+      title: 'Model',
+      rect: { x: 8, y: 5, width: 62, height: 12 },
+      widget: this.listWindow(WINDOW_IDS.model, () => [], 'No model routes in this composition.'),
+      listed: true,
+      dismissable: true,
+    })
+    this.windows.close(WINDOW_IDS.model)
     this.windows.focus(WINDOW_IDS.transcript)
   }
 
@@ -1432,6 +1472,14 @@ export class TvisionApp {
     if (id === WINDOW_IDS.subagents) {
       const entry = this.document.subagentList[index]
       if (entry !== undefined) void this.openSubagentView(entry.id, entry.name ?? entry.label)
+      return
+    }
+    if (id === WINDOW_IDS.model) {
+      // The window is not filterable, so the cursor's index is the index
+      // into the catalog the rows were built from.
+      const widget = this.lists.get(id)
+      const choice = this.modelChoices[widget?.selection() ?? 0]
+      if (choice !== undefined && !choice.current) void this.switchModel(choice)
       return
     }
     if (id === WINDOW_IDS.skills) {
@@ -1940,6 +1988,18 @@ export class TvisionApp {
         run: (args, line) => {
           this.document.addUser(line, Date.now(), { local: true })
           void this.runAttachCommand(args)
+        },
+      },
+      {
+        // The picker when the composition offers a catalog; a host without
+        // `listModels` never claims the name, and the harness's own /model
+        // answers instead — the read-only label it always was.
+        name: 'model',
+        description: 'switch the model route (opens the picker)',
+        run: (_args, line) => {
+          if (this.options.host.listModels === undefined) return
+          this.document.addUser(line, Date.now(), { local: true })
+          this.openModelWindow()
         },
       },
       {
@@ -2680,6 +2740,71 @@ export class TvisionApp {
    * the `/` completion's skill group read the same list.
    * @param rows - The user-invocable skills, or none.
    */
+  /** The catalog the picker last listed, so Enter knows what the cursor is on. */
+  private modelChoices: readonly ModelChoice[] = []
+
+  /**
+   * Open the model picker, listing what the composition offers.
+   *
+   * `/model` was a read-only label; with a catalog the harness can describe,
+   * it is a picker: Enter switches the route and persists it as the
+   * profile's default, the same save the web Models page makes.
+   */
+  openModelWindow(): void {
+    this.openWindow(WINDOW_IDS.model)
+    void this.refreshModels()
+  }
+
+  /** Re-read the catalog and repaint the picker's rows. */
+  private async refreshModels(): Promise<void> {
+    if (this.options.host.listModels === undefined) {
+      this.setModels([])
+      return
+    }
+    try {
+      this.setModels(await this.options.host.listModels() ?? [])
+    } catch (error) {
+      this.notify(describeError(error), 'error')
+    }
+  }
+
+  /**
+   * Record the catalog and repaint the picker.
+   * @param rows - The choices, in the catalog's order.
+   */
+  setModels(rows: readonly ModelChoice[]): void {
+    this.modelChoices = [...rows]
+    const current = rows.find(row => row.current)
+    this.setListRows(WINDOW_IDS.model, rows.map(row => ({
+      label: `${row.provider}/${row.id}`,
+      detail: row.name === row.id ? (row.modalities?.includes('image') ? 'vision' : '') : row.name,
+      marker: row.current ? '●' : '·',
+    })))
+    const label = current === undefined ? 'Model' : `Model — ${current.provider}/${current.id}`
+    this.setWindowTitle(WINDOW_IDS.model, label)
+    this.windows.requestRender()
+  }
+
+  /**
+   * Switch the default model and say what happened.
+   * @param choice - The row the cursor was on.
+   */
+  private async switchModel(choice: ModelChoice): Promise<void> {
+    if (this.options.host.selectModel === undefined) {
+      this.notify('This composition cannot persist a model choice.', 'error')
+      return
+    }
+    const result = await this.options.host.selectModel(choice)
+    if (result.ok) {
+      // The running route does not change mid-session — the save is the next
+      // boot's default, and saying so is what keeps the title bar honest.
+      this.notify(`Default model: ${choice.provider}/${choice.id} — applies from the next boot`, 'info', 5000)
+      await this.refreshModels()
+    } else {
+      this.notify(`Could not switch: ${result.error}`, 'error', 6000)
+    }
+  }
+
   setSkills(rows: readonly SkillRow[]): void {
     this.skills = [...rows]
     this.setListRows(WINDOW_IDS.skills, this.skills.map(skill => ({

@@ -36,6 +36,7 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import { createUserMessage, type FileBlock, type TextBlock } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { ModelChoice } from './app/app.ts'
 import { isUserInvocable, renderSkillContent } from '@deepseek-ai/dsh-skill'
 import { formatSessionReferenceMention } from '@deepseek-ai/dsh-session-reference'
 import type { SkillDefinition, SkillSummary } from '@deepseek-ai/dsh-skill'
@@ -358,6 +359,70 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         label: candidate.label,
         detail: `session · ${candidate.sameWorkspace ? 'this workspace' : candidate.cwd ?? 'elsewhere'}`,
       }))
+    },
+    /**
+     * The catalog the `/model` picker lists: every route the composition
+     * registered, in the runtime's own order.
+     *
+     * The llm and agent-default-model services are read on demand rather than
+     * injected, the way `listSkills` reads the skill registry: a composition
+     * without either still mounts the desktop, and `/model` simply stays the
+     * harness's own read-only command there.
+     */
+    async listModels(): Promise<readonly ModelChoice[] | undefined> {
+      const llm = ctx.get('llm') as unknown as {
+        listProviders?: () => Promise<readonly { id: string }[]>
+        listModels?: (provider: string) => Promise<readonly { id: string; name: string; inputModalities?: readonly string[] }[]>
+      } | undefined
+      if (llm?.listModels === undefined) return undefined
+      const defaults = ctx.get('agentDefaultModel') as unknown as {
+        currentSelection?: () => { provider?: string; model?: string }
+      } | undefined
+      const current = defaults?.currentSelection?.()
+      const providerIds = llm.listProviders === undefined
+        ? (current?.provider === undefined ? [] : [current.provider])
+        : (await llm.listProviders()).map(provider => provider.id)
+      const providers = providerIds
+      const choices: ModelChoice[] = []
+      for (const provider of providers) {
+        let models: readonly { id: string; name: string; inputModalities?: readonly string[] }[]
+        try {
+          models = await llm.listModels(provider)
+        } catch {
+          // A route whose adapter is not registered lists nothing; the catalog
+          // is what runs, not what the settings mention.
+          continue
+        }
+        for (const model of models) {
+          choices.push({
+            provider,
+            id: model.id,
+            name: model.name === '' ? model.id : model.name,
+            current: provider === current?.provider && model.id === current.model,
+            ...(model.inputModalities === undefined ? {} : { modalities: model.inputModalities }),
+          })
+        }
+      }
+      return choices
+    },
+    /**
+     * Persist a selection as the profile's default model — the same save the
+     * web Models page makes, so the choice outlives the session and the two
+     * front ends agree.
+     */
+    async selectModel(choice: ModelChoice): Promise<{ ok: true } | { ok: false; error: string }> {
+      const defaults = ctx.get('agentDefaultModel') as unknown as {
+        saveSelection?: (next: { provider: string; model: string }) => Promise<void>
+      } | undefined
+      if (defaults?.saveSelection === undefined) {
+        return { ok: false, error: 'this composition has no default-model service' }
+      }
+      try {
+        await defaults.saveSelection({ provider: choice.provider, model: choice.id })
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
     },
     async listSkills(): Promise<readonly SkillRow[]> {
       // The registry is dsh-skill's, composed by dsh-base; the view options

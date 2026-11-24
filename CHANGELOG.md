@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.8.3 — 2026-11-24
+
+### `/model` is a picker: switch the route from inside tvision
+
+GLM-5.4 shipped, and the model was a read-only label — `/model` was the
+harness's own command, which the desktop passed through and printed. With a
+catalog the composition can describe, the desktop claims the name:
+
+- **A window lists every registered route**, the running one marked `●` and
+  named in the title; Enter switches to the row under the cursor and persists
+  the choice as the profile's default — the same `saveSelection` the web
+  Models page makes, so the two front ends agree and the choice outlives the
+  session.
+- **The catalog comes from the runtime**, not from a list we maintain:
+  `llm.listProviders()` × `listModels()`, with the services read on demand the
+  way `listSkills` reads the skill registry — a composition without them still
+  mounts, and `/model` stays the harness's read-only command there.
+- **Two truths the picker states out loud.** The running route does not change
+  mid-session, so the notice says the default *applies from the next boot*
+  (the title keeps naming what is running now). And a save the runtime refuses
+  — a `--patch` overlay owns the row, say — is reported as that, not
+  swallowed.
+
+Two things learned the hard way, both now load-bearing: the provider list is
+`{id, name}` records, not ids (a first cut passed objects where ids belonged
+and listed nothing); and the config editor deletes a profile row whose value
+equals the inherited default, which is correct and looked like a lost save.
+
+### GLM-5.4 in tvision
+
+The route is composition, not code: dsh-base mounts `llm-pi-ai` dormant, and a
+profile supplies the provider profiles. The tvision profile has none, so the
+`zai` route — however it is configured for the web profile — never registered
+there. The README now shows the `llm-pi-ai` block to add (the glm-5.4 entry
+with its 1M context and image input), after which `/model` lists
+`zai/glm-5.4` beside every other route.
+
 ## 0.8.2 — 2026-11-24
 
 ### A resume boot paints before the agent exists

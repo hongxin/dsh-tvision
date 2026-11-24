@@ -157,6 +157,50 @@ Drag a title bar to move a window · drag the bright bottom-right corner to resi
 
 ---
 
+## Switching models — GLM-5.4 and any other route
+
+`/model` is a picker: it lists every route the composition registered, marks
+the one running, and Enter on a row saves it as this profile's default (the
+same save the web Models page makes). The running route does not change
+mid-session — the new default applies from the next boot, and the notice says
+so.
+
+Which routes exist is composition. dsh-base mounts `llm-pi-ai` dormant with
+zero routes; a profile supplies the provider profiles, and a profile with none
+— a fresh tvision profile, for instance — only ever lists DeepSeek. To add
+GLM, put the block your web profile already carries into
+`~/.dsh/profiles/tvision/cordis.patch.yml` (the key resolves per request from
+the named environment variable):
+
+```yaml
+- id: llm-pi-ai
+  name: "@deepseek-ai/dsh-llm-pi-ai"
+  config:
+    providers:
+      zai:
+        apiKeyEnv: ZAI_API_KEY
+        models:
+          - id: glm-5.4
+            name: GLM-5.4
+            contextWindow: 1000000
+            maxTokens: 131072
+            input: [ text, image ]
+            reasoningEfforts: { low: low, high: high, max: max }
+            compat:
+              supportsStore: false
+              supportsReasoningEffort: true
+              maxTokensField: max_tokens
+              thinkingFormat: zai
+              supportsStrictMode: true
+          - id: glm-5.3
+          - id: glm-5.3-flash
+```
+
+The `models` list *replaces* the installed catalog for that route, so name
+every model you want listed, not only the new one. Then restart, `/model`, and
+`zai/glm-5.4` is one Enter away. (A route owned by a `--patch` overlay cannot
+be re-saved from the picker — the runtime refuses, and the picker reports it.)
+
 ## Running a superagent
 
 tvision is the front end a long-running agent session needs, so
