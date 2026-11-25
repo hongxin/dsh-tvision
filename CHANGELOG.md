@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.4 — 2026-11-25
+
+### A saved default stays visible until the restart that applies it
+
+`/model` saved a new default and the status cell kept showing the old route
+with no trace that anything had changed — the notice went by, and the corner
+looked exactly as before. Two causes, one of them older than the picker:
+
+- **The transient notice never expired.** `notify()` recorded an `until` and
+  nothing ever read it. The status line gives the notice the left of the row
+  and *charges its width to the metric cells*, so every notice — copy
+  confirmations, errors, model switches — silently evicted the right-hand
+  cells until the next notice replaced them. The notice now clears on expiry
+  and repaints the row it was holding; the read path also honours the
+  deadline, so a frame landing between expiry and the timer's turn sees
+  nothing stale.
+- **The reminder is standing, not transient.** A default saved this session
+  rides the status cell as `deepseek-flash →glm-5.4↻` in the warning tone
+  until the restart applies it, at which point the running route *is* the
+  default and the reminder retires itself. The picker agrees: the pending row
+  is marked `↻ · default after restart`, and its title reads
+  `Model — <running> →<pending> on restart`.
+
+The picker's "current" is now what the agent is **running** (`agent.options`),
+not the configured default. The two diverge for the rest of a session after a
+save, and the status bar reads the former — so the picker did too, or the two
+surfaces disagreed about which route was live.
+
+Verified in a real pty: after the notice expired the cell read
+`│ ↑0 ↓0 │ deepseek-official/deepseek-flash →glm-5.4↻`, with the profile
+holding `zai/glm-5.4`. L0 847 tests, L2 mount, L3 all 23 wire checks.
+
 ## 0.8.3 — 2026-11-24
 
 ### `/model` is a picker: switch the route from inside tvision

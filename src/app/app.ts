@@ -1041,6 +1041,8 @@ export class TvisionApp {
   private readonly listRows = new Map<string, readonly ListRow[]>()
   private skin: Skin
   private transient: { text: string; tone: 'info' | 'warning' | 'error'; until: number } | undefined
+  /** The timer that clears the transient notice when it expires. */
+  private transientTimer: ReturnType<typeof setTimeout> | undefined
   private running = false
   private readonly history: string[] = []
   /** How many rows each chrome band got, fixed at mount and on every resize. */
@@ -1175,7 +1177,13 @@ export class TvisionApp {
     this.status = new StatusBar({
       hints: () => this.buildHints(),
       status: () => this.buildStatus(),
-      message: () => this.transient === undefined ? undefined : { text: this.transient.text, tone: this.transient.tone },
+      // Read through a getter that honours the expiry: the status line gave
+      // the notice the left of the row and charged its width to the metric
+      // cells, and a notice that never expired kept evicting them for good.
+      message: () => {
+        const current = this.transientNotice()
+        return current === undefined ? undefined : { text: current.text, tone: current.tone }
+      },
       invoke: (key) => { void this.invokeHint(key) },
       describe: () => {},
     })
@@ -1544,7 +1552,31 @@ export class TvisionApp {
   /** Show a transient message in the status line. */
   notify(text: string, tone: 'info' | 'warning' | 'error' = 'info', milliseconds = 6000): void {
     this.transient = { text, tone, until: Date.now() + milliseconds }
+    if (this.transientTimer !== undefined) clearTimeout(this.transientTimer)
+    // Paint once more when the notice dies, so the row it was occupying goes
+    // back to the metric cells instead of staying blank until the next event.
+    this.transientTimer = setTimeout(() => {
+      this.transientTimer = undefined
+      this.transient = undefined
+      this.windows.requestRender()
+    }, milliseconds)
     this.windows.requestRender()
+  }
+
+  /**
+   * The transient notice, once expired, is gone.
+   *
+   * The timer clears it; this is the belt to that suspender, for a frame that
+   * lands after `until` but before the timer's turn.
+   * @returns The live notice, or undefined.
+   */
+  private transientNotice(): { text: string; tone: 'info' | 'warning' | 'error' } | undefined {
+    if (this.transient === undefined) return undefined
+    if (Date.now() >= this.transient.until) {
+      this.transient = undefined
+      return undefined
+    }
+    return this.transient
   }
 
   /** The function-key strip. */
@@ -1581,7 +1613,15 @@ export class TvisionApp {
       cells.push({ text: `↑${this.updateAvailable.latest}`, priority: 3, tone: 'success' })
     }
     const model = this.options.host.modelLabel?.() ?? this.document.model
-    if (model !== undefined) cells.push({ text: model, priority: 4 })
+    if (model !== undefined) {
+      const pending = this.pendingDefault
+      const running = model.split('/')[1]
+      // Once the restart has applied the default, the running route *is* it,
+      // and the reminder retires itself rather than outliving its news.
+      if (pending !== undefined && pending.id === running) this.pendingDefault = undefined
+      const suffix = this.pendingDefault === undefined ? '' : ` →${this.pendingDefault.id}↻`
+      cells.push({ text: `${model}${suffix}`, priority: 4, tone: suffix === '' ? undefined : 'warning' })
+    }
     if (window > 0) {
       cells.push({
         text: `${pressureBar(pressure, 6)} ${Math.round(pressure * 100)}%`,
@@ -2765,6 +2805,15 @@ export class TvisionApp {
    */
   /** The catalog the picker last listed, so Enter knows what the cursor is on. */
   private modelChoices: readonly ModelChoice[] = []
+  /**
+   * A default saved this session that differs from the route still running.
+   *
+   * The running route cannot change mid-session, so the save applies from the
+   * next boot — and without a standing reminder the status cell kept showing
+   * the old route with no trace that anything changed. Held here until the
+   * running route catches up (the restart that applies it), then dropped.
+   */
+  private pendingDefault: ModelChoice | undefined
 
   /**
    * Open the model picker, listing what the composition offers.
@@ -2798,12 +2847,19 @@ export class TvisionApp {
   setModels(rows: readonly ModelChoice[]): void {
     this.modelChoices = [...rows]
     const current = rows.find(row => row.current)
-    this.setListRows(WINDOW_IDS.model, rows.map(row => ({
-      label: `${row.provider}/${row.id}`,
-      detail: row.name === row.id ? (row.modalities?.includes('image') ? 'vision' : '') : row.name,
-      marker: row.current ? '●' : '·',
-    })))
-    const label = current === undefined ? 'Model' : `Model — ${current.provider}/${current.id}`
+    const pending = this.pendingDefault
+    this.setListRows(WINDOW_IDS.model, rows.map(row => {
+      const isPending = pending !== undefined && row.provider === pending.provider && row.id === pending.id
+      const base = row.name === row.id ? (row.modalities?.includes('image') ? 'vision' : '') : row.name
+      return {
+        label: `${row.provider}/${row.id}`,
+        detail: isPending ? `${base}${base === '' ? '' : ' · '}default after restart ↻` : base,
+        marker: row.current ? '●' : isPending ? '↻' : '·',
+      }
+    }))
+    const label = current === undefined
+      ? 'Model'
+      : `Model — ${current.provider}/${current.id}${this.pendingDefault === undefined ? '' : ` →${this.pendingDefault.id} on restart`}`
     this.setWindowTitle(WINDOW_IDS.model, label)
     this.windows.requestRender()
   }
@@ -2820,8 +2876,10 @@ export class TvisionApp {
     const result = await this.options.host.selectModel(choice)
     if (result.ok) {
       // The running route does not change mid-session — the save is the next
-      // boot's default, and saying so is what keeps the title bar honest.
-      this.notify(`Default model: ${choice.provider}/${choice.id} — applies from the next boot`, 'info', 5000)
+      // boot's default. The status cell carries that until the restart that
+      // applies it, so the change is visible after the notice has gone.
+      this.pendingDefault = choice
+      this.notify(`Default model: ${choice.provider}/${choice.id} — restart to apply (Ctrl+Q, then dsh --profile tvision)`, 'info', 8000)
       await this.refreshModels()
     } else {
       this.notify(`Could not switch: ${result.error}`, 'error', 6000)

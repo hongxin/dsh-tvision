@@ -375,10 +375,14 @@ export function createHost(input: MountInput): { host: AppHost; dispose(): void 
         listModels?: (provider: string) => Promise<readonly { id: string; name: string; inputModalities?: readonly string[] }[]>
       } | undefined
       if (llm?.listModels === undefined) return undefined
-      const defaults = ctx.get('agentDefaultModel') as unknown as {
-        currentSelection?: () => { provider?: string; model?: string }
-      } | undefined
-      const current = defaults?.currentSelection?.()
+      // "Current" is what the agent is *running* (`agent.options`), not the
+      // configured default: the two diverge for the rest of a session after a
+      // save, and the status bar reads the former — so the picker must too, or
+      // the two surfaces disagree about which route is live.
+      const running = agent.options as { provider?: string; model?: string } | undefined
+      const current = running?.provider !== undefined && running.model !== undefined
+        ? { provider: running.provider, model: running.model }
+        : undefined
       const providerIds = llm.listProviders === undefined
         ? (current?.provider === undefined ? [] : [current.provider])
         : (await llm.listProviders()).map(provider => provider.id)

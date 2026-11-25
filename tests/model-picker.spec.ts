@@ -101,16 +101,66 @@ describe('the /model picker', () => {
     void sent
   })
 
-  it('says the choice applies from the next boot, since the running route does not change', async () => {
-    const { app, terminal } = build(async () => GLM)
+  it('keeps the pending default on screen after the notice has gone', async () => {
+    const { app, selectModel } = build(async () => GLM)
     app.start()
+    app.frame()
     app.composer.insert('/model')
     app.composer.onKey({ type: 'key', key: 'enter' })
-    for (let i = 0; i < 6; i++) await Promise.resolve()
+    for (let i = 0; i < 12; i++) await Promise.resolve()
     app.feed('\r')
-    for (let i = 0; i < 6; i++) await Promise.resolve()
-    app.frame()
-    expect(terminal.output).toContain('applies from the next boot')
+    // The save resolves asynchronously and the status closure reads the
+    // pending default at paint time; settle the promise chain fully.
+    await vi.waitFor(() => { expect(selectModel).toHaveBeenCalledTimes(1) })
+    for (let i = 0; i < 12; i++) await Promise.resolve()
+    // frame() is a no-op while the manager is clean, so ask for the frame
+    // explicitly: the standing reminder must survive a *fresh* paint, which
+    // is what a reader sees seconds later, after the notice is gone.
+    // The compositor repaints only changed cells and a fake terminal keeps
+    // every run, so the painted bytes are a poor oracle here. The contract is
+    // in the status model itself: with a pending default set, a fresh status
+    // build names what runs and what the next boot runs.
+    const cells = (app as unknown as { buildStatus(): readonly { text: string }[] }).buildStatus()
+    const modelCell = cells.find(cell => cell.text.includes('glm'))
+    expect(modelCell?.text).toBe('zai/glm-5.3 →glm-5.4↻')
+    // The picker agrees: the title carries the pending default.
+    expect(app.windows.listWindows().find(w => w.id === WINDOW_IDS.model)?.title)
+      .toBe('Model — zai/glm-5.3 →glm-5.4 on restart')
+    // Once the restart has applied it, the running route *is* the default and
+    // the reminder retires itself rather than outliving its news.
+    const afterRestart = build(async () => GLM.map(row => ({ ...row, current: row.id === 'glm-5.4' })))
+    afterRestart.app.start()
+    afterRestart.app.windows.requestRender()
+    afterRestart.terminal.output = ''
+    afterRestart.app.frame()
+    expect(afterRestart.terminal.output.replace(/\u001B\[[0-9;?]*[a-zA-Z]/gu, '')).not.toContain('↻')
+  })
+
+  it('a notice that expires gives the row back to the metric cells', async () => {
+    // The status line charged the notice's width to the cells, and a notice
+    // that never expired evicted them for good — so the model cell vanished
+    // behind every notify() until the next one replaced it.
+    vi.useFakeTimers()
+    try {
+      const { app } = build(async () => GLM)
+      app.start()
+      app.frame()
+      app.notify('a long notice that occupies most of the status row for a while', 'info', 8000)
+      app.windows.requestRender()
+      app.frame()
+      const statusOf = (): string[] =>
+        (app as unknown as { buildStatus(): readonly { text: string }[] }).buildStatus().map(cell => cell.text)
+      // With the notice live, the message getter reports it.
+      const message = (app as unknown as { transientNotice(): { text: string } | undefined }).transientNotice()
+      expect(message?.text).toContain('a long notice')
+      // Past its expiry the getter reports nothing — without waiting for the
+      // timer's turn, which is what a frame landing in between would see.
+      vi.setSystemTime(Date.now() + 9000)
+      expect((app as unknown as { transientNotice(): { text: string } | undefined }).transientNotice()).toBeUndefined()
+      expect(statusOf().some(text => text.includes('glm'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('a failed save is reported, not swallowed', async () => {
