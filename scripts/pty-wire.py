@@ -115,6 +115,16 @@ SCRIPT = [
     ('dwell', b''),
     ('plan-window-close', b'\x1b'),
     ('dwell', b''),
+    # Structured question: ask_user_question opens the desktop's question
+    # dialog. The choices are horizontal buttons — Right moves from the default
+    # Blue to Amber (Down scrolls the detail pane), Enter submits; the mock
+    # logs `selected:["Amber"]` when the answer rides back as the result.
+    ('question-prompt', b'wire-question\r'),
+    ('dwell', b''),
+    ('question-pick', b'\x1b[C'),
+    ('question-confirm', b'\r'),
+    ('dwell', b''),
+    ('dwell', b''),
     # Markdown turn first: its constructs must land on the real screen.
     ('md-prompt', b'wire-markdown\r'),
     ('dwell', b''),
@@ -373,6 +383,9 @@ def main():
                        'feedback-tighten seen in request' in mock_log))
         checks.append(('the plan window holds the plan after review',
                        'keep the tests green' in text))
+        checks.append(('ask_user_question opened its dialog and the answer reached the model',
+                       'Which skin should I use?' in text
+                       and 'question-answer seen in request' in mock_log))
         # The child's transcript title carries both names a child answers to
         # since dsh 0.2.2: the assigned name (`agent-1`) first, then the
         # delegation label — so the label is asserted with the name wildcarded.

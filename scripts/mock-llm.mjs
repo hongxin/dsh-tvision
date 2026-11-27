@@ -85,6 +85,20 @@ const TURNS = [
     usage: { prompt_tokens: 260, completion_tokens: 34, total_tokens: 294 },
   },
   {
+    // A structured question: the model asks, the desktop's question dialog
+    // answers, and the answer rides back as the tool result. The pty script
+    // picks Amber; the log line below is the assertion that it arrived.
+    match: 'wire-question',
+    reasoning: 'The user asked for the scripted question turn. Ask which skin to use.',
+    toolCall: {
+      id: 'call_mock_question',
+      name: 'ask_user_question',
+      arguments: '{"questions":[{"id":"skin","header":"Pick a skin","question":"Which skin should I use?","options":[{"label":"Blue"},{"label":"Amber"}]}]}',
+    },
+    followupContent: 'The answer came back; continuing with the chosen skin.',
+    usage: { prompt_tokens: 230, completion_tokens: 26, total_tokens: 256 },
+  },
+  {
     // The delegated child's own request: a fresh context whose user message
     // is the delegated prompt. Must precede wire-sub in the array — the
     // prompt contains that keyword too, and the scan takes array order.
@@ -265,6 +279,11 @@ const server = createServer(async (req, res) => {
   // which the one-line request log does not show.
   if (body.includes('tighten the fence case')) console.log('[mock-llm] feedback-tighten seen in request')
   if (body.includes('stopped by a tvision breakpoint')) console.log('[mock-llm] breakpoint-refusal seen in request')
+  // Tool results carry their text as a JSON string, so the answer's quotes are
+  // escaped in the request body; normalize before matching the structured value.
+  if (body.replaceAll('\\"', '"').includes('"selected":["Amber"]')) {
+    console.log('[mock-llm] question-answer seen in request')
+  }
   console.log(`[mock-llm] ${req.url} model=${request.model} tools=${(request.tools ?? []).length} ` +
     `roles=${messages.map((message) => message.role).join(',')} ` +
     `turn="${turn.match}" followup=${followup} last="${lastText.slice(0, 40).replace(/\n/g, ' ')}"`)

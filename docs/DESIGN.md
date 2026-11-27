@@ -442,11 +442,27 @@ keystrokes, a real mouse report, and the screen read back by replay so the resul
 can be diffed rather than squinted at.
 
 **Why the loader rejected the first patch.** The initial `cordis.patch.yml`
-re-inserted `storage`, `session-reference`, and `tool-ask-user` — all of which
-`dsh-base` already mounts — and the loader rejects a duplicate id outright, so the
-whole profile failed to boot. The patch now inserts only rows base does not
+re-inserted `storage`, `session-reference`, and `tool-ask-user` — all rows
+`dsh-base` mounted at the time — and the loader rejects a duplicate id outright,
+so the whole profile failed to boot. The patch now inserts only rows base does not
 provide, and says so, because the next person to add a row will make the same
-assumption.
+assumption. One fact in that old note aged out: by dsh 0.2.2-rc.5, base no longer
+mounts `tool-ask-user`, so the same row that once failed the boot became the row
+that gave the question dialogs a producer again. Check `--dump-config`, not an
+older note, before deciding a row is base-owned.
+
+**Why MCP is mounted and the rest of the Web preset extras are not.** The Web
+`standard` preset is not a tool superset: most of its rows come from the same
+`dsh-base` tvision uses. Its genuinely extra rows split into two kinds. MCP is a
+protocol: one manager, zero servers by default, and any configured server's tools
+arrive as `mcp__<server>__<tool>`; the desktop renders them through the same tool
+card without knowing what an MCP is. `schedule`, `office`, `present`, and the
+plugin market are product surfaces: each has a Web page that configures or
+displays it, and mounting only the model-facing half would leave a tool whose
+work the user cannot see or manage. tvision takes the protocol and leaves the
+pages. The same rule is why PTC is not enabled: folding many tool calls into one
+code execution is a Web optimization that would hide the step-by-step stream
+this interface exists to show.
 
 **Why breakpoints own their dialog instead of returning `ask`.** The
 `tools/pre-execute` waterfall has a three-way answer — allow, deny, ask — and
@@ -512,6 +528,10 @@ itself on exit — shipped; what remains:
   all.
 - **No plugin-facing overlay API.** The upstream TUI exposes one; this does not
   yet, so a third-party plugin cannot open a window.
+- **MCP servers are configured in YAML, not in a window.** The manager is
+  mounted so the model can call `mcp__…` tools, but the desktop has no server
+  list, status, or add surface. A server that fails to connect shows up as
+  missing tools in the next turn's catalog, not as a dialog.
 
 The live turn, for the record, is no longer in the "not verified" column: the
 profile has since been driven end to end against the real API from a real

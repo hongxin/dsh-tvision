@@ -201,6 +201,29 @@ every model you want listed, not only the new one. Then restart, `/model`, and
 `zai/glm-5.4` is one Enter away. (A route owned by a `--patch` overlay cannot
 be re-saved from the picker — the runtime refuses, and the picker reports it.)
 
+## MCP tools
+
+tvision ships an MCP manager with no servers. Configure one in
+`~/.dsh/profiles/tvision/cordis.patch.yml` and its tools appear to the model as
+`mcp__<server>__<tool>` — ordinary tool cards, no new window:
+
+```yaml
+- id: mcp-manager
+  config:
+    servers:
+      github:
+        transport: stdio
+        command: npx
+        args: ['-y', '@modelcontextprotocol/server-github']
+        env:
+          GITHUB_TOKEN: '${credential:GITHUB_TOKEN}'
+```
+
+A patch replaces the whole `servers` map, so keep every server in that one
+block. An `mcp__*` breakpoint holds MCP calls like any other tool, and the
+desktop has no server management page. See [MCP tools](docs/MCP.md) for
+Streamable HTTP, credential references, and the limits.
+
 ## Running a superagent
 
 tvision is the front end a long-running agent session needs, so

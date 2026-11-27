@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.9.0 — 2026-11-28
+
+### MCP tools as ordinary tool cards, and the question dialog's producer back
+
+Two rows the profile was missing, both found by comparing the composed tree
+(`--dump-config`) against what the desktop already assumed it had:
+
+- **MCP is mounted, with no servers.** `@deepseek-ai/dsh-mcp-manager` joins the
+  profile with `servers: {}` and `credentials` injected, so `${credential:REF}`
+  works in a server's command, env, url, or headers. Configure a server in the
+  profile patch and its tools reach the model as `mcp__<server>__<tool>` —
+  ordinary tool cards in the transcript, drawn by a desktop that has no idea
+  what an MCP is. A patch replaces the whole `servers` map, so a deployment
+  keeps every server in the one block; `docs/MCP.md` has the stdio and
+  Streamable HTTP forms and the limits. Breakpoints need no new code: an
+  `mcp__*` rule is a `tools/pre-execute` gate like any other.
+- **`tool-ask-user` is inserted again.** The desktop has always answered
+  `user-questions/request` and drawn the dialog, but dsh-base stopped mounting
+  the row that produces those requests — verified absent with `--dump-config`
+  on 0.2.2-rc.5 — so plan mode's own prompt named a tool the model did not
+  have. The row that once failed the boot as a duplicate id is now the one that
+  puts the producer back.
+
+The rule that splits MCP from the rest of the Web preset's extras is now in
+DESIGN.md, because it is the kind of decision that looks arbitrary next to a
+list of names: tvision takes a *protocol* whose results it can already draw
+and leaves the *product surfaces* (schedule, office, present, the plugin
+market) whose work would have no window to be seen or managed in. The same
+rule is why PTC stays off: folding many calls into one code execution hides the
+step-by-step stream this interface exists to show.
+
+The wire rung grew the scenario this needed. The mock asks a structured
+question; the pty script answers it in the desktop's dialog (Right moves off
+the default to Amber, Enter submits); the run asserts both that the dialog
+rendered and that `selected:["Amber"]` arrived as the tool result — the first
+end-to-end cover for a seam that until now was only a unit-tested promise.
+
+Verified: typecheck and 847 unit tests, the 18-scenario pty sweep, the
+real-profile mount, and all 24 wire checks — the last including the new
+question-dialog assertion on a real terminal.
+
 ## 0.8.4 — 2026-11-25
 
 ### A saved default stays visible until the restart that applies it

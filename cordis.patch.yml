@@ -46,12 +46,34 @@
 #
 # Only rows `@deepseek-ai/dsh-base` does not already provide appear here. That is
 # not a style preference: the loader rejects a duplicate id outright, so
-# re-inserting a base-owned row (`storage`, `tool-ask-user`, …) makes the whole
+# re-inserting a base-owned row (`storage`, for instance) makes the whole
 # profile fail to boot. Re-verify against `dsh --profile tvision --dump-config`
 # before adding one; that is how `session-reference` proved absent from base
-# despite an earlier note here claiming otherwise.
+# despite an earlier note here claiming otherwise — and how `tool-ask-user`,
+# base-owned through 0.2.1, became an insert in 0.2.2.
 
 - insert:
+    # The model-facing half of the user-questions seam. The desktop has always
+    # answered `user-questions/request` and rendered the dialogs, but dsh-base
+    # stopped mounting this row: 0.2.2-rc.5's patch has no `tool-ask-user`, so
+    # the UI had no producer and plan mode's own prompt told the model to call
+    # a tool that was not in its catalog. Verified absent from base with
+    # `--dump-config`; the loader will reject the duplicate if that changes.
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
+    # MCP is the one cross-product tool protocol here; the rest of the Web
+    # presets' extras are DSH tools with Web-shaped management pages. The
+    # shipped list is empty on purpose: a deployment adds servers in its own
+    # profile patch and their tools appear as `mcp__<server>__<tool>`. The row
+    # injects the credentials provider so `${credential:REF}` works in
+    # command/env/url/headers. No server runs until one is configured.
+    - id: mcp-manager
+      name: '@deepseek-ai/dsh-mcp-manager'
+      inject: [credentials]
+      config:
+        servers: {}
+
     # Cross-session references: @-completion offers other sessions, and a
     # canonical mention makes the service attach a bounded read-only snapshot
     # of that session to the message. Not a dsh-base row (verified against

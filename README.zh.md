@@ -182,6 +182,28 @@ tvision profile——只会列出 DeepSeek。要加 GLM，把 web profile 里已
 （被 `--patch` 覆盖层持有的路由无法从选择器重新保存——运行时会拒绝，
 选择器会把这件事报出来。）
 
+## MCP 工具
+
+tvision 预装 MCP manager，但服务器列表为空。在
+`~/.dsh/profiles/tvision/cordis.patch.yml` 里加一个服务器，模型就会看到
+`mcp__<server>__<tool>` 形式的普通工具卡片——没有新窗口：
+
+```yaml
+- id: mcp-manager
+  config:
+    servers:
+      github:
+        transport: stdio
+        command: npx
+        args: ['-y', '@modelcontextprotocol/server-github']
+        env:
+          GITHUB_TOKEN: '${credential:GITHUB_TOKEN}'
+```
+
+patch 会整块替换 `servers`，所以要把所有服务器写在同一块里。`mcp__*` 断点
+能像其它工具一样拦下 MCP 调用；桌面没有服务器管理页。Streamable HTTP、
+凭据引用和限制见 [MCP 工具](docs/MCP.md)。
+
 ## 跑一个 superagent
 
 tvision 正是长驻会话需要的前端，因此
